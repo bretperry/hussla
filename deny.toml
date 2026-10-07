@@ -1,0 +1,37 @@
+# cargo-deny policy: supply-chain checks on the dependency graph. Part of the rust stack pack.
+#
+# What it does NOT do: keep `domain` free of dependencies. cargo-deny bans are workspace-wide, so
+# they can't say "this crate takes nothing"; `stacks/rust/boundaries.mjs` does that (rust.mdc).
+
+[graph]
+# One platform is enough for policy; the lockfile is the same everywhere.
+targets = ["x86_64-unknown-linux-gnu"]
+
+[advisories]
+# Known vulnerabilities and unmaintained crates. Needs the RustSec database (network) and fails on any new
+# entry, so `pnpm check` skips it (`rust:deny` is bans, licenses, sources); `pnpm rust:advisories` runs it.
+version = 2
+
+[licenses]
+version = 2
+# Permissive licenses only. Add one here on purpose, with the reason in the commit.
+allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib"]
+# An allowed license nothing uses today is fine: the list is a policy, not an inventory.
+unused-allowed-license = "allow"
+
+# The workspace's own crates (`publish = false`) carry no license.
+[licenses.private]
+ignore = true
+
+[bans]
+# `*` in a version means "any release", which is not reproducible.
+wildcards = "deny"
+# A path dependency has no version, which is how workspace crates name each other.
+allow-wildcard-paths = true
+# Two versions of one crate bloat the build and hide fixes; warn so it is seen, not fatal.
+multiple-versions = "warn"
+
+[sources]
+# Registry crates come from crates.io only; a git or alternate-registry dependency is a decision.
+unknown-registry = "deny"
+unknown-git = "deny"

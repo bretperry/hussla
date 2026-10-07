@@ -1,0 +1,113 @@
+{
+  "name": "python",
+  "kind": "language",
+  "summary": "Python two ways: a stdlib-only tooling profile (scripts/lib, no install) and an app profile (uv, ruff, pyright strict, import-linter layers, pytest + hypothesis).",
+  "requires": [],
+  "docs": [
+    ".cursor/rules/python.mdc",
+    ".cursor/rules/testing-python.mdc"
+  ],
+  "code": [
+    "stacks/python/check-edited.mjs",
+    "stacks/python/boundaries_test.py",
+    "stacks/python/run.py",
+    "stacks/python/run_test.py",
+    "scripts/lib/run_unittests.py",
+    "scripts/lib/run_unittests_test.py",
+    "stacks/python/check-edited.test.mjs",
+    "stacks/python/domain_purity.py"
+  ],
+  "owns": [
+    "pyproject.toml",
+    "uv.lock",
+    "src/app/__init__.py",
+    "src/app/config.py",
+    "src/app/container.py",
+    "src/app/domain/__init__.py",
+    "src/app/domain/result.py",
+    "src/app/domain/note.py",
+    "src/app/ports/__init__.py",
+    "src/app/ports/note_sync.py",
+    "src/app/services/__init__.py",
+    "src/app/services/note_sync.py",
+    "src/app/adapters/__init__.py",
+    "src/app/adapters/system_clock.py",
+    "tests/__init__.py",
+    "tests/domain/__init__.py",
+    "tests/domain/test_result.py",
+    "tests/domain/test_note.py",
+    "tests/services/__init__.py",
+    "tests/services/test_note_sync_chaos.py",
+    "tests/chaos/__init__.py",
+    "tests/chaos/fault_server.py",
+    "tests/chaos/memory_outbox.py",
+    "tests/chaos/virtual_loop.py"
+  ],
+  "checks": [
+    {
+      "name": "Python tooling tests (stdlib, no install)",
+      "script": "py:tooling"
+    },
+    {
+      "name": "Python lint and format",
+      "script": "py:lint"
+    },
+    {
+      "name": "Python types (pyright strict)",
+      "script": "py:types"
+    },
+    {
+      "name": "Python import contracts",
+      "script": "py:boundaries"
+    },
+    {
+      "name": "Python unit and fault-injection tests",
+      "script": "py:test"
+    },
+    {
+      "name": "Python boundary self-test",
+      "script": "py:selftest"
+    }
+  ],
+  "editCheck": {
+    "extensions": [
+      ".py"
+    ],
+    "run": "stacks/python/check-edited.mjs"
+  },
+  "ejectRemove": [
+    "stacks/python/check-edited.mjs",
+    "stacks/python/check-edited.test.mjs"
+  ],
+  "ciHeavy": [],
+  "generated": [],
+  "packageJson": {
+    "scripts": [
+      "py:lint",
+      "py:types",
+      "py:boundaries",
+      "py:test",
+      "py:tooling",
+      "py:selftest"
+    ]
+  },
+  "claudeSettings": {
+    "allow": [
+      "Bash(pnpm py:lint)",
+      "Bash(pnpm py:types)",
+      "Bash(pnpm py:boundaries)",
+      "Bash(pnpm py:test)",
+      "Bash(pnpm py:tooling)",
+      "Bash(pnpm py:selftest)",
+      "Bash(uv run ruff *)",
+      "Bash(uv run pyright *)",
+      "Bash(uv run pytest *)",
+      "Bash(uv run lint-imports)"
+    ]
+  },
+  "leftovers": [
+    ".venv/",
+    ".ruff_cache/",
+    ".hypothesis/"
+  ]
+}

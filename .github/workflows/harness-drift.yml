@@ -1,0 +1,46 @@
+# Weekly check that this project's harness files match whippletree's dev, in both directions.
+# In the app: nothing at runtime; a red run is the signal to `pnpm harness:pull` (or `harness:push`).
+# Used by: GitHub Actions on a schedule, and by hand from the Actions tab.
+# Uses: scripts/harness-sync.mjs status (Node builtins + git only, so no install step); the
+#   HARNESS_TOKEN secret (a fine-grained token with contents:read on whippletree) when it is private.
+#
+# Not a required check and never on push or PR: drift is a chore to schedule, not a merge gate,
+# and it costs one short hosted job a week. In whippletree itself the script exits 0 at once.
+
+name: Harness drift
+
+on:
+  schedule:
+    # Mondays 14:00 UTC, so the red run is waiting at the start of the week.
+    - cron: "0 14 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Harness drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # No persisted GITHUB_TOKEN: checkout's auth header would apply to every github.com URL and
+      # override HARNESS_TOKEN when cloning the upstream.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # Exits 1 and lists each file, with the direction it should flow, when anything differs.
+      # A private upstream with no HARNESS_TOKEN secret can't be read; say so instead of failing weekly.
+      - name: Compare with whippletree
+        env:
+          HARNESS_TOKEN: ${{ secrets.HARNESS_TOKEN }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          if [ -z "$HARNESS_TOKEN" ] && ! git ls-remote --quiet "https://github.com/$(node -p 'require("./harness.json").upstream').git" >/dev/null 2>&1; then
+            echo "::notice::Upstream is private and HARNESS_TOKEN is not set; drift not checked. Run pnpm harness:status locally."
+            exit 0
+          fi
+          node scripts/harness-sync.mjs status

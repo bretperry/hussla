@@ -1,0 +1,24 @@
+---
+description: Python conventions (app and tooling-script profiles)
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Python
+
+- **Write for a human reader first.** Names say what the thing is or does, unabbreviated (`recalculate_user_progress`, not `recalc`). Read top-down, early return over nested `if`, a named intermediate over a dense one-liner.
+- **Two profiles, one pack.** The pack ships both because the rules differ and mixing them is the mistake:
+  - **App** (`src/app/`, `tests/`): `uv` + `pyproject.toml`, `ruff` (lint + format), `pyright` strict, `import-linter` contracts, `pytest` + `hypothesis`. Third-party packages allowed, locked in `uv.lock`.
+  - **Tooling** (`scripts/lib/*.py`): **stdlib only**, system `python3`, no install, so CI and a fresh clone run them with no virtualenv. `from __future__ import annotations`, full type hints, a `main(argv) -> int` entry, tests as `<name>_test.py` beside the file on `unittest`, run by `scripts/lib/run_unittests.py` (it fails on 0 tests; bare `unittest discover` calls that a pass on 3.11).
+  - A tooling script never imports a package from the dependency group, and app code never imports from `scripts/`. Knob modules (e.g. `scripts/lib/ci_knobs.py`) hold values YAML can't import; product knobs stay in `app/config.py`.
+- **Strict is the floor.** `pyproject.toml` sets pyright `strict` and a wide ruff rule set; never loosen a table. A one-off exception is `# pyright: ignore[rule]` or `# noqa: RULE`, on the line, with a why.
+- **Expected failures are values.** Domain functions and use-cases return `Result` (`app/domain/result.py`): a frozen dataclass per failure kind, handled by a `match` that ends in `assert_never`, so pyright fails a caller that misses a new kind. Raise only for broken invariants (bugs) and let them crash loud.
+- **The domain is pure, in two layers of enforcement.** Ruff's `TID251` bans I/O modules and calls (`os`, `pathlib`, `io`, `time`, `http`, `importlib`, `datetime.now` …) everywhere but adapters, tests, and scripts; it is a deny list in `pyproject.toml`, so grow it when a new I/O package arrives. `stacks/python/domain_purity.py` (in `pnpm py:boundaries` and the edit hook) is the allow list: the domain may import the standard library minus its I/O modules, `app.config`, and `app.domain`, and never call `open()` or `__import__()`. A third-party package in the domain fails it.
+- **Boundaries are one import-linter `layers` contract** (`container > services | adapters > ports > domain > config`; `docs/ports-and-adapters.md`). One `layers` contract, not `forbidden` ones, on purpose: a `forbidden` contract naming a module that doesn't exist (a typo, a rename) **passes silently**, a `layers` one fails with "module does not exist". `exhaustive = true` makes a new top-level module pick a layer. Every folder under `src/` and `tests/` needs an `__init__.py` (ruff `INP001`): import-linter cannot see a folder without one, so a violation inside it would pass. Only `src/app/` is under the contract: a sibling such as `src/other/` is outside it, so put app code in `app/`. `stacks/python/boundaries_test.py` proves each failure mode; run it after touching the contract.
+- **Parse at the boundary.** Validate input in adapters and at the API layer (`dataclass` + explicit checks, or pydantic in an adapter); the domain takes already-valid types.
+- **Time is an argument.** Use-cases take a `Clock` port and `asyncio` for sleeps and timeouts, so tier-2 tests run on a virtual-time loop (`testing-python.mdc`). No `datetime.now()` or `time.sleep()` in `src/app` outside `adapters/`.
+- **Per-edit hook** (`stacks/python/check-edited.mjs`): `ruff check`, `ruff format --check`, `pyright <file>`, and `lint-imports` on `src/` edits. About 1.5 s on the seed, so all four run on every edit. Before `uv sync` made `.venv` it falls back to a `py_compile` syntax check and says to run `uv sync`. A tool that crashes or fails without output is reported, never read as clean.
+- Dead code goes: ruff's `F401`/`F841` fail on unused imports and variables; delete, git remembers.
+- Prefer `dataclass(frozen=True, slots=True)` for values and `typing.Protocol` for ports.
+- Rename the seed package `app` once: the folder under `src/`, `[project] name`, and the contract's `root_package`.
+<!-- Part of the python stack pack: `pnpm stack:remove python` removes it. -->

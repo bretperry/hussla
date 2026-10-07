@@ -1,0 +1,44 @@
+---
+description: What to test and where, in any language — the four tiers, property tests, fakes of ports
+globs: "**/*.{test,spec}.*,**/*_test.*,**/test_*.py,**/tests/**"
+alwaysApply: false
+---
+
+# Testing
+
+The runner, the property-test library, and the worked examples belong to the language pack's own
+testing rule (`stacks/<name>/pack.json` → `docs`). This file is what holds in every language.
+
+## Every behavior lives in exactly one tier
+
+"Untested" is not a tier. Pick the cheapest tier that can reach the behavior.
+
+1. **Unit + property** — deterministic, every PR. The default.
+2. **Fault injection** — a model of the far side (server, store, clock, disk) driven by a fault
+   script: drop, delay, 5xx, kill mid-write, clock skew, full disk. Every PR, on virtual time and
+   seeded, so a failure replays. The model merges with the real domain rule and the test asserts
+   the outcome (what the far side holds, how often a write applied), not a call count. Each fault
+   the code handles has a test that goes red when its handler is removed. Each language pack's
+   testing rule names its seed, one test per fault kind, to copy.
+3. **Runbook** — scenarios no test process can reach (two real devices, a real radio, an OS
+   setting), in `docs/runbooks/<area>.md` from `docs/runbooks/_template.md`. Each numbered
+   scenario carries exactly one Human check id, so it lands on the checklist; `pnpm plans:check`
+   fails one without. A scenario that gains a seam leaves the runbook and becomes a test.
+4. **Human check** — judgment calls and real-device checks (`plans.mdc` → Human checks).
+
+Every PR that adds behavior says where it is tested: the PR template's **Tested by** line names
+a test path, a runbook scenario, or a check id. A PR adding behavior without one fails review
+(`farrier.mdc`).
+
+## How
+
+- Colocate a test beside its source, named the language's way.
+- **Property tests for pure domain code:** state the law (round-trips, idempotence, "a failure
+  passes through") and let the library generate the inputs.
+- **Don't mock the domain.** Use-cases are tested with in-memory fakes of their ports; the domain
+  runs for real. Tests may wire an adapter or a fake directly (they are exempt from import boundaries).
+- No real database in unit tests. Browser- or device-level coverage against real services is a
+  separate e2e tier with its own rule.
+- CI runs the full suite. Changed-file test selection is for local loops only: it follows static
+  imports and misses tests reached through the composition root.
+- Don't pipe test output through `head`/`grep`: a pipe hides the exit code (`core.mdc` → Claims need evidence).

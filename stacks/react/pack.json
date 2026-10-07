@@ -1,0 +1,11 @@
+{
+  "name": "react",
+  "kind": "add-on",
+  "summary": "React conventions for *.tsx: thin pages, feature components, forms, styling, component tests.",
+  "requires": ["typescript"],
+  "docs": [".cursor/rules/react.mdc"],
+  "code": [],
+  "owns": [],
+  "checks": [],
+  "generated": []
+}

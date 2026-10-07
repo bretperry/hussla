@@ -1,0 +1,40 @@
+# What `docker build` never sends to the daemon: secrets, VCS, dependencies, and anything the image doesn't run.
+# In the app: every image build reads it; the build context is the repo root.
+# Used by: docker build (any Dockerfile here, and CI's image build).
+#
+# Every file sent is a file a `COPY . .` can bake into a layer forever, so secrets and state go
+# first. Add a project's own dirs (apps it doesn't ship, e2e suites, native projects) below.
+
+# Secrets and infrastructure state: never in an image, even an intermediate stage.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.tfstate
+*.tfstate.*
+*.tfvars
+.terraform
+
+# Version control and agent and editor config.
+.git
+.githooks
+.github
+.cursor
+.claude
+.gemini
+.vscode
+.idea
+.DS_Store
+
+# Dependencies and build output: the image installs and builds its own.
+node_modules
+.pnpm-store
+coverage
+dist
+
+# Docs, plans, and infrastructure code: nothing at runtime reads them.
+docs
+infra
+*.md
+!README.md

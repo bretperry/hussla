@@ -1,0 +1,7 @@
+{
+  "domain": "internal/domain",
+  "app": "internal/app",
+  "config": "internal/config",
+  "adapters": "internal/adapters",
+  "testsupport": "internal/testsupport"
+}

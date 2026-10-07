@@ -1,0 +1,46 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.DS_Store
+coverage/
+dist/
+*.tsbuildinfo
+# pnpm plans:board output; the published artifact is the copy that matters.
+/plan-board.html
+# Build output (cargo; also Maven and sbt). Not fenced: a removed pack leaves `target/` on disk, and it must stay ignored.
+target/
+# Build output (Gradle: also JS and Python). Not fenced: a removed pack leaves `build/` on disk, and it must stay ignored.
+.gradle/
+.kotlin/
+build/
+# Android Studio writes the machine's SDK path here (sdk.dir); it is per machine, never committed.
+local.properties
+# [stack:python]
+.venv/
+__pycache__/
+.ruff_cache/
+.hypothesis/
+.pytest_cache/
+# [/stack:python]
+# Terraform state, plans, real variable values, and crash logs hold secrets. Not fenced with the
+# infra pack on purpose: `stack:remove infra` must never make one committable. Only
+# *.tfvars.example is committed (it doesn't match *.tfvars); so is .terraform.lock.hcl, which
+# pins provider versions and checksums.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+*.tfvars
+*.tfvars.json
+crash.log
+# SwiftPM and Xcode build output. Not fenced: a leftover .build/ must stay ignored after `stack:remove swift`.
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+# CMake build trees (the C++ pack). Not fenced: a leftover build-cpp/ must stay ignored after `stack:remove cpp`.
+build-cpp/
+# Personal agent overrides: each person's own models and budget, never committed (docs/guide/overrides.md).
+/agent-overrides.local.json

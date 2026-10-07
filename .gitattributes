@@ -1,0 +1,10 @@
+# Line endings for files the harness parses line by line or runs as scripts: always LF, whatever the checkout's core.autocrlf.
+# In the app: nothing at runtime; git applies it on checkout and commit.
+# Used by: git. Why each line is here, and nothing else is:
+#   *.mdc, *.md — scripts/sync-claude-rules.mjs, plans-status.mjs, and human-checks.mjs match `---\n` / `\n` line shapes;
+#                 a CRLF rule would read as a skill and drop out of AGENTS.md (the sync now also tolerates CRLF).
+#   *.sh, .githooks/* — a CRLF shebang (`bash\r`) won't run, so a Windows checkout's pre-push would fail to start.
+*.mdc text eol=lf
+*.md text eol=lf
+*.sh text eol=lf
+.githooks/* text eol=lf

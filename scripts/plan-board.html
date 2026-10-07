@@ -1,0 +1,232 @@
+<title>Plan Board</title>
+<!--
+  The plan board page. `node scripts/plans-status.mjs board --out <file>` inlines the data at
+  BOARD_DATA below; the plan-board skill publishes the result as an artifact.
+  In the app: nothing at runtime. Used by: scripts/plans-status.mjs. Uses: nothing external but two Google Fonts.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* Layout: one swimlane per plan (name · completion line · phase strip · next), live plans first, finished plans folded into one line at the bottom. */
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --fg: #1b2330; --muted: #5d6878; --rule: #dde2e9;
+    --landed: #2f9e5b; --landed-soft: #d7f0e0; --running: #2a6fdb; --review: #7a4fd6;
+    --ready: #d99a14; --ready-soft: #fdf1d3; --gated: #d0632a; --blocked: #cc3344;
+    --waiting: #c3cad4; --dropped: #9aa3ae;
+    --display: "Instrument Sans", system-ui, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #11151b; --panel: #181e26; --fg: #e3e8ef; --muted: #8f9aaa; --rule: #2a323d;
+    --landed: #43b872; --landed-soft: #193a28; --running: #5b95f0; --review: #9c7cf0;
+    --ready: #f0b53a; --ready-soft: #3a2e12; --gated: #e8814c; --blocked: #ec5a6b;
+    --waiting: #3b4552; --dropped: #5c6673; color-scheme: dark;
+  } }
+  :root[data-theme="dark"] {
+    --bg: #11151b; --panel: #181e26; --fg: #e3e8ef; --muted: #8f9aaa; --rule: #2a323d;
+    --landed: #43b872; --landed-soft: #193a28; --running: #5b95f0; --review: #9c7cf0;
+    --ready: #f0b53a; --ready-soft: #3a2e12; --gated: #e8814c; --blocked: #ec5a6b;
+    --waiting: #3b4552; --dropped: #5c6673; color-scheme: dark;
+  }
+  body { background: var(--bg); color: var(--fg); font: 13px/1.4 var(--display); }
+  .wrap { padding: 14px 16px 24px; max-width: 1500px; margin: 0 auto; display: grid; gap: 12px; }
+  .wrap > * { min-width: 0; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; }
+  h1 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
+  .stamp { color: var(--muted); font: 11px var(--mono); }
+  .legend { min-width: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; margin-left: auto; font-size: 12px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend b { color: var(--fg); font: 600 12px var(--mono); }
+  .key { width: 11px; height: 11px; border-radius: 3px; display: inline-block; box-sizing: border-box; border: 1.5px solid transparent; }
+
+  .lanes { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; overflow-x: auto; }
+  .lane { display: grid; grid-template-columns: minmax(150px, 220px) 120px minmax(220px, 1fr) minmax(200px, 340px); gap: 14px; align-items: center; padding: 7px 12px; border-top: 1px solid var(--rule); min-width: 760px; }
+  .lane:first-child { border-top: 0; }
+  .lane.head { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); padding-block: 6px; }
+  .name { min-width: 0; }
+  .name strong { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .name code { font: 10.5px var(--mono); color: var(--muted); }
+
+  .bar { display: grid; gap: 3px; }
+  .track { height: 6px; border-radius: 3px; background: var(--waiting); display: flex; overflow: hidden; }
+  .track i { display: block; height: 100%; }
+  .pct { font: 11px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+  .pct b { color: var(--fg); }
+
+  .strip { display: flex; flex-wrap: wrap; align-items: center; row-gap: 5px; }
+  .chip { position: relative; min-width: 26px; height: 22px; padding: 0 5px; border-radius: 5px; border: 1.5px solid transparent; font: 600 10.5px/19px var(--mono); text-align: center; cursor: pointer; margin-right: 8px; color: #fff; background: var(--waiting); }
+  .chip.link::before { content: ""; position: absolute; left: -9.5px; top: 9px; width: 8px; height: 1.5px; background: var(--muted); opacity: 0.55; }
+  .chip:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+  .chip.hl { outline: 2px solid var(--fg); outline-offset: 1px; }
+  .s-landed { background: var(--landed); }
+  /* Landed with checks open: the soft fill keeps the id readable; the striped foot says "not finished". */
+  .s-landed-checks { background: linear-gradient(var(--landed-soft), var(--landed-soft)) top / 100% 62% no-repeat, repeating-linear-gradient(135deg, var(--landed) 0 3px, var(--landed-soft) 3px 6px); color: var(--fg); border-color: var(--landed); }
+  .s-running { background: var(--running); }
+  .s-review { background: var(--review); }
+  .s-ready { background: var(--ready-soft); color: var(--fg); border-color: var(--ready); }
+  .s-gated { background: transparent; color: var(--gated); border: 1.5px dashed var(--gated); }
+  .s-blocked { background: var(--blocked); }
+  .s-waiting { background: transparent; color: var(--muted); border-color: var(--waiting); }
+  .s-dropped { background: transparent; color: var(--dropped); border-color: var(--rule); text-decoration: line-through; }
+  .stale::after { content: "!"; position: absolute; top: -7px; right: -6px; width: 12px; height: 12px; border-radius: 6px; background: var(--blocked); color: #fff; font: 700 9px/12px var(--mono); }
+
+  .next { min-width: 0; display: grid; gap: 2px; font-size: 12px; }
+  .next div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .next .tag { font: 600 10.5px var(--mono); margin-right: 5px; }
+  .next .m { color: var(--muted); font-size: 11px; }
+  .done-note { color: var(--muted); }
+
+  .folded { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 12px; color: var(--muted); }
+  .folded span { display: inline-flex; align-items: center; gap: 6px; }
+  .folded i { width: 26px; height: 5px; border-radius: 3px; background: var(--landed); display: inline-block; }
+  .folded i.checks { background: repeating-linear-gradient(135deg, var(--landed) 0 4px, var(--landed-soft) 4px 7px); }
+
+  .attn { background: var(--panel); border: 1px solid var(--rule); border-left: 3px solid var(--blocked); border-radius: 8px; padding: 8px 12px; font-size: 12px; }
+  .attn h2 { font-size: 12px; margin: 0 0 4px; }
+  .attn li { font: 11px/1.6 var(--mono); overflow-wrap: anywhere; }
+  .attn ul { margin: 0; padding-left: 16px; }
+
+  #tip { position: fixed; z-index: 5; max-width: 360px; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; box-shadow: 0 6px 24px rgb(0 0 0 / 0.18); padding: 9px 11px; font-size: 12px; pointer-events: none; }
+  #tip h3 { margin: 0 0 4px; font-size: 13px; }
+  #tip dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 0; }
+  #tip dt { color: var(--muted); }
+  #tip dd { margin: 0; font-family: var(--mono); font-size: 11px; overflow-wrap: anywhere; }
+
+  /* Phone: each lane stacks (name and completion, then phases, then next) instead of scrolling sideways. */
+  @media (max-width: 760px) {
+    .legend { margin-left: 0; flex-basis: 100%; }
+    .lane { min-width: 0; grid-template-columns: minmax(0, 1fr) 110px; gap: 6px 12px; }
+    .lane.head { display: none; }
+    .strip, .next { grid-column: 1 / -1; }
+  }
+  @media (prefers-reduced-motion: no-preference) { .chip { transition: outline-color 0.1s; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Plan Board</h1>
+    <span class="stamp" id="stamp"></span>
+    <div class="legend" id="legend"></div>
+  </header>
+  <div class="lanes" id="lanes"></div>
+  <div class="folded" id="folded"></div>
+  <div id="attn"></div>
+</div>
+<div id="tip" hidden></div>
+
+<script>
+const DATA = /*BOARD_DATA*/null;
+
+// Board statuses, the order they appear in the legend, and what each means to a reader.
+const STATES = [
+  ["landed", "Landed", "var(--landed)"],
+  ["landed-checks", "Landed, human checks open", "var(--landed)"],
+  ["review", "QA passed, waiting on merge", "var(--review)"],
+  ["running", "In progress", "var(--running)"],
+  ["ready", "Unblocked, can start", "var(--ready)"],
+  ["gated", "Waiting on a gate", "var(--gated)"],
+  ["blocked", "Blocked", "var(--blocked)"],
+  ["waiting", "Waiting on a phase", "var(--waiting)"],
+  ["dropped", "Dropped", "var(--dropped)"],
+];
+// Plan text is markdown; the board shows it plain.
+const plain = (s) => String(s).replace(/\*\*|__|`/g, "");
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const chipState = (p) => (p.board === "landed" && p.state.checksOpen ? "landed-checks" : p.board);
+
+function render(data) {
+  if (!data) {
+    document.getElementById("lanes").innerHTML = '<div class="lane"><span>No board data. Run <code>node scripts/plans-status.mjs board --out &lt;file&gt;</code>.</span></div>';
+    return;
+  }
+  const staleAt = new Set(data.stale.map((f) => `${f.file}:${f.line}`));
+  document.getElementById("stamp").textContent = `${data.repo} · ${new Date(data.generatedAt).toLocaleString()}`;
+
+  const counts = {};
+  for (const plan of data.plans) for (const p of plan.phases) counts[chipState(p)] = (counts[chipState(p)] || 0) + 1;
+  document.getElementById("legend").innerHTML = STATES.filter(([k]) => counts[k])
+    .map(([k, label]) => `<span><i class="key s-${k}"></i>${label} <b>${counts[k]}</b></span>`).join("");
+
+  // Live plans first: in flight, then startable, then stuck; finished plans fold into one line.
+  const rank = { active: 0, ready: 1, stuck: 2 };
+  const live = data.plans.filter((p) => p.phases.length && !["done", "landed-checks"].includes(p.summary.status))
+    .sort((a, b) => rank[a.summary.status] - rank[b.summary.status] || a.summary.landed / a.summary.total - b.summary.landed / b.summary.total);
+  const finished = data.plans.filter((p) => ["done", "landed-checks"].includes(p.summary.status));
+
+  const rows = live.concat(finished.filter((p) => p.summary.checksOpen)).map((plan) => {
+    const s = plan.summary;
+    const byId = new Map(plan.phases.map((p) => [p.id, p]));
+    const seg = (k) => plan.phases.filter((p) => p.board !== "dropped" && chipState(p) === k).length / (s.total || 1) * 100;
+    const track = ["landed", "landed-checks", "review", "running"].map((k) => `<i class="s-${k}" style="width:${seg(k)}%"></i>`).join("");
+    const chips = plan.phases.map((p, i) => {
+      const prev = plan.phases[i - 1];
+      const link = prev && p.after.deps.includes(prev.id) ? " link" : "";
+      const stale = staleAt.has(`${plan.file}:${p.line}`) ? " stale" : "";
+      return `<button class="chip s-${chipState(p)}${link}${stale}" data-plan="${esc(plan.slug)}" data-id="${esc(p.id)}">${esc(p.id)}</button>`;
+    }).join("");
+    const line = (id, cls, word) => {
+      const p = byId.get(id);
+      return `<div><span class="tag" style="color:var(--${cls})">${word} ${esc(id)}</span>${esc(plain(p.what))} <span class="m">${esc(p.model)}</span></div>`;
+    };
+    const next = [
+      ...s.active.map((id) => line(id, byId.get(id).board === "review" ? "review" : "running", byId.get(id).board === "review" ? "merge" : "doing")),
+      ...s.next.map((id) => line(id, "ready", "next")),
+    ];
+    if (!next.length && s.blocked.length) next.push(line(s.blocked[0], "gated", "stuck"));
+    if (!next.length) next.push(`<div class="done-note">${s.checksOpen ? `${s.checksOpen} human checks open` : "nothing startable"}</div>`);
+    return `<div class="lane">
+      <div class="name"><strong title="${esc(plan.title)}">${esc(plan.title)}</strong><code>${esc(plan.slug)}</code></div>
+      <div class="bar"><div class="track">${track}</div><span class="pct"><b>${s.landed}</b>/${s.total} landed${s.checksOpen ? ` · ${s.checksOpen} checks` : ""}</span></div>
+      <div class="strip">${chips}</div>
+      <div class="next">${next.slice(0, 3).join("")}${next.length > 3 ? `<div class="m">+${next.length - 3} more</div>` : ""}</div>
+    </div>`;
+  });
+  document.getElementById("lanes").innerHTML = `<div class="lane head"><span>Plan</span><span>Completion</span><span>Phases</span><span>Next</span></div>${rows.join("")}`;
+
+  const clean = finished.filter((p) => !p.summary.checksOpen);
+  document.getElementById("folded").innerHTML = clean.length
+    ? `<strong style="color:var(--fg)">Done</strong>${clean.map((p) => `<span><i></i>${esc(p.title)}</span>`).join("")}` : "";
+
+  const issues = [...data.stale, ...data.problems];
+  document.getElementById("attn").innerHTML = issues.length
+    ? `<div class="attn"><h2>Needs attention (${issues.length})</h2><ul>${issues.map((f) => `<li>${esc(f.file)}:${f.line} ${esc(f.message)}</li>`).join("")}</ul></div>` : "";
+
+  wireTips(data);
+}
+
+// Hover or focus a phase: show its row, outline what it waits on.
+function wireTips(data) {
+  const tip = document.getElementById("tip");
+  const find = (el) => data.plans.find((p) => p.slug === el.dataset.plan).phases.find((p) => p.id === el.dataset.id);
+  const clear = () => { tip.hidden = true; document.querySelectorAll(".chip.hl").forEach((c) => c.classList.remove("hl")); };
+  const show = (el) => {
+    clear();
+    const p = find(el);
+    const gates = p.after.gates.map((g) => `${g.text}${g.cleared ? " ✓" : ""}`).join("; ");
+    const label = STATES.find(([k]) => k === chipState(p))[1];
+    tip.innerHTML = `<h3>${esc(el.dataset.plan)} · ${esc(p.id)}</h3><dl>
+      <dt>What</dt><dd>${esc(plain(p.what))}</dd>
+      <dt>Status</dt><dd>${esc(label)}</dd>
+      <dt>After</dt><dd>${esc(p.after.deps.join(", ") || "—")}${gates ? `; ${esc(gates)}` : ""}</dd>
+      <dt>Model</dt><dd>${esc(p.model)}</dd>
+      <dt>State</dt><dd>${esc(p.state.raw || "—")}</dd></dl>`;
+    for (const id of p.after.deps) document.querySelector(`.chip[data-plan="${CSS.escape(el.dataset.plan)}"][data-id="${CSS.escape(id)}"]`)?.classList.add("hl");
+    tip.hidden = false;
+    const r = el.getBoundingClientRect();
+    const x = Math.min(r.left, innerWidth - tip.offsetWidth - 12);
+    const below = r.bottom + 8 + tip.offsetHeight < innerHeight;
+    tip.style.left = `${Math.max(8, x)}px`;
+    tip.style.top = `${below ? r.bottom + 8 : r.top - tip.offsetHeight - 8}px`;
+  };
+  document.querySelectorAll(".chip").forEach((el) => {
+    el.addEventListener("mouseenter", () => show(el));
+    el.addEventListener("focus", () => show(el));
+    el.addEventListener("click", () => show(el));
+    el.addEventListener("mouseleave", clear);
+    el.addEventListener("blur", clear);
+  });
+}
+
+render(DATA);
+</script>

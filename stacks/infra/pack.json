@@ -1,0 +1,85 @@
+{
+  "name": "infra",
+  "kind": "add-on",
+  "summary": "Terraform and Docker, cloud-neutral: fmt, validate, tflint, hadolint; humans apply; deploy and rollback runbook template.",
+  "requires": [],
+  "adoptOn": [
+    "docs/runbooks/_deploy.md"
+  ],
+  "docs": [
+    ".cursor/rules/infra.mdc",
+    "docs/runbooks/_deploy.md"
+  ],
+  "code": [
+    "stacks/infra/check.mjs",
+    "stacks/infra/check-edited.mjs",
+    "stacks/infra/install-tools.sh",
+    "stacks/infra/infra.test.mjs",
+    "stacks/infra/fixtures/bad-tf/main.tf",
+    "stacks/infra/fixtures/good-tf/main.tf",
+    "stacks/infra/fixtures/docker-latest/Dockerfile",
+    "stacks/infra/fixtures/docker-pinned/Dockerfile"
+  ],
+  "owns": [
+    ".tflint.hcl",
+    ".hadolint.yaml"
+  ],
+  "checks": [
+    {
+      "name": "Terraform format",
+      "script": "infra:fmt"
+    },
+    {
+      "name": "Terraform validate",
+      "script": "infra:validate"
+    },
+    {
+      "name": "Terraform lint",
+      "script": "infra:lint"
+    },
+    {
+      "name": "Dockerfile lint",
+      "script": "infra:docker"
+    }
+  ],
+  "editCheck": {
+    "extensions": [
+      ".tf",
+      ".tfvars"
+    ],
+    "names": [
+      "^(Dockerfile|Containerfile)(\\..+)?$",
+      "\\.(Dockerfile|Containerfile)$"
+    ],
+    "run": "stacks/infra/check-edited.mjs"
+  },
+  "ejectRemove": [
+    "stacks/infra/check-edited.mjs"
+  ],
+  "ciHeavy": [
+    "(^|/)(Dockerfile|Containerfile)(\\.[^/]+)?$",
+    "\\.(Dockerfile|Containerfile)$",
+    "(^|/)\\.dockerignore$"
+  ],
+  "generated": [],
+  "packageJson": {
+    "scripts": [
+      "infra:fmt",
+      "infra:validate",
+      "infra:lint",
+      "infra:docker"
+    ]
+  },
+  "claudeSettings": {
+    "allow": [
+      "Bash(pnpm infra:fmt)",
+      "Bash(pnpm infra:validate)",
+      "Bash(pnpm infra:lint)",
+      "Bash(pnpm infra:docker)",
+      "Bash(terraform fmt *)",
+      "Bash(terraform validate *)",
+      "Bash(tflint *)",
+      "Bash(hadolint *)"
+    ]
+  }
+}

@@ -1,0 +1,38 @@
+---
+description: Compound — after a PR merges or a hard bug is fixed, turn what was learned into enforcement, a rule line, a learning, or a decision, so the next session doesn't re-learn it
+alwaysApply: false
+---
+
+# Compound
+
+Each unit of work should make the next one cheaper (borrowed from Every's compound engineering).
+Runs after a PR merges (the showrunner and the wrangler trigger it) or when the user says
+"compound" / "what did we learn". Most PRs produce nothing, and that's the right answer for them.
+
+Start prompt: *"compound #N (`compound.mdc`)."*
+
+## Read
+
+The PR's diff, its review threads, its CI failures, and any user corrections in the session that
+built it. Those are where mistakes show up.
+
+## Ask, in order; stop at the first that fits
+
+1. **Will an agent make this mistake again?** Pick the strongest fix that stops it:
+   - a check that fails (a boundary rule, a lint rule, a test, a hook in `scripts/command-guard.mjs`);
+   - a rule line in the matching `.cursor/rules/*.mdc`;
+   - a learning in `docs/learnings/`.
+   Advice is the weakest option: agents skip it. Enforcement is the strongest: they can't.
+2. **Did we learn how something non-obvious works?** A vendor quirk, a flaky test's real cause, a
+   migration gotcha: a learning (`docs/learnings/README.md` has the shape).
+3. **Did we make a choice that constrains future work?** A decision (`docs/decisions/README.md`).
+4. **Did we knowingly leave something undone?** An entry in `docs/deferred.md` (`core.mdc`).
+
+## Rules
+
+- Search before writing: `grep -ril <topic> docs/learnings/ docs/decisions/`. Update, don't duplicate.
+- Can't name the check that would have caught it? Then it isn't a learning yet. Don't write "be careful".
+- When a learning becomes enforcement, delete the learning in the same change.
+- A rule line, learning, or decision is docs-only: commit on `dev` with `[skip ci]` (`branching.mdc`).
+  A new check is code: feature branch, draft PR.
+- Report in one line per item: what you added and where. Report "nothing to compound" when that's true.

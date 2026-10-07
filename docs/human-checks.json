@@ -1,0 +1,9 @@
+{
+  "gates": ["deploy", "ios-release", "desktop-release", "none"],
+  "stations": [
+    { "id": "prod", "name": "Prod, right after a deploy", "note": "Do these within about 10 minutes of a ship landing.", "where": ["prod"] },
+    { "id": "mobile", "name": "Phone and watch", "note": "Real devices. These gate a mobile release, not a server deploy.", "where": ["iPhone", "Watch"] },
+    { "id": "desktop", "name": "Desktop bench", "note": "These gate a desktop release.", "where": ["Mac", "Windows", "Linux"] },
+    { "id": "decision", "name": "Decisions only a human can make", "note": "No hardware needed. Just a call.", "where": ["decision"] }
+  ]
+}

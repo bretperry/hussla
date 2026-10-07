@@ -1,0 +1,72 @@
+---
+description: Dynamite test — a fresh subagent sees only the diff and tries to break the change before it merges
+alwaysApply: false
+---
+
+# Dynamite test
+
+A fresh reviewer that tries to blow up the change before it merges. The showrunner (QA), the
+wrangler (merge time), farrier, and ship each say *what* to test; `scope` below says *whether*
+they do; this is *how*. Run it on its own whenever the user asks for a dynamite test of #N,
+whatever the scope.
+
+Start prompt: *"dynamite test of #N (`dynamite-test.mdc`)."*
+
+- Spawn a fresh subagent. Give it only the PR diff (for a batch, all of them together) and the
+  goal. It does not see the author's summary or your reasoning, because it has to disagree with both.
+- Its job is to break the change: silent failures, commit-point order, auth and permission
+  holes, backfill and sign-out at deploy, races, and inputs the tests skip. It returns
+  findings, each with the concrete input or state that fails.
+- Every finding is fixed or gets one line in the PR on why it isn't a problem. Don't drop
+  findings silently.
+- It runs while the PR is still a draft. It costs tokens, not CI minutes.
+
+## When it runs
+
+`dynamiteTest.scope` in `agent-overrides.json` (the team's), or a wider one in a person's own
+`agent-overrides.local.json` (`docs/guide/overrides.md`); absent means `high-risk`. Each value is a
+superset of the next:
+
+- `all` — every PR, before it's marked ready. The PR's driver runs it (showrunner QA, the
+  wrangler, farrier, or whoever opened it).
+- `high-risk` (default) — phases the plan marks `deep` or `frontier`, any phase or PR with a
+  migration, the wrangler's own integration code and PRs with no QA owner, the wrangler's
+  batch as a whole, any PR that touches auth, permissions, secrets, deletes data, or edits hooks,
+  CI, or the command guard; plus every `major-release` ship. Skip docs-only and test-only phases.
+- `major-release` — only a ship (`ship.mdc`) whose `CHANGELOG.md` cuts a new major version (or
+  the first release), or that the user calls major. A project without version numbers treats
+  every ship as major.
+
+`dynamiteTest.rivalScope` (optional) is the same three values for the rival alone (below). Absent means it
+follows `scope`; it may be the same or narrower, never wider, because the rival only runs inside a
+dynamite test. It is for a rival with a smaller token budget than `home`: `"rivalScope":
+"major-release"` keeps Claude testing every high-risk change and spends ChatGPT tokens only on
+major ships.
+
+`pnpm rival scope` prints both (`test: <scope>` then `rival: <scope or off>`; `off` when no rival
+is picked); follow what it prints. A setting the script can't read, a `rivalScope` wider than
+`scope`, or a personal `scope` narrower than the team's fails loudly, naming the file; fix the file,
+don't work around it.
+
+## Rival
+
+When this project picks a `rival` model for `deep` (`pnpm models`; `plans.mdc` → Model tiers), the
+rival (OpenAI Codex, so ChatGPT) tests too, on that model, on every change in `rivalScope`: a
+second opinion that doesn't share `home`'s blind spots. No pick there means no rival, and none of
+this section applies.
+
+**How:**
+
+- `pnpm rival review --base origin/dev [focus]`, from the PR's branch. It is read-only and runs
+  alongside the `home` subagent, not instead of it. Give it the goal as the focus, nothing else.
+- Every rival finding goes through the same gate as a `home` one: fixed, or one line in the PR on
+  why it isn't a problem. Where the two disagree, **ask the rival** before deciding:
+  `pnpm rival chat "<the finding, your counter-evidence, file:line>"`, then
+  `pnpm rival chat --resume "<follow-up>"` to keep the thread. Two rounds at most; still split →
+  put both views in the PR and let the user call it.
+- Not set up (`pnpm rival doctor` exits 1): say so once in the PR and carry on with `home` alone.
+  Installing the CLI and signing in are the user's steps (`docs/guide/getting-started.md` →
+  Rival reviewer); never ask for or store a key.
+- The plugin also brings `/codex:rescue` and a `codex-rescue` subagent that hands Codex a task
+  and lets it write code. Use them only when the user asks or a phase's Model cell says `· rival`;
+  otherwise `home` builds (`plans.mdc` → Model tiers).

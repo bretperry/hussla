@@ -1,0 +1,115 @@
+{
+  "name": "typescript",
+  "kind": "language",
+  "summary": "TypeScript 7 strict, type-aware oxlint, dependency-cruiser boundaries, Vitest + fast-check, knip.",
+  "requires": [],
+  "docs": [
+    ".cursor/rules/typescript.mdc",
+    ".cursor/rules/testing-ts.mdc"
+  ],
+  "code": [
+    "stacks/typescript/check-edited.mjs",
+    "stacks/typescript/ci-heavy.test.mjs",
+    "tsconfig.base.json",
+    ".oxlintrc.json"
+  ],
+  "owns": [
+    "tsconfig.json",
+    "vitest.config.ts",
+    "knip.json",
+    ".dependency-cruiser.cjs",
+    "src/domain/result.ts",
+    "src/domain/result.test.ts",
+    "src/config/sync.ts",
+    "src/domain/note.ts",
+    "src/domain/note.test.ts",
+    "src/server/ports/note-sync.ts",
+    "src/server/services/note-sync.ts",
+    "src/server/services/note-sync.chaos.test.ts",
+    "src/test/chaos/fault-server.ts",
+    "src/test/chaos/memory-outbox.ts",
+    "docs/decisions/0001-ports-and-adapters-enforced-by-dependency-cruiser.md"
+  ],
+  "checks": [
+    {
+      "name": "Typecheck",
+      "script": "typecheck"
+    },
+    {
+      "name": "Lint",
+      "script": "lint"
+    },
+    {
+      "name": "Import boundaries",
+      "script": "boundaries"
+    },
+    {
+      "name": "Unit tests",
+      "script": "test"
+    },
+    {
+      "name": "Dead code and unused dependencies",
+      "script": "knip"
+    }
+  ],
+  "editCheck": {
+    "extensions": [
+      ".ts",
+      ".tsx",
+      ".mts",
+      ".cts",
+      ".js",
+      ".jsx",
+      ".mjs",
+      ".cjs"
+    ],
+    "run": "stacks/typescript/check-edited.mjs"
+  },
+  "ejectRemove": [
+    "stacks/typescript/check-edited.mjs"
+  ],
+  "ciHeavy": [
+    "^tsconfig[^/]*\\.json$"
+  ],
+  "generated": [],
+  "packageJson": {
+    "scripts": [
+      "typecheck",
+      "lint",
+      "boundaries",
+      "knip",
+      "test",
+      "test:watch"
+    ],
+    "devDependencies": [
+      "@swc/core",
+      "@types/node",
+      "dependency-cruiser",
+      "fast-check",
+      "knip",
+      "oxlint",
+      "oxlint-tsgolint",
+      "typescript",
+      "vitest"
+    ],
+    "ignoredBuiltDependencies": [
+      "@swc/core"
+    ]
+  },
+  "claudeSettings": {
+    "allow": [
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm lint *)",
+      "Bash(pnpm boundaries)",
+      "Bash(pnpm knip)",
+      "Bash(pnpm test)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm exec vitest *)",
+      "Bash(pnpm exec depcruise *)"
+    ],
+    "plugins": [
+      "typescript-lsp@claude-plugins-official"
+    ]
+  }
+}

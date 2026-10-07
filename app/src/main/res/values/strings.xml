@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The app's user-facing text: every word on screen lives here, so it can be translated.
+  In the app: read by MainActivity and the manifest (the app's name).
+  Used by: app/src/main/AndroidManifest.xml, MainActivity.kt, MainActivityTest.kt.
+-->
+<resources>
+    <string name="app_name">Notes</string>
+    <string name="status_ready">Ready</string>
+</resources>

@@ -1,0 +1,94 @@
+---
+description: File headers and staff-to-junior comments for hand-written app, schema, CI, infra, and scripts
+globs: src/**,scripts/**,.githooks/**,.github/**,infra/**,prisma/**,Dockerfile,docker-compose.yml,*.config.*
+alwaysApply: false
+---
+
+# File and function comments
+
+Anytime you touch a hand-written file in the lists below, **review** its header and the comments next to the change: refresh a stale description / Used by / Uses, add a why-comment if this edit introduced an odd bit, drop comments the code no longer matches. Do not restyle comments that are still true (including older headers that lack overflow notes).
+
+Bring the **whole file** up to this standard on create or a meaningful rewrite of that file. Do not sweep untouched files.
+
+**Do** — hand-written source (`src/**`), schema and seed files, framework config with logic in it, `Dockerfile`, `docker-compose.yml`, `.github/workflows/*.yml`, `infra/**`, `scripts/**`, `.githooks/*`.
+
+**Skip** — generated code (ORM clients, `*-env.d.ts`, migrations SQL), lockfiles, dependencies, JSON configs (`package.json`, compiler configs), thin tool configs (eslint, postcss, test runner), and prose docs (`docs/`, README, `AGENTS.md`, `.cursor/rules`).
+
+Write like a staff engineer briefing a junior: skim bullets, what + why, no essays.
+
+## File header
+
+The header is the scan surface: someone grasping the architecture reads only these lines, so **every one of them is a single line**. Anything longer goes in a paragraph below — it never widens a labeled line.
+
+First line is the description (what this file is) with no `What:` label. Then:
+
+- **In the app** — how it fits (who cares, when it runs)
+- **Used by** — callers (names/paths, not a paragraph)
+- **Uses** — important deps (skip React/Tailwind noise); omit the line if nothing non-obvious
+
+Add **Watch** only if the *whole file* exists for an edge, security, or "looks unused" reason — still one line.
+
+One line each is a hard limit. If context will not fit (pipeline, install steps, onboarding explanation, edge case, a threat that needs two sentences), keep the labeled lines short and add it as a paragraph **after a blank line**. Same comment syntax, prose there, not an essay. Do not stuff overflow into the description / In the app / Used by / Uses / Watch. The single-line rule is for skimmability, not for cutting content: never compress real information out of a header line just to keep it to one line — push it to the paragraph instead.
+
+TypeScript / JS — plain `/* … */` block at the top, no `*` gutter on the inner lines, just open and close (immediately after `"use client"` / `"use server"` if present; imports below):
+
+```ts
+/*
+  Note CRUD against Postgres for one user.
+  In the app: the only write path for notes; API handlers call this, never the UI.
+  Used by: the notes API handlers; archive also triggers the search reindex.
+  Uses: the notes repository port, mapNote, reindexUserNotes.
+
+  Archive leaves rows so links and history still resolve; the UI hides archived notes.
+*/
+```
+
+Schema files, Terraform, Dockerfile, YAML, shell — same labeled lines with that language's comment syntax (`//` or `#`). Dockerfile: keep `# syntax=` as line 1; header goes on line 2. Examples: `docs-infra.mdc`.
+
+## Function notes
+
+One `//` line directly above the function is preferred: what it does, plus where it matters if the header doesn't already say. No JSDoc `@param` / `@returns`. Do not restate the identifier (`// Creates a note` is banned).
+
+```ts
+// Loads this user's notes; the notes list and the dashboard start here.
+export const listNotes = async (...) => { ... }
+
+// YYYY-MM-DD for storage/API; never a Date object past this helper.
+export const toDateKey = (date: Date | string): string => { ... }
+```
+
+If one line isn't enough — a non-obvious algorithm, a gotcha for callers, a why that needs more than a clause — keep that first line as the single-line summary and add a paragraph underneath (blank line, then prose, same `//` syntax). The single-line rule is for skimmability, not for cutting content: never compress real information out of the comment just to keep it to one line.
+
+```ts
+// Reconciles local queue against server state; runs on reconnect.
+//
+// Server is source of truth for ordering, but locally-queued writes made
+// while offline must replay after the reconcile or they're silently dropped.
+export const reconcileQueue = async (...) => { ... }
+```
+
+Skip obvious one-line getters. Tests: same file header; only comment helpers/setup that `it("...")` doesn't already say. If a test exists only to lock an edge/security case, one line why.
+
+## Scripts — `scripts/*`, `.githooks/*`
+
+Narrated line by line, not why-only: `docs-scripts.mdc` (loads when you open one).
+
+## Why comments (required)
+
+Comment on the line above the odd bit — **what + why**. Use whenever a junior would want to "clean it up":
+
+- **Weird / uncommon / edge** — what edge, what breaks without it
+- **Security** — the threat and the cost of dropping it
+- **Looks unnecessary but required** — why it looks dead and why it isn't (hydration, localhost vs prod, eslint-disable with a real reason)
+
+```ts
+// Forces HTTP → HTTPS. Fine on the real hosts; breaks `pnpm dev` on http://localhost.
+...(secureTransport ? ["upgrade-insecure-requests"] : [])
+
+// Keep one DOM shape for SSR + first client paint so next-themes cannot skew hydration.
+const activeId = mounted && isThemeId(theme) ? theme : "dark";
+```
+
+Bad: `// security` / `# edge case` / `// don't remove` with no why.
+
+When rewriting existing comments, convert to this format — don't stack a second style. Keep real constraints (eslint-disable, hydration, security); tighten vague ones to what + why.

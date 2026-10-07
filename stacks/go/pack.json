@@ -1,0 +1,86 @@
+{
+  "name": "go",
+  "kind": "language",
+  "summary": "Go 1.25: golangci-lint v2 (errorlint, wrapcheck, exhaustive, gofumpt), depguard layer boundaries with planted-violation gates, go test -race + rapid, testing/synctest fault injection.",
+  "requires": [],
+  "docs": [
+    ".cursor/rules/go.mdc",
+    ".cursor/rules/testing-go.mdc"
+  ],
+  "code": [
+    "stacks/go/check-edited.mjs",
+    "stacks/go/run.mjs",
+    "stacks/go/gates.mjs",
+    "stacks/go/gates.test.mjs"
+  ],
+  "owns": [
+    "go.mod",
+    "go.sum",
+    ".golangci.yml",
+    "stacks/go/gates.project.json",
+    "internal/config/sync.go",
+    "internal/domain/errors.go",
+    "internal/domain/note.go",
+    "internal/domain/note_test.go",
+    "internal/domain/outcome.go",
+    "internal/domain/outcome_test.go",
+    "internal/app/notesync/ports.go",
+    "internal/app/notesync/service.go",
+    "internal/app/notesync/service_chaos_test.go",
+    "internal/testsupport/chaos/faultserver.go",
+    "internal/testsupport/chaos/memoryoutbox.go"
+  ],
+  "checks": [
+    {
+      "name": "Go lint, vet, and import boundaries",
+      "script": "go:lint"
+    },
+    {
+      "name": "Go gates still bite",
+      "script": "go:gates"
+    },
+    {
+      "name": "Go tests (race detector)",
+      "script": "go:test"
+    },
+    {
+      "name": "Go module tidy",
+      "script": "go:tidy"
+    }
+  ],
+  "editCheck": {
+    "extensions": [
+      ".go"
+    ],
+    "run": "stacks/go/check-edited.mjs"
+  },
+  "ejectRemove": [
+    "stacks/go/check-edited.mjs"
+  ],
+  "ciHeavy": [
+    "^go\\.(mod|sum)$"
+  ],
+  "generated": [],
+  "packageJson": {
+    "scripts": [
+      "go:lint",
+      "go:gates",
+      "go:test",
+      "go:tidy"
+    ]
+  },
+  "claudeSettings": {
+    "allow": [
+      "Bash(pnpm go:lint)",
+      "Bash(pnpm go:gates)",
+      "Bash(pnpm go:test)",
+      "Bash(pnpm go:tidy)",
+      "Bash(go test *)",
+      "Bash(go vet *)",
+      "Bash(golangci-lint run *)"
+    ],
+    "plugins": [
+      "gopls-lsp@claude-plugins-official"
+    ]
+  }
+}

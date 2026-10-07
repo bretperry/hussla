@@ -1,0 +1,10 @@
+// Project compiler settings; the strict baseline lives in tsconfig.base.json (harness-owned).
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    // TS 7 defaults `types` to []; name the ambient packages the code actually uses.
+    "types": ["node"],
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src", "scripts", "vitest.config.ts"]
+}

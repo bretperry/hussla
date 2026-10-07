@@ -1,0 +1,126 @@
+{
+  "name": "cpp",
+  "kind": "language",
+  "summary": "C++20 on CMake presets + Ninja: layers as CMake targets checked as evaluated (File API, ninja deps, nm), -Werror with a named warning set, clang-tidy floor + clang-format, GoogleTest under ASan+UBSan and TSan (gcc too in CI), virtual-time fault injection; planted-violation gates.",
+  "requires": [],
+  "adoptOn": [
+    "cpp-layers.json"
+  ],
+  "docs": [
+    ".cursor/rules/cpp.mdc",
+    ".cursor/rules/testing-cpp.mdc"
+  ],
+  "code": [
+    "stacks/cpp/tool.mjs",
+    "stacks/cpp/tool.test.mjs",
+    "stacks/cpp/sources.mjs",
+    "stacks/cpp/sources.test.mjs",
+    "stacks/cpp/evaluated.mjs",
+    "stacks/cpp/evaluated.test.mjs",
+    "stacks/cpp/run.mjs",
+    "stacks/cpp/run.test.mjs",
+    "stacks/cpp/gates.mjs",
+    "stacks/cpp/check-edited.mjs",
+    "stacks/cpp/install-tools.sh",
+    "stacks/cpp/install-tools.test.mjs"
+  ],
+  "owns": [
+    "CMakeLists.txt",
+    "CMakePresets.json",
+    "cpp-layers.json",
+    ".clang-tidy",
+    ".clang-format",
+    "cpp/domain/include/config/sync.hpp",
+    "cpp/domain/include/domain/note.hpp",
+    "cpp/domain/include/domain/outcome.hpp",
+    "cpp/domain/src/note.cpp",
+    "cpp/usecases/include/usecases/notesync/ports.hpp",
+    "cpp/usecases/include/usecases/notesync/note_sync.hpp",
+    "cpp/usecases/src/note_sync.cpp",
+    "cpp/adapters/include/adapters/system_clock.hpp",
+    "cpp/adapters/src/system_clock.cpp",
+    "cpp/tests/.clang-tidy",
+    "cpp/tests/support/property.hpp",
+    "cpp/tests/domain/note_test.cpp",
+    "cpp/tests/chaos/fault_kind.hpp",
+    "cpp/tests/chaos/virtual_clock.hpp",
+    "cpp/tests/chaos/fault_server.hpp",
+    "cpp/tests/chaos/fault_server.cpp",
+    "cpp/tests/chaos/memory_outbox.hpp",
+    "cpp/tests/chaos/memory_outbox.cpp",
+    "cpp/tests/usecases/note_sync_chaos_test.cpp"
+  ],
+  "checks": [
+    {
+      "name": "C++ build and layers as evaluated (asan, tsan)",
+      "script": "cpp:build"
+    },
+    {
+      "name": "C++ source rules, format, and clang-tidy",
+      "script": "cpp:lint"
+    },
+    {
+      "name": "C++ tests under the sanitizers (fails on a test that didn't run)",
+      "script": "cpp:test"
+    },
+    {
+      "name": "C++ gates still bite",
+      "script": "cpp:gates"
+    }
+  ],
+  "editCheck": {
+    "extensions": [
+      ".cpp",
+      ".cc",
+      ".cxx",
+      ".hpp",
+      ".hh",
+      ".hxx",
+      ".h",
+      ".ipp"
+    ],
+    "names": [
+      "^\\.clang-tidy$"
+    ],
+    "files": [
+      "CMakeLists.txt",
+      "CMakePresets.json",
+      "cpp-layers.json",
+      ".clang-format"
+    ],
+    "run": "stacks/cpp/check-edited.mjs"
+  },
+  "ejectRemove": [
+    "stacks/cpp/check-edited.mjs"
+  ],
+  "ciHeavy": [
+    "^CMakeLists\\.txt$",
+    "^CMakePresets\\.json$"
+  ],
+  "generated": [],
+  "packageJson": {
+    "scripts": [
+      "cpp:build",
+      "cpp:lint",
+      "cpp:test",
+      "cpp:gates"
+    ]
+  },
+  "claudeSettings": {
+    "allow": [
+      "Bash(pnpm cpp:build)",
+      "Bash(pnpm cpp:lint)",
+      "Bash(pnpm cpp:test)",
+      "Bash(pnpm cpp:gates)",
+      "Bash(cmake --preset *)",
+      "Bash(cmake --build build-cpp/*)",
+      "Bash(ctest --test-dir build-cpp/*)",
+      "Bash(clang-format -i cpp/*)",
+      "Bash(clang-tidy -p build-cpp/asan *)"
+    ],
+    "plugins": []
+  },
+  "leftovers": [
+    "build-cpp/"
+  ]
+}

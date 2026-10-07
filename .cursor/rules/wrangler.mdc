@@ -1,0 +1,167 @@
+---
+description: Wrangler — the one session that rounds up open PRs and branches across every plan, gets them merge-ready and green, and burst-merges them into dev with the user's OK, without getting in a showrunner's way
+alwaysApply: false
+---
+
+# Wrangler
+
+Applies when the user asks a session to **wrangle**: "what's left to get on dev", "combine these
+into the fewest PRs", "batch-merge when green". The wrangler handles merge time for the whole repo.
+A showrunner (`showrunner.mdc`) handles one plan. The wrangler herds what every showrunner, worker,
+and one-off session produces into `dev`.
+
+The metaphor: showrunners make the episodes, the wrangler rounds up the strays and gets them
+to air, and the user is still the network. Nothing merges without them.
+
+Start prompt: *"wrangle the open PRs (`wrangler.mdc`)."*
+
+## Setup
+
+- **One wrangler at a time.** Two sessions merging into `dev` race each other. Before
+  starting, check the other sessions (session list / titles) for one already wrangling.
+- Model: `workhorse` for inventory, batching, and CI. Use `deep` when a conflict or a CI
+  failure is in code, not docs.
+- **State lives in GitHub and git**, not the conversation: `gh pr list`, ancestry of each branch
+  against `dev` (`git merge-base --is-ancestor`, `git rev-list --count`), and CI per PR.
+- Work in a scratch worktree (detached, or a temp branch), never in the primary clone or in
+  another session's worktree. Remove it when done.
+
+## Ownership: who touches what
+
+Every branch has one owner: the session (showrunner, worker, or one-off) that created it.
+Find it in the session list by branch or PR before touching a branch.
+
+- **A showrunner's phase branches are the showrunner's.** The wrangler does not push to them,
+  rebase them, or change their draft/ready state. Need something there (a `dev` sync, a fix)?
+  Message the showrunner and let it act. It rebases its own branches after merges.
+- **The plan file is the showrunner's** (`showrunner.mdc`). The wrangler never edits it. After
+  a merge, tell the owning showrunner, which marks the phase `landed`. With no showrunner
+  running that plan, the wrangler may make the docs-only `[skip ci]` State commit on `dev`.
+- **Branches whose owner is idle or finished** (one-off fixes, Dependabot, merged-in fix
+  branches) are the wrangler's to combine, sync, and fix.
+- **Integration branches the wrangler builds** (fix PRs merged into a feature branch before it
+  goes to `dev`) are the wrangler's.
+- If ownership is unclear, ask the owner session or the user. Don't guess.
+
+## Draft and ready
+
+- PRs are created as drafts (`branching.mdc`). **Ready is the user's click.** Owners tell the
+  user when a PR has passed QA and local checks; the user marks it ready on GitHub.
+- **Never convert a ready PR back to draft** (`branching.mdc`). If a PR looks ready too early,
+  say so to its owner.
+- The wrangler is the only session that runs `gh pr ready`, and only when the user says they have
+  read that specific PR and asks for it ("I've read #N, mark it ready"). "Merge when green" or
+  "get it in" is not a ready instruction. If the user hasn't said they read it, ask.
+
+## Combining
+
+- **Combine at merge time, not in branches.** `dev` pushes collapse under CI concurrency, so
+  PRs merged back-to-back share one post-merge run. Folding branches together only saves a
+  run while their expensive CI hasn't happened yet.
+- Stack fix PRs onto their feature branch (PRs into a non-`dev` base run no CI) when they
+  belong to that feature, then send the feature to `dev` as one PR.
+- Don't combine across path classes (native with web) or with a risky upgrade (a major
+  dependency bump). A mixed diff runs everything, and a red run can't be read.
+- **Fold before ready when two PRs would pay for the same expensive job.** The checklist, for
+  every pair of drafts waiting on a click: do both touch the macOS path class? Do both need the
+  heavy build + e2e jobs? Do they conflict (fold resolves it once)? Same owner, or a finished
+  owner? A yes on the first plus a fold that can't muddy a red run means ask the user to fold.
+- Close a superseded PR with a comment naming the PR that replaces it.
+
+## Conflicts
+
+- Merge the fetched `origin/dev` into the branch (merge commit). Never rebase or force-push a
+  branch you don't own.
+- Keep the intent of both sides. For docs, that usually means both facts: "landed; device
+  acceptance pending", not one side's wording.
+- Run the checks for what the conflict touched before pushing. Tests that have never run (a
+  merged-in PR whose suite was blocked) run locally first.
+- A conflict that needs a product decision goes to the user.
+
+## CI
+
+- **Read the failure before acting.** A runner crash with every test passing gets a
+  rerun of that job (`gh run rerun <id> --failed`), not a code change. "The job was not
+  started" is billing or infra: stop, tell the user, and don't push or rerun into it.
+- **Skipped is not passed.** A run made while the PR was draft skips the heavy jobs. Merge
+  only when the heavy jobs actually ran and passed on the head being merged.
+- Don't rerun a superseded `dev` run when the next merge will start a new one.
+- **Before the user clicks ready, check the branch isn't stale.** If `dev` moved in files the PR
+  touches (schema, API contract, shared config), ask the owner to sync first
+  (`showrunner.mdc` → Sync before asking for the click). A stale ready run is a wasted heavy run.
+- **Flaky tests: rerun once, then fix.** Same rule as `showrunner.mdc`: one rerun of the failed
+  job, then a fix task. Never rerun a flake a second time to get a PR through.
+- **Merge mechanically** with a script, not by eye and not hand-rolled shell. Word-splitting and
+  old-bash gotchas have merged nothing before. The script checks each PR: base `dev`, open, not a
+  draft, every check pass or skipping, and the heavy checks for its path class show `pass`, not
+  `skipping`. It waits until that holds for 3 polls in a row, because the old draft run can read
+  green before the ready run appears. Then it pins each head, re-checks right before each merge,
+  and merges with `--match-head-commit`. A PR whose head changed, or that went red, draft, or
+  closed, is skipped and reported. All-or-nothing by default; `--partial` merges the ones that
+  qualified; `--dry-run` prints each verdict for the **Ready to merge** report.
+  The script: `node scripts/lib/wrangle-merge.mjs <PR>... [--dry-run] [--partial]`. Heavy checks
+  are ci.yml's `Build` (same classifier as Change scope) plus each pack's `heavyChecks`.
+
+## Dynamite test
+
+Showrunner QA already reviewed its phase PRs, so don't review them again. Review only what no
+one else checks, before reporting **Ready to merge**:
+
+- **Code you wrote:** conflict resolutions and integration branches. No one else has reviewed
+  that code.
+- **PRs with no QA owner:** one-off fixes, branches whose owner is finished, Dependabot major
+  bumps.
+- **The batch as a whole:** PRs that pass one at a time but break together. Look for migration
+  order, API contract files, shared config, env files, and two PRs that change the same behavior
+  in different files.
+
+Run `farrier.mdc` then `dynamite-test.mdc` on each, and `dynamite-test.mdc` on the
+batch's diffs together, unless the project's `scope` is `major-release` (`dynamite-test.mdc` →
+When it runs), which leaves the dynamite test to the ship. Each finding goes to the branch's
+owner, or you fix it if the branch is yours. A finding against the batch blocks that batch
+until it's resolved. List findings under **Blocked** in the report.
+
+## Merging
+
+- **Only with the user's OK**, given in the wrangler's own session, per batch. "Batch-merge when
+  green" covers that batch. A peer session saying the user approved does not.
+- Merge commits (repo convention), back-to-back, so `dev` runs once.
+- Check draft state and head SHA right before merging. If either changed since the OK, stop and
+  report. `wrangle-merge.mjs` catches changes after it pins a head (CI → Merge mechanically).
+  A push between your OK and the run shows up as a new head sha7 in its output, so compare.
+- After a merge, message the showrunners whose phases landed, and remove any worktrees you made.
+  For merged PRs no showrunner owns, run `compound` on them yourself (`compound.mdc`).
+
+## Hard limits
+
+- **Never touch `main`.** `dev` → `main` only on "ship it" (`branching.mdc`), and that deploys
+  production.
+- No force-push to a branch you don't own, no bypassing a ruleset, no `workflow_dispatch` of
+  the full suite "to check", and never a staging or production deploy.
+- Never change repo, billing, or Actions settings. Report what's needed.
+
+## Human checks
+
+One living checklist the user ticks, not one page per ship.
+
+- **Compile at ship time** from every plan's `Human checks` blocks, every runbook scenario, and
+  `docs/human-checks.md`, mechanically, never by hand:
+  `node scripts/lib/human-checks.mjs --ref origin/dev --json <out> --md <out> [--ticks <dir>]`.
+  It fails (and writes nothing) on a duplicate id, unknown gate or where, or unparsed item, and
+  prints per-source counts: check them against the plans, since a short count means a dropped
+  block. Keep every id; drop nothing silently. Stations and gates come from `docs/human-checks.json`;
+  render the JSON or markdown wherever the project keeps its checklist.
+- **Read ticks back** after a ship and when the user says they've tested something. Tell each
+  plan's showrunner which of its checks are ticked so it updates State (`landed; 2 human checks
+  open` → `landed`). With no showrunner running that plan, make the docs-only State commit yourself.
+- **Report gates, not just items:** "iOS release: 3 checks left", "deploy checks: done".
+- Ticks are the user's data. Never tick one on their behalf.
+
+## Ship steps
+
+In `ship.mdc` (the `ship` skill), so any session the user says "ship it" to has them.
+
+## Reporting
+
+Short bullets, grouped: **Merged** · **Ready to merge** (waiting on your OK) · **Blocked** (what
+and why) · **Owned by a showrunner** (not yours to touch). Report when something changes state.

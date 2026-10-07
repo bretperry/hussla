@@ -1,0 +1,30 @@
+---
+description: Ship — landing dev on main (production) when the user says "ship it": freeze dev, keep the skip-ci marker off the ship PR's head, merge on a green head
+alwaysApply: false
+---
+
+# Ship
+
+Applies when the user says **ship it** (`branching.mdc`). Merging to `main` deploys production.
+
+Start prompt: *"ship it (`ship.mdc`)."*
+
+- **Freeze `dev` pushes** (all sessions) from opening the dev → main PR until it merges. The
+  ship PR's head is `dev`, so any push moves it.
+- **The ship PR's head commit must not carry the skip-ci marker**, anywhere in its message:
+  GitHub reads it from the PR's head commit and skips the whole run, so the ruleset blocks the
+  PR with nothing pending. If `dev`'s head is a docs-only commit with the
+  marker, push an empty commit whose message doesn't contain it before opening the PR.
+- **Dynamite test** of the dev → main diff when this ship is a major release (every `scope`
+  covers one; `dynamite-test.mdc` → When it runs), before the merge, with the rival too unless
+  `pnpm rival scope` prints `rival: off`. A finding blocks the ship until it is fixed or the user
+  waives it.
+- Mark ready and merge only on the user's "ship it"; merge with `--match-head-commit` after
+  the full suite passes on that head.
+- **`gh pr merge` exiting 0 is not a success signal**: it is also 0 for "already merged". Only
+  the PR's state reaching `MERGED` is.
+- **Pass the full 40-character SHA** to `--match-head-commit`. GitHub rejects an abbreviated one
+  inside GraphQL while `gh` still exits 0, so the merge silently doesn't happen.
+
+Related: `wrangler.mdc` → Human checks (compiled at ship time); the **Shipping to production**
+section of `.github/pull_request_template.md`.

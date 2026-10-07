@@ -1,0 +1,69 @@
+---
+description: How the rules load in Cursor and Claude Code, and how to add or edit one
+globs: .cursor/rules/**,.claude/rules/**,.claude/skills/**,AGENTS.md,CLAUDE.md,harness.json,harness.project.json,stacks/**
+alwaysApply: false
+---
+
+# How the rules load
+
+Canonical rules live in `.cursor/rules/*.mdc`; Cursor reads and glob-scopes them natively.
+Claude Code skips `.mdc` files (as `@` imports and through symlinks alike), so
+`scripts/sync-claude-rules.mjs` generates `.claude/rules/*.md` from them. Every agent (Codex,
+Copilot, Gemini, Cursor, Claude) reads `AGENTS.md`, so the always-on rules go there instead:
+
+- `agentsMd: <n>` → copied n-th into the always-on block at the end of `AGENTS.md` (`core`,
+  `architecture`, `branching`). No description, globs, or `alwaysApply`, so Cursor treats the
+  `.mdc` as manual and doesn't load it twice.
+- `alwaysApply: true` → loads at session start in Cursor and Claude only. Prefer `agentsMd`.
+- `globs:` → `paths:`, loads when you read a matching file (`docs`, `docs-scripts`, `docs-infra`, `plans`,
+  `testing`, `branch-protection`, `rule-authoring`, each stack pack's rules, and any domain rule).
+- Neither → a session-mode rule, loaded on demand as a skill in `.claude/skills/`
+  (`showrunner`, `wrangler`, `ship`, `compound`, `farrier`, `dynamite-test`).
+
+## Harness rules and project companions
+
+Rules listed in `harness.json` are **harness**: byte-identical in every project, refreshed from
+whippletree by `pnpm harness:pull`. Never write project facts into one (a repo name, a job name,
+a script only this project has); the next pull erases them.
+
+A project's additions to a harness rule go in a **companion**, `<rule>.project.mdc`, beside it:
+
+- Same frontmatter as the harness rule (same `agentsMd` number, same `globs`, or neither for a
+  skill), so it loads at the same moment. With the same `agentsMd` number it sorts right after.
+- It adds and narrows; where it contradicts the harness rule, the companion wins for this project.
+- Skills read the companion too (each `SKILL.md` says so).
+
+Improved a harness rule here and it isn't project-specific? `pnpm harness:push` opens a draft PR
+on whippletree with the edit. `pnpm harness:status` shows what differs and which way it flows;
+`harness.project.json` holds the upstream commit last taken and the files this project skips,
+each with its reason.
+
+## Stack packs
+
+A rule that belongs to one stack (a language, or an add-on such as React) is listed in that pack's
+`stacks/<name>/pack.json`, not in `harness.json`; `pnpm stack:remove <name>` deletes it with the
+rest of the pack, and `harness:pull` stops syncing it (`docs/decisions/0002-stack-packs.md`).
+
+- Keep core rules stack-agnostic: no tool, runner, or config file of one stack. The stack's half
+  goes in a pack rule (`testing.mdc` stays agnostic; each language pack ships its own testing rule).
+- Stack text inside a shared, project-owned file (`ci.yml`, `AGENTS.md`, `README.md`, `docs/`, `architecture.mdc`)
+  goes between `[stack:<name>]` and `[/stack:<name>]` marker lines, in that file's comment syntax.
+  Removal deletes the markers and everything between. Harness files carry no fences (they must
+  stay byte-identical), so they name no stack's tools or config files.
+- A line the harness needs but a shipped product doesn't (a harness step in `ci.yml`, an import
+  of a harness script in a kept gate, a test of the edit hook) goes between `[harness]` and
+  `[/harness]` marker lines. `pnpm harness:eject` deletes them; harness files may carry these,
+  since every copy is stripped the same way and sync ends there. What eject removes outright is
+  `harness.json` → `eject` plus each pack's `ejectRemove` (`docs/decisions/0006-harness-eject.md`).
+
+## Editing
+
+Edit the `.mdc`, never the generated `.md` or `AGENTS.md`'s always-on block. The edit hook re-syncs after an agent edits an
+`.mdc`; otherwise run `pnpm rules:sync`. `pnpm check`, pre-push, and CI fail on drift.
+Every always-on line costs context in every session, so scope a new rule with `globs:` when you can.
+
+**One voice.** When a rule line goes stale, edit or delete it; never add a newer line beside it. A
+rule file that contradicts itself is followed at random. In a harness file the fix goes upstream
+(`pnpm harness:push`) or into the companion, never into the harness copy. Append-only records keep
+their own conventions: a decision is superseded, not edited (`docs/decisions/README.md`), and a
+released changelog entry stays as written.

@@ -1,0 +1,102 @@
+---
+description: Infrastructure — Terraform layout, who applies, OIDC deploys, Dockerfiles, staging, and the checks that run
+globs: "**/*.tf,**/*.tfvars,**/Dockerfile*,**/*.Dockerfile,**/Containerfile*,**/.dockerignore,.github/workflows/deploy*.yml"
+alwaysApply: false
+---
+
+# Infrastructure
+
+<!-- Part of the infra stack pack: `pnpm stack:remove infra` removes it. Cloud-neutral: no provider's modules ship. -->
+
+Comment format for `.tf`, `Dockerfile`, and workflows: `docs-infra.mdc`.
+
+## Who runs what
+
+- **Agents write infrastructure; a human applies it.** `terraform`/`tofu` `apply` and `destroy`,
+  `state rm` / `state push`, `workspace delete`, `init -migrate-state` / `-force-copy`, and any
+  cloud CLI delete (`aws … delete-*`/`terminate-*`/`purge-*`/`deregister-*`, `s3 rm`/`rb`/`mv` from
+  a bucket, `gcloud … delete`, `az … delete`/`purge`, `gsutil rm`/`rsync -d`, `bq rm`, disabling
+  or destroying a KMS key) are refused by `scripts/command-guard.mjs` in every spelling it can
+  read. Editing state (`state mv`, `import`, `taint`, `force-unlock`) and `terraform test` (it
+  applies real resources) ask the user. Never route around a refusal (`core.mdc`). What the guard
+  can't see (a package script, a Makefile, `docker run hashicorp/terraform`) is still yours not to
+  run: `docs/deferred.md` → "Command-guard gaps".
+- **Agents run** `fmt`, `validate`, `init -backend=false`, and `plan`. A change's PR carries the
+  `plan` summary, every `destroy` / `must be replaced` line named and explained, and the exact
+  apply command. The apply is a Human check (`plans.mdc`), run from `docs/runbooks/deploy.md`
+  scenario 1 (copy `docs/runbooks/_deploy.md` the first time).
+- `plan -destroy` is fine to run; it shows, it doesn't do.
+
+## Terraform layout
+
+- One directory per root module (`infra/`, or `infra/<env>/`), split by concern: `versions.tf`
+  (Terraform and provider pins, the provider block), `variables.tf`, `locals.tf`, `outputs.tf`,
+  then one file per resource group (`network.tf`, `registry.tf`, `oidc.tf`, `database.tf`).
+- Every variable and output has a `description` and a `type`; tflint fails one without.
+- `terraform.tfvars.example` is committed with safe placeholders; `terraform.tfvars`, `*.tfstate`,
+  `.terraform/`, and plan files never are (`.gitignore`). Commit `.terraform.lock.hcl`.
+- Remote state with locking, in a bucket or backend whose deletion protection is on. State is the
+  recovery record: losing it orphans every resource it tracked.
+- Secrets never go in `.tf` or tfvars. Terraform creates the secret's name and access; the deploy
+  workflow writes the value.
+- `lifecycle { prevent_destroy = true }` on anything holding user data (databases, buckets,
+  encryption keys), with a why-comment. Removing it is its own reviewed PR.
+
+## Deploys
+
+- CI deploys with **OIDC**: the job asks the cloud for a short-lived role, never a stored access
+  key. The deploy job's permissions are exactly `id-token: write` and `contents: read`. The role
+  trusts one repo and one branch or environment, never `repo:<org>/*`.
+- `concurrency` with `cancel-in-progress: false` on deploys: a cancelled rollout leaves a
+  half-applied service.
+- A rollback redeploys an image already in the registry by tag, skipping build and migrations.
+  Keep the registry's lifecycle policy long enough to hold the last few good images.
+- A shape to copy (AWS; GCP's `google-github-actions/auth` and Azure's `azure/login` take the same
+  place):
+
+```yaml
+permissions:
+  id-token: write # OIDC token for the cloud role
+  contents: read
+jobs:
+  deploy:
+    concurrency: { group: deploy-production, cancel-in-progress: false }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.DEPLOY_ROLE_ARN }} # Terraform output; the role trusts repo:<org>/<repo>:ref:refs/heads/main
+          aws-region: ${{ vars.AWS_REGION }}
+```
+
+## Docker
+
+- Multi-stage: deps, build, then a slim runner that runs as a non-root user. File header as in
+  `docs-infra.mdc` (`# syntax=` stays line 1).
+- **Pin the base image** to a version, with a why-comment (why this version, what moving it
+  needs). Never `latest` or an untagged image: hadolint fails both (`.hadolint.yaml`).
+- `.dockerignore` keeps secrets, state, `.git`, and dependencies out of the build context.
+- Build-time secrets via BuildKit `--mount=type=secret`, never `ARG`/`ENV`: a build arg is in
+  `docker history` forever.
+
+## Staging
+
+- For what CI can't prove (migrations, the Dockerfile, infrastructure): stood up on demand,
+  torn down nightly by a scheduled workflow, so a forgotten stand-up can't run up a bill.
+- **A teardown's targets are literals** (`ECS_SERVICE: app-staging`), never `vars.*`, an input,
+  or a computed name, and its script refuses any name that isn't staging's. A teardown that read
+  repo-level variables once resolved to production and deleted it, nightly.
+- Staging has its own state (workspace or directory), its own database, its own OIDC role scoped
+  to the staging workflow, and its own secrets prefix. It never reads production's.
+
+## Checks
+
+- **Per edit** (`stacks/infra/check-edited.mjs`): `terraform fmt -check` on a `.tf`/`.tfvars`,
+  `hadolint` on any Dockerfile spelling (`Dockerfile.prod`, `api.Dockerfile`, `Containerfile.dev`).
+  Offline and fast.
+- **`pnpm check` and CI** (`infra:fmt`, `infra:validate`, `infra:lint`, `infra:docker`): fmt,
+  `validate` per module after `init -backend=false`, `tflint` per module (`.tflint.hcl`), and
+  `hadolint` (`.hadolint.yaml`). No Terraform or Dockerfile yet: each passes and says so.
+- Tools are pinned in `stacks/infra/install-tools.sh` (CI runs it). Locally a missing tool is a
+  loud SKIPPED line; in CI it fails.
+- A cloud's own tflint ruleset (`tflint-ruleset-aws` …) is the project's addition to `.tflint.hcl`, pinned.

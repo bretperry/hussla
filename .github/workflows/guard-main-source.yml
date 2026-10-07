@@ -1,0 +1,31 @@
+# Fails any pull request into main that does not come from dev.
+# In the app: server-side half of branching.mdc (the local half is .githooks/pre-push).
+# Used by: GitHub Actions on PRs targeting main. Does not build or deploy.
+#
+# A ruleset can require this check. Without rulesets (free private plan) a red check here does
+# not block the merge button: it is a loud signal, and the pre-push hook is the actual stop.
+
+name: Guard main source
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  only-dev-merges-to-main:
+    name: Only dev merges to main
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      # head_ref goes through env, not inline `${{ }}`, so a branch name can't inject shell.
+      - name: Require the PR head branch to be dev
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ "$HEAD_REF" != "dev" ]; then
+            echo "::error::Only 'dev' may merge into 'main'. This PR is from '$HEAD_REF'. Land the work on dev first, then open dev → main."
+            exit 1
+          fi
+          echo "PR head is 'dev': allowed."

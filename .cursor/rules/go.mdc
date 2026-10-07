@@ -1,0 +1,18 @@
+---
+description: Go conventions
+globs: "**/*.go,go.mod,.golangci.yml"
+alwaysApply: false
+---
+
+# Go
+
+- **Write for a human reader first.** Names say what the thing is or does, unabbreviated (`recalculateUserProgress`, not `recalc`; keep Go's own short forms: `ctx`, `err`, a loop `i`). Read top-down, early `return` over nested `if`, a named intermediate over a dense one-liner. Headers and why-comments follow `docs.mdc`, in `//` lines above `package` (blank line between, so it isn't the package doc).
+- **Lint is the floor, and it is loud** (`.golangci.yml`, golangci-lint v2): the `standard` set (`govet`, `staticcheck`, `errcheck`, `unused`, `ineffassign`) plus `errorlint`, `wrapcheck`, `exhaustive`, `gocritic`, `errname`, `depguard`, `nolintlint`; `gofumpt` formats. A real exception is `//nolint:<linter> // <why>`; `nolintlint` rejects one with no reason, and `pnpm go:gates` fails any directive that lists `nolintlint` itself (it would silence that check). Switches and maps keyed by an enum are checked; a sum-type interface isn't, so add `gochecksumtype` if you use one.
+- **Expected failures are values.** A sentinel (`domain.ErrStorageFull`, tested with `errors.Is`) or a typed error (`*domain.RemoteError`, pulled out with `errors.As`); wrap with `%w` as it crosses a layer (`fmt.Errorf("claim %s: %w", id, err)`), never compare with `==`. Enums are a named `int` type with `iota`; a `switch` over one names every member, and a `default:` never excuses a missing one (`exhaustive`). `panic` only for a broken invariant.
+- **Boundaries are `depguard` rules, one per layer** (`internal/domain`, `internal/config`, `internal/app`, in `.golangci.yml`; the map and the fix for each is `docs/ports-and-adapters.md`). `domain` is strict: the pure standard library and `config` only. A `files` glob that matches nothing passes silently, so `pnpm go:gates` fails an `internal/` directory no rule covers, then plants a violation per layer in a scratch copy and fails unless depguard names it: rename a directory in `.golangci.yml` and in `stacks/go/gates.project.json` together. Two more ways to hide a file are closed: a "Code generated" header (`exclusions.generated: disable`) and a build tag (gates fail a `//go:build` in `internal/` that isn't only OS/arch names). Why not `go-arch-lint`: depguard is already in the one lint run (one tool, one config, hook-fast), and the planted violations give the loud failure that neither tool gives on its own.
+- **Parse at the boundary.** Adapters and handlers validate input and build domain types; `internal/domain` takes valid values and imports no I/O and no third party. `context.Context` is the first parameter, never a struct field. A port's contract names the errors it may return.
+- **Dead code goes.** `unused` fails lint on it; `pnpm go:tidy` (`go mod tidy -diff`) fails on an unused or missing dependency. Delete rather than keep "for later"; git remembers.
+- **Go 1.25.** `go.mod`'s `go` line is the floor (`testing/synctest` needs it); an older toolchain downloads the right one itself. The module is `example.com/app`: `go mod edit -module <yours>`, then replace it in `.golangci.yml`; `pnpm go:gates` fails until both match.
+- **Tools.** golangci-lint v2.5.0, the version CI pins (`.github/workflows/ci.yml`); the edit hook runs it on the edited package only (`stacks/go/check-edited.mjs`, about a second warm, so hook-fast), and never reports a missing binary as clean.
+- Layout: `internal/config` (knobs), `internal/domain`, `internal/app/<use-case>` (use-case + its ports), `internal/adapters/<vendor>` (none yet), `internal/testsupport` (fakes; tests only).
+<!-- Part of the go stack pack: `pnpm stack:remove go` removes it. -->

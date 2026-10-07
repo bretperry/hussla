@@ -1,0 +1,56 @@
+# Shared setup for every CI job: pnpm, Node, the pnpm store cache (hosted runners only), and a frozen install.
+# In the app: nothing at runtime; CI only.
+# Used by: the Checks and Build jobs in .github/workflows/ci.yml.
+# Uses: pnpm/action-setup (version from package.json `packageManager`), actions/setup-node (.nvmrc), actions/cache.
+#
+# setup-node's own `cache: pnpm` saves a fresh copy from every ref that misses, so per-PR copies
+# fill the 10 GB cache cap and evict the `dev` copy every other run wants. Instead: restore
+# everywhere, save only from `dev`. Ported from habit.
+#
+# GitHub-hosted runners only. actions/cache stores paths relative to the workspace, so a cache
+# saved on a hosted runner unpacks somewhere else on a self-hosted one while still reporting a
+# hit (habit #248: every browser test failed that way). A persistent machine keeps its own store.
+
+name: Setup Node and pnpm
+description: Install pnpm and Node, restore the pnpm store cache, and install dependencies.
+
+runs:
+  using: composite
+  steps:
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v6
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version-file: .nvmrc
+
+    - name: Resolve pnpm store directory
+      id: pnpm-store
+      shell: bash
+      run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+    # A near-miss (lockfile changed since the last save) still restores most of the store,
+    # so the install only fetches the delta.
+    - name: Restore pnpm store
+      id: pnpm-cache
+      if: ${{ runner.environment != 'self-hosted' }}
+      uses: actions/cache/restore@v6
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          pnpm-store-${{ runner.os }}-
+
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    # Saved right after install so a red job downstream still refreshes the store. Only `dev`
+    # writes, and only on a real miss (a restore-keys fallback is not a hit).
+    - name: Save pnpm store
+      if: ${{ runner.environment != 'self-hosted' && github.ref == 'refs/heads/dev' && steps.pnpm-cache.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ steps.pnpm-store.outputs.path }}
+        key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}

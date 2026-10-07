@@ -1,0 +1,167 @@
+---
+description: Showrunner — running a docs/plans file by dispatching phases to worker agents, reviewing them as QA, and stopping for the user only where needed
+alwaysApply: false
+---
+
+# Showrunner
+
+Applies when the user asks a session to **run a plan** ("showrun `docs/plans/<file>.md`",
+"proceed through the plan"). The showrunner schedules, dispatches, and reviews. It does not build
+phases itself.
+
+The metaphor: the plan is the season, phases are episodes, workers are the writers' room,
+and the user is the network — nothing airs (merges) without them.
+
+Start prompt: *"read `docs/plans/<file>.md` and showrun it (`showrunner.mdc`)."*
+
+## Setup
+
+- The showrunner runs on the **`deep` tier, high effort** (`plans.mdc` → Model tiers). Raise to
+  extra high only for QA of phases the plan marks `deep` or `frontier` (silent-failure, security,
+  release). Extra high on every turn of a long session is mostly paid for waiting.
+- **State lives in the repo, not the conversation.** Derive it every time from the plan's State
+  column, open PRs (`gh pr list`), and branches — the table can lag reality. That is what lets a
+  fresh session pick up a run mid-season after compaction or a restart.
+- **State values:** blank (not started) → `running` → `QA passed (#N)` → `landed (#N)`, plus
+  `blocked; <why>` and `dropped; <why>` (`plans.mdc` has the grammar; `pnpm plans:check` enforces
+  it). `QA passed` means the draft is waiting on the user's Ready click and a merge. After any
+  State change, refresh the board (`plan-board` skill) if the project has one.
+
+## Scheduling
+
+- Start **every** phase whose After prerequisites are `landed`, in parallel. Never start one
+  whose prerequisites are only in review.
+- **At most 3 workers at once.** More than that and QA gets shallow and CI stacks up.
+- **Check file overlap before running phases in parallel.** Two phases that touch the same files
+  (`AGENTS.md`, the CI path classifier, a shared config, the database schema) run
+  one after the other, not side by side.
+- **Check open PRs from other plans too** (`gh pr list` + `gh pr diff --name-only`), not just
+  this plan's phases. When two PRs from different plans conflict, the wrangler (or the user)
+  picks the merge order — usually the one whose rerun is expensive (macOS) goes first. The
+  other branch then rebases and re-timestamps its migration so it sorts after the merged one.
+- Each worker: the phase's listed **Model** (the tier's model for this project: `pnpm models
+  get <tier> <lineage>`, where an empty line means the tool's default), its own worktree off `dev`, its own feature branch,
+  one **draft** PR into `dev` (`branching.mdc`). The phase section is the worker's whole prompt,
+  plus a pointer to this file's QA and CI rules.
+- Standing lines in every worker prompt:
+  - `git fetch` and branch off `origin/dev`; name the merge commit the branch must contain when
+    it builds on a landed phase.
+  - Missing gitignored env files may be copied from the primary clone.
+  - Never mark the PR ready; never edit the plan.
+  - Test-only phases do not change app code — a failing assertion that is a real app bug is
+    reported as a finding.
+- Workers cannot spawn workers. Anything a worker needs split, the showrunner splits.
+- A non-phase gate in the After cell (enrollment, a machine, a secret) blocks that phase until
+  the user clears it.
+- **After a PR merges** (by the user, or by the wrangler with the user's OK), rebase the other
+  open phase branches onto the new `dev` (`--force-with-lease` on the feature branch only), then
+  remove the merged phase's worktree, then run `compound` on it (`compound.mdc`).
+
+## The plan file
+
+- **The showrunner is its only writer.** Workers never edit the plan; parallel edits to one file
+  are a guaranteed conflict. State updates and new findings go on `dev` as docs-only commits
+  with `[skip ci]` (`branching.mdc`), never onto a phase branch.
+- **A worker that finds the plan wrong stops and reports** (a premise out of date, a file that
+  does not exist, a decision that no longer holds). The showrunner updates the plan, then
+  re-dispatches. Workers do not improvise around a wrong plan.
+
+## Local environment
+
+- Workers stay in their own worktree. **Never run a production build or a second dev server in
+  the primary clone** — either one can wedge the running dev server. E2E runs through its own
+  locked command with its own build dir.
+- **Never dispatch a staging or production deploy** without the user saying so.
+- Before sending a phase back for one red unit-test job, check the failing spec against the known
+  flakes (`docs/deferred.md`). With several workers running, local load can time out CPU-heavy
+  specs — load, not the change.
+- **Revert build side effects.** Files a build rewrites (generated type stubs, lockfile churn)
+  never belong in a phase diff.
+- Worktrees are heavy (dependencies, build output). Remove each one once its PR merges; a long
+  run otherwise fills the disk.
+
+## CI cost
+
+CI minutes are budgeted; macOS bills ~10× Linux. CI confirms, it does not discover.
+
+- **Local first.** Workers run typecheck, lint, unit tests, and (for user-flow phases) e2e
+  locally before pushing. Local is free.
+- **Push rarely.** Even a draft PR bills the cheap jobs per push (`branching.mdc` → CI minutes).
+- **Ready once, after QA — and the user clicks it.** Ready triggers the heavy jobs. Review
+  findings are fixed while still draft, so the expensive run happens once. Neither the
+  showrunner nor a worker runs `gh pr ready`; never flip a ready PR back to draft.
+- **Sync before asking for the click.** Right before telling the user a PR is ready, merge the
+  current `origin/dev` into it if `dev` has moved, then run typecheck, lint, any schema/contract
+  checks, and the tests for anything the merge touched. A stale branch fails its ready run on
+  something local checks would have caught, and that failure costs a whole heavy run.
+- **A flaky test gets fixed, not rerun twice.** First sighting: rerun the failed job once, and
+  open a fix task the same day (the failing spec, the error, why it's timing- or load-sensitive).
+  Second sighting before the fix lands: stop rerunning, and fix or quarantine it with a
+  `docs/deferred.md` entry.
+- **Keep each phase in one path class.** A diff mixing native and web paths runs everything.
+  Touching the CI workflow or its path classifier also runs everything — do it only when the
+  phase is about CI.
+- **Suggest burst merges.** When several PRs are ready, tell the user (or the wrangler, if one
+  is running); merging them together collapses the post-merge `dev` runs into one.
+
+## QA — before accepting a phase
+
+Two stages, in order. A phase that fails stage 1 doesn't get a stage 2 yet: polishing the wrong
+change is wasted review.
+
+- Read the whole diff yourself; do not trust the worker's summary.
+- **Stage 1: does it match the plan?** Check the phase's **Done when** line by line, running each
+  `→ verify:`. Anything unmet goes back to the worker with the specific gap. Anything deliberately
+  skipped needs a `docs/deferred.md` entry (`core.mdc`). Anything the phase did that it didn't ask
+  for goes back too (`core.mdc` → Before you write code).
+- **Stage 2: is it good code?** Run `farrier.mdc` on the PR, with the tests the phase names.
+- **Dynamite test** (`dynamite-test.mdc`) on each phase its `scope` covers (`dynamite-test.mdc`
+  → When it runs). The default, `high-risk`, means phases the plan marks `deep` or `frontier`
+  (silent-failure, security, release) and any phase with a migration, never docs-only or
+  test-only phases.
+  Farrier and the Done-when check ask whether the phase matches the plan. This asks
+  whether the plan's approach breaks. Give it the phase's goal; every finding either goes back
+  to the worker or gets one line from you in the PR on why it isn't a problem.
+- **Human checks:** if the phase needs anything only a person can verify, write its
+  `Human checks` block in the phase section before calling it QA-passed (`plans.mdc` → Human
+  checks). Keep ids stable; the wrangler compiles them and the user's ticks come back to you.
+- A passing phase stays draft: set State `QA passed (#N)`, tell the user it's ready for their
+  click, and tell the wrangler. It is not `landed` yet.
+
+## Working with the wrangler
+
+A wrangler (`wrangler.mdc`) may be running alongside you and handling merge time for the whole
+repo. Split:
+
+- **You keep:** your phase branches, rebasing them, and the plan file. The wrangler asks you
+  instead of touching them. Draft → ready is the user's click.
+- **It takes:** batching ready PRs across plans, CI triage at merge time, and the merges
+  themselves (with the user's OK).
+- When a phase PR passes QA, tell the wrangler it's waiting on the user's Ready click. When it
+  tells you a PR merged, mark the phase `landed` and rebase your other branches. When it flags
+  a conflict with another plan's PR, hold the branch until it says the other one merged.
+- If you and the wrangler disagree about a branch, the owner wins. Ask the user if it's unclear.
+
+## Hard limits
+
+- **Never merge.** The user (or the wrangler, with the user's OK) merges every PR. Mark State
+  `landed` only after the merge.
+- **Never touch `main`.** Merging to `main` deploys production.
+- No `[skip ci]` on a phase branch, no push or force-push to `dev` or `main` (beyond the
+  plan-file docs commits above), no bypassing a ruleset.
+
+## Stop and ask the user when
+
+- a phase is `hard-gated`, or needs something the showrunner does not have (hardware, an OS, an
+  account, a certificate, a secret);
+- the next phase is blocked on a PR that needs merging;
+- a product, security, or scope decision comes up that the plan does not answer;
+- a worker fails the same QA point twice;
+- anything would deploy (staging included).
+
+While blocked on the user, keep going on anything that is not blocked.
+
+## Reporting
+
+Short bullets, grouped: **Running** · **Ready for your review** (PR links) · **Waiting on you**
+(what and why). Report when something changes state, not on a timer.

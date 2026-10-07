@@ -1,0 +1,53 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "unicorn",
+    "oxc",
+    "import",
+    "vitest"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error"
+  },
+  "rules": {
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/await-thenable": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/strict-boolean-expressions": "error",
+    "typescript/no-unnecessary-condition": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/consistent-type-imports": "error",
+    "import/no-cycle": "error",
+    "eslint/no-console": "warn"
+  },
+  "overrides": [
+    {
+      "files": [
+        "scripts/**"
+      ],
+      "rules": {
+        "eslint/no-console": "off"
+      }
+    },
+    {
+      "files": [
+        "**/*.{js,mjs,cjs}"
+      ],
+      "rules": {
+        "typescript/strict-boolean-expressions": "off"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    "coverage/**"
+  ]
+}

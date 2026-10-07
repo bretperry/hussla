@@ -1,0 +1,38 @@
+# clang-tidy for the C++ pack: run by `pnpm cpp:lint` (and the edit hook) over every first-party .cpp, with warnings as errors.
+# stacks/cpp/run.mjs forces --warnings-as-errors='*' and the header filter itself, and reads each
+# layer's evaluated check list (clang-tidy --list-checks): dropping a check in REQUIRED_TIDY_CHECKS
+# (stacks/cpp/sources.mjs), here or in a nested .clang-tidy, fails the lint. A finding is fixed, or
+# silenced on its line with `// NOLINT(<check>): <why>` (a bare NOLINT is refused).
+#
+# Off, and why (one line each; the rest of every group is on):
+# - bugprone-easily-swappable-parameters: fires on every (from, to) pair; types, not lint, fix that.
+# - cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers: knobs live in config/, and
+#   tests are full of literal examples.
+# - misc-include-cleaner: wants every transitive std header spelled out; noise at this size.
+# - misc-non-private-member-variables-in-classes: plain value structs (Note, OutboxEntry) are the point.
+# - modernize-use-trailing-return-type: style only.
+# - performance-enum-size: an int-sized enum costs nothing at this scale.
+# - readability-identifier-length: `id`, `i` read fine.
+# cpp/tests/.clang-tidy also turns off readability-function-cognitive-complexity (GoogleTest's
+# assertion macros inflate it).
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  cert-err58-cpp,
+  concurrency-*,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-magic-numbers,
+  google-explicit-constructor,
+  misc-*,
+  -misc-include-cleaner,
+  -misc-non-private-member-variables-in-classes,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  performance-*,
+  -performance-enum-size,
+  readability-*,
+  -readability-magic-numbers,
+  -readability-identifier-length
+WarningsAsErrors: "*"
+FormatStyle: file

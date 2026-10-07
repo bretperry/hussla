@@ -1,0 +1,5 @@
+# Pins the channel and the two components the checks need, so `cargo clippy` / `cargo fmt` exist on every machine and in CI.
+# Part of the rust stack pack: `pnpm stack:remove rust` removes it.
+[toolchain]
+channel = "stable"
+components = ["clippy", "rustfmt"]

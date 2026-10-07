@@ -1,0 +1,23 @@
+# hadolint policy for every Dockerfile in the repo.
+# In the app: nothing at runtime; `pnpm infra:docker` and the per-edit hook run hadolint with it.
+# Used by: stacks/infra/check.mjs, stacks/infra/check-edited.mjs; CI's "Stack pack checks" step.
+#
+# Anything at warning or above fails. An unpinned or `latest` base image is an error, not a
+# warning: the same Dockerfile then builds a different image tomorrow, and a rollback rebuilds
+# something that never ran (infra.mdc → Docker).
+
+failure-threshold: warning
+
+override:
+  error:
+    # Always tag the base image explicitly.
+    - DL3006
+    # Never `latest`.
+    - DL3007
+
+ignored:
+  # Pin apt package versions: Debian drops old versions from its mirrors, so a pinned apt line
+  # breaks the build weeks later. The pinned base image is the reproducibility pin instead.
+  - DL3008
+  # Same for apk on Alpine.
+  - DL3018

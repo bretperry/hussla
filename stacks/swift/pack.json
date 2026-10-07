@@ -1,0 +1,108 @@
+{
+  "name": "swift",
+  "kind": "language",
+  "summary": "Swift 6.2 for Apple platforms: layers as SwiftPM targets, swift-format, a source-level import check with planted-violation gates, Swift Testing, a zero-tests check, a macOS CI job.",
+  "requires": [],
+  "adoptOn": [
+    "swift-layers.json"
+  ],
+  "requiredChecks": [
+    "Swift tests"
+  ],
+  "heavyChecks": [
+    {
+      "name": "Swift tests (macOS)",
+      "scope": "stacks/swift/scope.mjs"
+    }
+  ],
+  "docs": [
+    ".cursor/rules/swift.mdc",
+    ".cursor/rules/testing-swift.mdc"
+  ],
+  "code": [
+    "stacks/swift/tool.mjs",
+    "stacks/swift/run.mjs",
+    "stacks/swift/count-tests.mjs",
+    "stacks/swift/count-tests.test.mjs",
+    "stacks/swift/boundaries.mjs",
+    "stacks/swift/boundaries.test.mjs",
+    "stacks/swift/manifest.mjs",
+    "stacks/swift/manifest.test.mjs",
+    "stacks/swift/gates.mjs",
+    "stacks/swift/scope.mjs",
+    "stacks/swift/scope.test.mjs",
+    "stacks/swift/tool.test.mjs",
+    "stacks/swift/pack.test.mjs",
+    "stacks/swift/check-edited.mjs"
+  ],
+  "owns": [
+    "Package.swift",
+    "swift-layers.json",
+    ".swift-format",
+    "Sources/Config/SyncConfig.swift",
+    "Sources/Domain/Note.swift",
+    "Sources/Domain/Failures.swift",
+    "Sources/UseCases/Ports.swift",
+    "Sources/UseCases/NoteSyncService.swift",
+    "Sources/Adapters/SystemTime.swift",
+    "Tests/NoteSyncTests/DomainTests.swift",
+    "Tests/NoteSyncTests/NoteSyncChaosTests.swift",
+    "Tests/NoteSyncTests/Chaos/FaultServer.swift",
+    "Tests/NoteSyncTests/Chaos/MemoryOutbox.swift",
+    "Tests/NoteSyncTests/Chaos/Device.swift"
+  ],
+  "checks": [
+    {
+      "name": "Swift import boundaries",
+      "script": "swift:boundaries"
+    },
+    {
+      "name": "Swift format",
+      "script": "swift:lint"
+    },
+    {
+      "name": "Swift gates still bite",
+      "script": "swift:gates"
+    },
+    {
+      "name": "Swift tests (fails on zero executed)",
+      "script": "swift:test"
+    }
+  ],
+  "editCheck": {
+    "extensions": [
+      ".swift"
+    ],
+    "files": [
+      "swift-layers.json",
+      ".swift-format"
+    ],
+    "run": "stacks/swift/check-edited.mjs"
+  },
+  "ejectRemove": [
+    "stacks/swift/check-edited.mjs",
+    "stacks/swift/pack.test.mjs"
+  ],
+  "ciHeavy": [],
+  "generated": [],
+  "packageJson": {
+    "scripts": [
+      "swift:boundaries",
+      "swift:lint",
+      "swift:gates",
+      "swift:test"
+    ]
+  },
+  "claudeSettings": {
+    "allow": [
+      "Bash(pnpm swift:boundaries)",
+      "Bash(pnpm swift:lint)",
+      "Bash(pnpm swift:gates)",
+      "Bash(pnpm swift:test)",
+      "Bash(swift test *)",
+      "Bash(swift build *)",
+      "Bash(swift format lint *)",
+      "Bash(swift format -i *)"
+    ]
+  }
+}

@@ -1,0 +1,34 @@
+// Strictest-practical compiler baseline. Put project settings (paths, jsx, framework plugins,
+// include) in tsconfig.json, which extends this.
+// [harness]
+// Harness-owned: refresh from whippletree.
+// [/harness]
+// Every flag below turns a class of silent runtime bug into a compile error.
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+
+    "strict": true,
+    // arr[i] and record[key] are `T | undefined`: the most common crash TS otherwise hides.
+    "noUncheckedIndexedAccess": true,
+    // `{ a?: string }` no longer accepts `{ a: undefined }`, so a patch can't clear a field by accident.
+    "exactOptionalPropertyTypes": true,
+    // A subclass method that shadows a base method must say `override`.
+    "noImplicitOverride": true,
+    // Index-signature keys need obj["key"], so a typo'd property can't pass as a dynamic key.
+    "noPropertyAccessFromIndexSignature": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+    "useUnknownInCatchVariables": true,
+    "allowUnreachableCode": false,
+    // `import type` is written out, so a type-only import never drags a module into the bundle.
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "forceConsistentCasingInFileNames": true
+  }
+}

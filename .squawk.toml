@@ -1,0 +1,29 @@
+# squawk settings: the Postgres migration linter behind `pnpm migrations:lint` and the edit hook.
+# In the app: nothing at runtime; stacks/sql-migrations/lint.mjs passes this file to squawk.
+# Used by: the sql-migrations pack (stacks/sql-migrations/pack.json); project-owned, so tune it here.
+#
+# The lint checks every `*.sql` / `*.pgsql` under a `migrations/` or `migration/` directory (any
+# case) that git tracks (`*.down.sql` is skipped: it only runs on a rollback). The pack's lint
+# refuses a key squawk doesn't know, because squawk itself ignores a misspelled one and checks less
+# without saying so.
+
+# Rules this project doesn't run, each with why.
+excluded_rules = [
+  # A statement_timeout kills a long CREATE INDEX CONCURRENTLY or backfill partway. lock_timeout
+  # (still required) is the one that stops a migration queueing every query behind its lock.
+  "require-statement-timeout",
+]
+
+# Does the migration tool wrap each file in a transaction? false: it runs the file as written
+# (Prisma, plain psql), so a file with more than one statement opens with BEGIN and ends with
+# COMMIT itself. true: it wraps each file (goose, sqlx, Alembic, dbmate), so a file must not.
+# migrations.mdc → "Atomic" has the table.
+assume_in_transaction = false
+
+# Production's Postgres version, so rules that depend on it judge right. Set it once you have one.
+# pg_version = "16.0"
+
+# Migrations already applied in production when this pack arrived: history, never edited, so not
+# re-linted. Globs from the repo root, e.g. "prisma/migrations/202607*/**". The lint prints how many
+# files each entry skips, and fails one that skips a file origin/dev doesn't have yet.
+excluded_paths = []

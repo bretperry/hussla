@@ -1,0 +1,48 @@
+---
+# Always on for every agent: copied into AGENTS.md by `pnpm rules:sync` (Project architecture — layers, storage, writes, knobs, and the project's do-nots).
+agentsMd: 2
+alwaysApply: false
+---
+
+# Architecture
+
+<!-- Project-specific architecture bullets go first: where domain logic lives, where I/O lives,
+     how the API layer reaches it, the date/time convention, auth principal shape. Keep each
+     bullet dense and end it with the doc that holds the "why". The bullets below are the
+     standing philosophy every project starts with. -->
+
+- **Layering.** Pure domain logic lives in the domain layer — free of framework, I/O, and feature imports (each pack's path is in `docs/ports-and-adapters.md`). Feature modules own UI + validation schemas. Server I/O lives in services behind ports; the API layer validates input, then calls a use-case port, never a service or the ORM directly. Enforced by each language pack's boundary check, not memory (`docs/decisions/0003-ports-and-adapters.md`); the map, and the fix for each rule, is `docs/ports-and-adapters.md`. Why: ports and a composition root keep native clients and a second datastore possible without a rewrite.
+<!-- [stack:typescript] -->
+  TypeScript pack: the check is `.dependency-cruiser.cjs` (`pnpm boundaries`; `docs/decisions/0001-ports-and-adapters-enforced-by-dependency-cruiser.md`).
+<!-- [/stack:typescript] -->
+<!-- [stack:rust] -->
+  Rust pack: the layers are crates (`domain` → `app` → `adapters`, so cargo refuses an inward dependency), and `pnpm rust:boundaries` checks `[workspace.metadata.layers]` in `Cargo.toml`.
+<!-- [/stack:rust] -->
+<!-- [stack:python] -->
+  Python pack: one import-linter `layers` contract in `pyproject.toml` (`pnpm py:boundaries`; rules in `python.mdc`).
+<!-- [/stack:python] -->
+<!-- [stack:go] -->
+  Go pack: the check is the `depguard` rules in `.golangci.yml` (`pnpm go:lint`), proved by planted violations in `pnpm go:gates`.
+<!-- [/stack:go] -->
+<!-- [stack:swift] -->
+  Swift pack: layers are SwiftPM targets; the check is `swift-layers.json` read by `pnpm swift:boundaries`, proved by planted violations in `pnpm swift:gates`.
+<!-- [/stack:swift] -->
+<!-- [stack:kotlin] -->
+  Kotlin pack: the layers are Gradle modules, checked by `LAYERS` in `build.gradle.kts` on every build (`pnpm kotlin:check`), proved by planted violations in `pnpm kotlin:gates`.
+<!-- [/stack:kotlin] -->
+<!-- [stack:cpp] -->
+  C++ pack: the layers are CMake targets (`domain` ← `usecases` ← `adapters`), so linking is the gate; `cpp-layers.json` is checked against the configured build (File API), the compiler's include record, and each layer's undefined symbols (`pnpm cpp:build`), proved by planted violations in `pnpm cpp:gates`.
+<!-- [/stack:cpp] -->
+- **Storage behind ports.** Repositories take the tenant (`userId`) first and take no raw `where`; tenant scoping is structural, not remembered. ORM ↔ domain mapping lives in the adapter, so a use-case never sees a row. A write and whatever it implies go in one unit of work.
+- **Writes are patches, not replacements.** A write names what it speaks for and leaves the rest alone, so a client cannot delete what it never rendered. Retries must be no-ops.
+- **Product rename:** customer-facing copy only, from one product-config file in the config layer (display name, description, tagline). None ships with the template: create it with the first customer-facing copy and name it here. Leave slugs, package names, Docker, and infra. Do **not** rename files or folders.
+- **Knobs:** we love named constants for anything the product retunes (timing, limits, scoring, visual tokens, page catalogs). Prefer the config layer (each pack's path is in `docs/ports-and-adapters.md`); a named constant next to the domain is fine. UI + server that share a bound import the same export. Keep a knob even if one caller inlines the rule. CI/infra knobs live in `scripts/lib/`, not the config layer — they are not product and must not ship in the build.
+- **UI primitives** (once there is a UI) live in one shared folder; name it here. Compose, don't add a UI library.
+- **Client state:** only minimal UI state in the client store. Server data is fetched, not mirrored.
+
+## Do not
+
+- Add UI libraries, heavyweight client frameworks, or animation libraries without asking
+- Put domain logic only in UI components
+- Rename files or folders, Docker volumes, or other non-customer-facing identifiers as part of a product name change
+<!-- Add project do-nots here. -->

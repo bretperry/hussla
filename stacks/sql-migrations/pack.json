@@ -1,0 +1,37 @@
+{
+  "name": "sql-migrations",
+  "kind": "add-on",
+  "summary": "SQL migrations on Postgres, any language: atomic files, squawk lint, a kill-partway fault test. Prisma first; notes for sqlx, goose, Alembic.",
+  "requires": [],
+  "adoptOn": [],
+  "docs": [".cursor/rules/migrations.mdc"],
+  "code": [
+    "stacks/sql-migrations/lint.mjs",
+    "stacks/sql-migrations/lint.test.mjs",
+    "stacks/sql-migrations/kill-partway.test.mjs",
+    "stacks/sql-migrations/fixtures/kill-partway/0001_note.sql",
+    "stacks/sql-migrations/fixtures/kill-partway/0002_tag.sql",
+    "stacks/sql-migrations/fixtures/kill-partway/0003_note_slug.sql",
+    "stacks/sql-migrations/fixtures/nonconcurrent-index.sql"
+  ],
+  "owns": [".squawk.toml"],
+  "checks": [
+    {
+      "name": "Migration lint (squawk, atomic files)",
+      "script": "migrations:lint"
+    }
+  ],
+  "editCheck": {
+    "extensions": [".sql", ".pgsql"],
+    "run": "stacks/sql-migrations/lint.mjs"
+  },
+  "ciHeavy": ["(^|/)migrations/"],
+  "generated": [],
+  "packageJson": {
+    "scripts": ["migrations:lint"],
+    "devDependencies": ["squawk-cli"]
+  },
+  "claudeSettings": {
+    "allow": ["Bash(pnpm migrations:lint)", "Bash(pnpm exec squawk --version)"]
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "$comment": "Whippletree's suggested model for each tier and lineage (plans.mdc → Model tiers; how to find ids: docs/guide/models.md). Harness-owned: harness:pull updates it when a model ships. Override any cell under `models` in agent-overrides.json (team) or agent-overrides.local.json (yours). `model` is the id the tool takes; absent means the tool's own default. `latest` (home) is the Claude Code alias that tracks the newest of that family. null means no pick. `catalog` lists every model each vendor offers with a suggested tier (`pnpm models catalog`); `legacy` = superseded, `special` = not for plans.",
+  "reviewed": "2026-10-04",
+  "lineages": {
+    "home": { "vendor": "anthropic", "tool": "Claude Code" },
+    "rival": { "vendor": "openai", "tool": "Codex CLI" },
+    "wildcard": { "vendor": "xai", "tool": "Grok CLI" }
+  },
+  "tiers": {
+    "quick": {
+      "home": { "label": "Haiku 4.5", "model": "claude-haiku-4-5-20251001", "latest": "haiku" },
+      "rival": { "label": "GPT-6 Luna", "model": "gpt-6-luna" },
+      "wildcard": null
+    },
+    "workhorse": {
+      "home": { "label": "Sonnet 5.5", "model": "claude-sonnet-5-5", "latest": "sonnet" },
+      "rival": { "label": "GPT-6 Luna", "model": "gpt-6-luna" },
+      "wildcard": { "label": "Grok 4.7", "model": "grok-4.7" }
+    },
+    "deep": {
+      "home": { "label": "Opus 5.5", "model": "claude-opus-5-5", "latest": "opus" },
+      "rival": { "label": "GPT-6.1 Sol", "model": "gpt-6.1-sol" },
+      "wildcard": { "label": "Grok 4.7", "model": "grok-4.7" }
+    },
+    "frontier": {
+      "home": { "label": "Fable 5.1", "model": "claude-fable-5-1", "latest": "fable" },
+      "rival": { "label": "GPT-6 Astra", "model": "gpt-6-astra" },
+      "wildcard": null
+    }
+  },
+  "catalog": {
+    "anthropic": {
+      "tool": "Claude Code",
+      "find": "`/model` in `claude` (aliases), `/status` (the full id now running), https://platform.claude.com/docs/en/about-claude/models/overview",
+      "checked": "2026-10-04, models overview page",
+      "models": [
+        { "id": "claude-fable-5-1", "label": "Fable 5.1", "tier": "frontier" },
+        { "id": "claude-opus-5-5", "label": "Opus 5.5", "tier": "deep" },
+        { "id": "claude-sonnet-5-5", "label": "Sonnet 5.5", "tier": "workhorse" },
+        { "id": "claude-haiku-4-5-20251001", "label": "Haiku 4.5", "tier": "quick" }
+      ]
+    },
+    "openai": {
+      "tool": "Codex CLI",
+      "find": "`codex debug models` (works signed out), or `/model` in `codex`",
+      "checked": "2026-10-04, Codex CLI 0.160.0 catalog",
+      "models": [
+        { "id": "gpt-6-astra", "label": "GPT-6 Astra", "tier": "frontier", "note": "frontier intelligence" },
+        { "id": "gpt-6.1-sol", "label": "GPT-6.1 Sol", "tier": "deep", "note": "latest Sol" },
+        { "id": "gpt-6-sol", "label": "GPT-6 Sol", "tier": "legacy", "note": "previous workhorse" },
+        { "id": "gpt-6-luna", "label": "GPT-6 Luna", "tier": "workhorse", "note": "fast, affordable; also the quick pick" },
+        { "id": "gpt-5.6-sol", "label": "GPT-5.6 Sol", "tier": "legacy" },
+        { "id": "gpt-5.6-terra", "label": "GPT-5.6 Terra", "tier": "legacy" },
+        { "id": "gpt-5.6-luna", "label": "GPT-5.6 Luna", "tier": "legacy" },
+        { "id": "gpt-5.5", "label": "GPT-5.5", "tier": "legacy" },
+        { "id": "gpt-daybreak-blue-latest", "label": "Daybreak Blue", "tier": "special", "note": "hidden; defensive security work" },
+        { "id": "gpt-daybreak-red-latest", "label": "Daybreak Red", "tier": "special", "note": "hidden; cyber-permissive variant" },
+        { "id": "codex-auto-review", "label": "Codex Auto Review", "tier": "special", "note": "hidden; Codex's own approval reviewer" }
+      ]
+    },
+    "xai": {
+      "tool": "Grok CLI (`grok`)",
+      "find": "`/model` in `grok`, or `grok inspect`; https://docs.x.ai/docs/models",
+      "checked": "2026-10-04, xAI docs and promptfoo's xAI provider page (not yet checked against the CLI)",
+      "models": [
+        { "id": "grok-4.7", "label": "Grok 4.7", "tier": "deep", "note": "flagship; also the workhorse pick" },
+        { "id": "grok-4.6", "label": "Grok 4.6", "tier": "legacy" },
+        { "id": "grok-4.5", "label": "Grok 4.5", "tier": "legacy" },
+        { "id": "grok-4.3", "label": "Grok 4.3", "tier": "legacy" },
+        { "id": "grok-build-0.1", "label": "Grok Build 0.1", "tier": "special", "note": "coding-tuned; tier unconfirmed" }
+      ]
+    },
+    "google": {
+      "tool": "Gemini CLI",
+      "find": "`/model` in `gemini`; https://ai.google.dev/gemini-api/docs/models",
+      "checked": "2026-10-04, Gemini CLI 0.62.0 built-in list",
+      "models": [
+        { "id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash", "tier": "workhorse" },
+        { "id": "gemini-3.5-flash", "label": "Gemini 3.5 Flash", "tier": "legacy" },
+        { "id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash-Lite", "tier": "quick" },
+        { "id": "gemini-3-pro-preview", "label": "Gemini 3 Pro (preview)", "tier": "special", "note": "preview" }
+      ]
+    },
+    "github-copilot": {
+      "tool": "GitHub Copilot CLI (`copilot`)",
+      "find": "`/model` in `copilot` (ids are only listed after sign-in); https://docs.github.com/en/copilot/reference/ai-models/supported-models",
+      "checked": "2026-10-04, GitHub's supported-models page; ids shown only where GitHub's docs print one",
+      "models": [
+        { "label": "Claude Fable 5.1", "tier": "frontier" },
+        { "label": "Claude Opus 5.5", "tier": "deep" },
+        { "label": "Claude Sonnet 5.5", "tier": "workhorse" },
+        { "id": "claude-haiku-4.5", "label": "Claude Haiku 4.5", "tier": "quick" },
+        { "label": "GPT-6 Astra", "tier": "deep" },
+        { "label": "GPT-6.1 Sol", "tier": "workhorse" },
+        { "label": "GPT-6 Luna", "tier": "quick" },
+        { "label": "Grok 4.7", "tier": "deep" },
+        { "label": "Gemini 3.8 Flash", "tier": "workhorse" },
+        { "label": "Kimi K3", "tier": "workhorse", "note": "Moonshot AI; tier unconfirmed" },
+        { "label": "MAI-Code-1.1-Flash", "tier": "quick", "note": "Microsoft; tier unconfirmed" },
+        { "id": "gpt-5.4", "label": "GPT-5.4", "tier": "legacy" },
+        { "id": "gpt-5.3-codex", "label": "GPT-5.3-Codex", "tier": "legacy" },
+        { "label": "Claude Opus 5", "tier": "legacy" },
+        { "label": "Claude Sonnet 5", "tier": "legacy" },
+        { "label": "Claude Fable 5", "tier": "legacy" },
+        { "label": "GPT-6 Sol", "tier": "legacy" },
+        { "label": "Grok 4.6", "tier": "legacy" },
+        { "label": "Grok 4.5", "tier": "legacy" }
+      ]
+    }
+  }
+}

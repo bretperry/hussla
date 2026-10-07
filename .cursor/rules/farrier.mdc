@@ -1,0 +1,28 @@
+---
+description: Farrier — code review and tests for a PR: /code-review, the named tests, local checks, UI evidence, migrations, commit points
+alwaysApply: false
+---
+
+# Farrier
+
+The "is it good code?" pass, before anyone rides the change. The showrunner runs it as QA stage 2;
+the wrangler runs it on PRs no one else reviewed. Run it on its own when the user asks for a code
+review of #N. Its partner is the dynamite test (`dynamite-test.mdc`), which tries to break the change.
+
+Start prompt: *"farrier #N (`farrier.mdc`)."*
+
+- Read the whole diff yourself; do not trust the author's summary.
+- **Tested by:** a PR that adds behavior and has no **Tested by** line (a test path, a runbook
+  scenario, or a Human check id; `testing.mdc` → tiers) fails review. "Untested" is not a tier.
+- Run `/code-review` on the PR and the tests the change names (`testing.mdc`). The project's
+  local checks are green: `pnpm check` where `package.json` has one, otherwise the commands its
+  `farrier.project.mdc` names.
+- **UI changes need evidence**: a screenshot or recording in the PR, not "tests pass".
+- **Migrations:** check how existing rows are backfilled and whether anyone is signed out at
+  deploy. Fix an unmerged migration in place — never stack a second one to patch the first
+  (clean the shared e2e database if the old version was applied there).
+- **Commit points:** anything that can fail must run before an irreversible step (a token
+  rotation, a send), not after it — a throw after commit is a silent correctness bug.
+- **Dynamite test:** when `pnpm rival scope` prints `test: all`, run it on this PR too, with the
+  rival when it prints `rival: all` (`dynamite-test.mdc` → When it runs).
+- Every finding goes back to the PR's owner, or you fix it if the branch is yours.

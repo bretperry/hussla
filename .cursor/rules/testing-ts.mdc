@@ -1,0 +1,21 @@
+---
+description: Unit-test tooling for the TypeScript pack (Vitest, fast-check, Testing Library, MSW)
+globs: "**/*.{test,spec}.{ts,tsx}"
+alwaysApply: false
+---
+
+# Testing — TypeScript pack
+
+What to test and the four tiers: `testing.mdc`. This file is the TypeScript tooling.
+
+- Runner: Vitest. `scoring.test.ts` beside `scoring.ts`. Schema tests assert Zod parse success/failure.
+- Property tests with `fast-check`. Worked example: `src/domain/result.test.ts`.
+- In-memory fakes of ports live in `src/test/`.
+- **Fault injection (tier 2) seed:** `src/server/services/note-sync.chaos.test.ts`, one test per
+  fault kind plus a fast-check property over random fault scripts. The model server and the
+  fault-scripted outbox are `src/test/chaos/`. Virtual time is Vitest's fake timers
+  (`vi.useFakeTimers()` + `vi.runAllTimersAsync()`), so a 10-minute delay costs nothing.
+  fast-check prints the seed of a failing run; pass it back (`{ seed, path }`) to replay it.
+- **Output for agents:** Vitest's `agent` reporter (failures only) switches on by itself under Claude Code and Cursor; it's already trimmed.
+- `vitest --changed` / `related` are for local loops only (`testing.mdc`).
+- Network: MSW handlers in `src/test/msw/handlers.ts` with `onUnhandledRequest: "error"`.

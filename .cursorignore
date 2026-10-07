@@ -1,0 +1,6 @@
+# Generated / binary assets not useful as Agent context.
+# Cursor already honors .gitignore and its default ignore list (node_modules, .next, images, lockfiles).
+
+# Cursor's default ignore includes `.env*`, which would hide the committed template.
+# Re-include it so Agent can see required env names without reading `.env`.
+!.env.example

@@ -1,0 +1,377 @@
+# Merge gate: cheap checks on every push to a PR, the heavy tier only when it can fail and the PR is ready.
+# In the app: nothing at runtime; deploy is a separate workflow (add one per project).
+# Used by: GitHub Actions on PRs into dev/main and pushes to dev; rulesets require the job names below.
+# Uses: .github/actions/setup-node-pnpm; scripts/lib/ci-change-scope.mjs; package.json scripts; stacks/*/pack.json.
+# Watch: job `name:` values are ruleset keys; rename a job and its ruleset together (branching.mdc).
+#
+# Required checks: "Checks" (always) and "Build" (skips when it can't fail, which still reports),
+# plus each present pack's `requiredChecks` (bootstrap-repo.sh adds them; branch-protection.mdc).
+# [stack:swift]
+# Swift pack: "Swift tests" (the aggregator below) is required while the pack is present;
+# `pnpm stack:remove swift` deletes the job and prints the ruleset edit to drop it.
+# [/stack:swift]
+# Change scope is not required. Never add `paths-ignore` on `on:`, and never put [skip ci] on a PR
+# commit: a skipped *job* reports as passing, a workflow that never ran blocks the PR forever.
+#
+# Checks runs the harness's own steps (rules, plan tables, harness tests, generated-file drift),
+# then one step for every present stack pack's checks, read from its pack.json; a removed pack
+# takes its checks with it (docs/decisions/0002-stack-packs.md). That step runs only the packs whose
+# own files changed (Change scope's `packs`); prose runs none, anything shared runs all.
+#
+# Checks is one job, not five, so the install is paid once. Every check step still runs even
+# when an earlier one fails (`!cancelled()`), so one lint error can't hide a failing test: habit
+# learned that when a single job stopped at lint and CI said nothing about the code for days.
+#
+# The heavy tier (Build, and e2e when a project adds it) skips while the PR is a draft and when
+# Change scope says no path that can break it changed. PRs into main and manual runs always run it.
+#
+# Runners: Checks and Build run on the repo variable LINUX_RUNNER when it is set (a JSON label
+# list, e.g. ["self-hosted","Linux","thinkpad"]), else ubuntu-latest. Change scope stays hosted: it
+# gates everything, so an offline machine must not stall it. Rollback when the machine is offline
+# and required checks stall: delete the variable; no commit needed. Machine prerequisites and the
+# one-instance rule for machine-wide resources: branch-protection.mdc → Self-hosted runners.
+
+name: CI
+
+on:
+  pull_request:
+    # ready_for_review so flipping a draft to ready runs the heavy tier it skipped while draft.
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [dev, main]
+  # dev only: main's tip is always a tree already tested on the dev → main PR (pre-push guard +
+  # guard-main-source.yml), so a push-to-main run is a guaranteed duplicate.
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+# One run per PR (or branch); a new push cancels the run it replaces.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scope:
+    name: Change scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      heavy: ${{ steps.classify.outputs.heavy }}
+      # all, none, or the pack names whose checks this change needs (Checks → Stack pack checks).
+      packs: ${{ steps.classify.outputs.packs }}
+      # [stack:swift]
+      swift: ${{ steps.swift.outputs.swift }}
+      # [/stack:swift]
+      # [stack:kotlin]
+      android: ${{ steps.android.outputs.android }}
+      # [/stack:kotlin]
+    steps:
+      # Full history so the three-dot PR diff can find the merge base.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Classify changed paths
+        id: classify
+        run: node scripts/lib/ci-change-scope.mjs
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+      # [stack:swift]
+      # Did a Swift path change? Gates the macOS job below, which bills about 10x Linux.
+      - name: Classify Swift paths
+        id: swift
+        run: node stacks/swift/scope.mjs
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+      # [/stack:swift]
+      # [stack:kotlin]
+      # Did a Kotlin or Gradle path change? Gates the Android emulator job, which boots a device.
+      - name: Classify Android paths
+        id: android
+        run: node stacks/kotlin/scope.mjs
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+      # [/stack:kotlin]
+
+  # Waits on Change scope for `packs`. `!cancelled()` so a failed scope job still runs Checks: `packs`
+  # is then empty, which every pack reads as "run" (fail closed), and a skipped Checks would pass.
+  checks:
+    name: Checks
+    needs: [scope]
+    if: ${{ !cancelled() }}
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER || '"ubuntu-latest"') }}
+    # Every pack's checks in one job: about 10 minutes on dev before the Android app, and a cold
+    # Gradle cache (a PR can't write it) adds AGP, lint, and the SDK platform. The ceiling stops a
+    # hung step, not a normal run.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup
+        id: setup
+        uses: ./.github/actions/setup-node-pnpm
+      # [stack:rust]
+      # Toolchain and tools before the first step that spawns cargo (Harness tests). Third-party
+      # actions are pinned by commit; the comment is the version. The cache is keyed on Cargo.lock,
+      # the rustc version, and the job, so it can't freeze behind a moving `stable`.
+      - name: Rust toolchain
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - name: Cache Rust artifacts
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        # Save only from a run that built the Rust pack, so a run that skipped it can't store a thin cache.
+        with:
+          save-if: ${{ needs.scope.outputs.packs == '' || needs.scope.outputs.packs == 'all' || contains(format(',{0},', needs.scope.outputs.packs), ',rust,') }}
+      - name: Rust tools (nextest, deny)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: cargo-nextest,cargo-deny
+      # [/stack:rust]
+      # [stack:python]
+      # The Python pack's app profile needs uv; its tooling profile runs on the runner's own python3 (3.11+).
+      - name: Setup uv (Python pack)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      # [/stack:python]
+      # [stack:go]
+      # Go pack toolchain: Go from go.mod (its `go` line), and golangci-lint at the version go.mdc
+      # names; keep the two in step. install-only: the pack's own checks run it, below.
+      - name: Setup Go
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install golangci-lint
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        # Third-party action, pinned by commit (v9.3.0's tag points here).
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.5.0
+          install-only: true
+      # [/stack:go]
+      # [stack:infra]
+      # Pinned terraform, tflint, hadolint (sha256-checked); without them the infra checks fail in CI rather than skip.
+      - name: Infra tools
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bash stacks/infra/install-tools.sh
+      # [/stack:infra]
+      # [stack:swift]
+      # Swift pack toolchain: the runner image's own Swift (ubuntu-latest ships one), so no third-party
+      # setup action. This step prints the version and fails clearly when it is missing or below 6.2
+      # (Package.swift's tools version); the pack's checks below then run on every PR, and the macOS
+      # job runs the same tests on the platform the app ships on.
+      - name: Swift toolchain (version floor)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: node stacks/swift/run.mjs version
+      # [/stack:swift]
+      # [stack:kotlin]
+      # Kotlin pack toolchain: a JDK 21 (the build's toolchain) and Gradle's own setup, which caches
+      # ~/.gradle (dependencies, wrapper, build cache) and writes the cache only from the default
+      # branch. Gradle itself comes from the wrapper. Install-only: the pack's checks run below.
+      - name: Setup Java
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Setup Gradle
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          # Only dev and main write the cache, so a PR into dev reads dev's and can't grow or poison it.
+          # Nor from a run that skipped the Kotlin pack's checks: there'd be nothing worth caching.
+          cache-read-only: ${{ (github.ref_name != 'dev' && github.ref_name != 'main') || !(needs.scope.outputs.packs == '' || needs.scope.outputs.packs == 'all' || contains(format(',{0},', needs.scope.outputs.packs), ',kotlin,')) }}
+      # The app module builds against an Android SDK. GitHub's hosted runners ship one (ANDROID_HOME);
+      # a self-hosted runner gets one here, once, in ~/Android/Sdk. Either way the license is
+      # recorded, so AGP downloads the platform and build-tools the catalog names on first build.
+      - name: Android SDK
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: bash stacks/kotlin/android-sdk.sh
+      # [/stack:kotlin]
+      # [stack:sql-migrations]
+      # The migrations kill-partway test (in Harness tests) starts a throwaway Postgres; under CI it
+      # fails rather than skips without one. Hosted Ubuntu ships the server binaries, stopped; this
+      # puts them on PATH, installing them only on a hosted runner that lacks them (self-hosted: no sudo).
+      - name: Postgres server binaries (migrations fault test)
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          bin=$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$bin" ] && ! command -v initdb >/dev/null && [ "$RUNNER_ENVIRONMENT" = "github-hosted" ]; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq postgresql
+            bin=$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -n 1)
+          fi
+          if [ -n "$bin" ]; then echo "$bin" >> "$GITHUB_PATH"; "$bin/postgres" --version; else command -v initdb; fi
+      # [/stack:sql-migrations]
+      # [stack:cpp]
+      # C++ pack toolchain: the runner image's clang 18, clang-tidy, clang-format, cmake, and g++, plus
+      # what the sanitizer builds need that the image may lack (apt's libclang-rt, ninja; TSan's mmap
+      # entropy). No third-party action. `version` then fails clearly on a missing or too-old tool.
+      # On a self-hosted runner the script uses no sudo and leaves host ASLR alone (RUNNER_ENVIRONMENT);
+      # that machine must have the toolchain preinstalled (install-tools.sh's header lists it).
+      - name: C++ toolchain
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: |
+          bash stacks/cpp/install-tools.sh
+          node stacks/cpp/run.mjs version
+      # [/stack:cpp]
+      # [harness]
+      # The harness's own steps; `pnpm harness:eject` strips this fence (scripts/harness-eject.mjs).
+      # .claude/rules/*.md must match the .cursor/rules/*.mdc they're generated from.
+      - name: Claude rules in sync
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm rules:check
+      # Every docs/plans table must parse (plans.mdc); the plan board reads nothing else.
+      - name: Plan tables
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm plans:check
+      # The harness's own tests run on node:test, so they need no stack pack.
+      - name: Harness tests
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm test:harness
+      # [/harness]
+      # After an eject: the kept tests (packs' own, scripts/lib's). No such script before one, so a no-op.
+      - name: Tool tests
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm run --if-present test:tools
+      # Each pack's declared generated files must match what its generator writes (pack.json `generated`).
+      - name: Generated files in sync
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm stack:drift
+      # Every present pack's checks (stacks/*/pack.json `checks`), the same list `pnpm check` runs, so
+      # CI and local can't disagree. Each runs even after one fails, folded into its own log group.
+      # A pack's toolchain setup (a Rust toolchain, a simulator) goes above this in a [stack:<name>]
+      # fence just after Setup, before any step that runs the pack's tools (the harness tests do:
+# a pack's own harness tests may spawn its tools); the TypeScript pack needs none beyond Setup.
+      # Only the packs Change scope names (`packs`): a skill or rule edit runs none, a Rust change runs
+      # Rust. Toolchains above and Harness tests still run for every pack, so this skips checks, not setup.
+      - name: Stack pack checks
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        env:
+          PACKS: ${{ needs.scope.outputs.packs }}
+        run: node scripts/stack.mjs check --packs "$PACKS"
+
+  build:
+    name: Build
+    needs: [scope]
+    # `!cancelled()` so a failed scope job still runs Build (fail closed): `heavy` is then empty,
+    # and empty != 'false'. `.draft` is null on push/dispatch, and `!null` is true.
+    if: ${{ !cancelled() && !github.event.pull_request.draft && (github.event_name == 'workflow_dispatch' || github.base_ref == 'main' || needs.scope.outputs.heavy != 'false') }}
+    runs-on: ${{ fromJSON(vars.LINUX_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-node-pnpm
+      # No-op until the project adds a `build` script. Add e2e as its own job with this job's `if:`.
+      - name: Production build
+        run: pnpm run --if-present build
+  # [stack:kotlin]
+  # The Android app's instrumented tests (app/src/androidTest) on an emulator: `pnpm kotlin:device`,
+  # which Checks can't run (no device). Hosted Linux only, never LINUX_RUNNER: it needs KVM, and an
+  # emulator is a machine-wide resource a self-hosted runner shares with whoever else is on it.
+  # Skips on drafts and when no Android path changed (Kotlin sources, app/, the Gradle build: scope
+  # job's `android` output, fail-closed like Build); PRs into main and manual runs always run it. Skips on a push to dev: the ready PR
+  # already ran this code, and the dev → main PR runs it again. Not a required check (add
+  # "Android tests (emulator)" to the rulesets to make it one; branch-protection.mdc).
+  android-emulator:
+    name: Android tests (emulator)
+    needs: [scope]
+    if: ${{ !cancelled() && !github.event.pull_request.draft && github.event_name != 'push' && (github.event_name == 'workflow_dispatch' || github.base_ref == 'main' || needs.scope.outputs.android != 'false') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+      - name: Android SDK
+        run: bash stacks/kotlin/android-sdk.sh
+      # The emulator needs hardware acceleration; hosted runners have KVM, but only root may open it.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # Boots an emulator, runs the script against it, and shuts it down. Third-party action, pinned
+      # by commit (v2.38.0's tag points here). The image: API 35's Automated Test Device build,
+      # stripped of apps a test doesn't use, so it boots faster; minSdk (catalog) is the floor.
+      - name: Instrumented tests (connectedDebugAndroidTest)
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 35
+          target: aosp_atd
+          arch: x86_64
+          disable-animations: true
+          script: node stacks/kotlin/run.mjs device
+  # [/stack:kotlin]
+  # [stack:swift]
+  # The Swift pack's test on a Mac: the platform the package targets (Package.swift `platforms`),
+  # which Linux can't prove (Apple-only code is easy to add later). Plain `swift test`, no Simulator.
+  # Skips on drafts and when no Swift path changed (scope job, fail-closed like Build); PRs into main
+  # and manual runs always run it. Skips on a push to dev: that push is a PR merge whose code this
+  # job already ran on the ready PR, and the dev → main PR runs it again (macOS bills ~10x Linux).
+  # The Linux Checks job above runs the same tests on every PR and push.
+  swift-macos:
+    name: Swift tests (macOS)
+    needs: [scope]
+    if: ${{ !cancelled() && !github.event.pull_request.draft && github.event_name != 'push' && (github.event_name == 'workflow_dispatch' || github.base_ref == 'main' || needs.scope.outputs.swift != 'false') }}
+    # Phase 7 (public hardening): the runner fork guard applies here. Fork PRs must never reach a
+    # self-hosted Mac; today this is GitHub-hosted (`macos-26`, Xcode 26 = Swift 6.2). If this
+    # moves to a self-hosted label, gate it on the Phase 7 guard first (branch-protection.mdc → Self-hosted runners).
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # Xcode's own Swift (`swift` is the xcrun shim on a macOS runner), no setup action.
+      - name: Swift toolchain (version floor)
+        run: node stacks/swift/run.mjs version
+      - name: swift test (fails when zero tests execute)
+        run: node stacks/swift/run.mjs test
+
+  # The cheap aggregator: carries the required-check name so the macOS job can skip (draft, no Swift
+  # change) without leaving the PR waiting on a check that never reports. A skipped Mac passes; a
+  # failed or cancelled one fails. Rename this job, the ruleset, and stacks/swift/pack.json
+  # `requiredChecks` together (branch-protection.mdc). `!cancelled()`, not `always()`: a cancelled
+  # run (a newer push replaced it) has nothing to report.
+  swift:
+    name: Swift tests
+    needs: [swift-macos]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Mac job did not fail
+        env:
+          MAC_RESULT: ${{ needs.swift-macos.result }}
+        run: |
+          echo "Swift tests (macOS): $MAC_RESULT"
+          case "$MAC_RESULT" in success|skipped) exit 0 ;; *) exit 1 ;; esac
+  # [/stack:swift]

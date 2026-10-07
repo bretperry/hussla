@@ -1,0 +1,195 @@
+---
+description: Execution plans in docs/plans — phase table with model, thinking level, and prerequisites so an agent can start a phase from the file alone
+globs: docs/plans/**/*.md
+alwaysApply: false
+---
+
+# Execution plans
+
+`docs/plans/` files exist so a fresh session can start one phase with nothing else.
+The table near the top is the scan surface; each phase section is the whole prompt.
+
+Every plan has this table near the top — after the "why this exists" paragraph, before the
+first phase. The header is exactly this, and `pnpm plans:check` (CI) reads every cell, so the
+table is a contract, not a style:
+
+| Phase | What | After | Model | State |
+|---|---|---|---|---|
+| 0 | … | — | quick (low) | |
+| 1 | … | 0 | workhorse (medium) | |
+| 3 | … | 1, 2; enrollment | deep (xhigh) | |
+
+- **Phase** — the id: a number with an optional letter prefix or suffix (`0`, `4a`, `R0a`).
+  Always `Phase`, never `Stage` or `Step`. Words (`optional`, `was R4`) go in What.
+- **After** — prerequisites. Prior phases by id, comma-separated, `1–5` for a range (`4` covers
+  `4a`–`4c`); `—` if none. A non-phase gate (enrollment, a machine, a secret, "R4a deployed")
+  goes after a `;`, one gate per `;`. When a gate clears, keep it and add the date:
+  `0; enrollment (cleared 2026-09-19)`. The board reads "cleared" as open.
+- **Model** — suggested tier for *that* phase (Model tiers, below), **with its thinking level in
+  parentheses**: `low`, `medium`, `high`, `xhigh`. Spend the reasoning budget where a
+  mistake is silent; cheap models for mechanical work with loud failures. A human
+  phase is `— (human)` with no level.
+
+  Tier and level are one decision, not two axes, which is why they share a cell —
+  and they do not have to move together. A small build with a silent failure mode
+  earns a high level on a cheap tier; a large mechanical diff that fails loudly does
+  not. Say which case it is in the phase's own line.
+
+  Restate it on the first line of each phase section as
+  **`**Model:** <tier> · **Thinking:** <level> — <one-line why>`**. The table is the
+  scan surface and stays terse; the phase line is the worker's prompt, so it spells
+  both out and says *why* that level.
+
+  **Always.** A model with no thinking level is an incomplete plan, not a default:
+  a worker left to guess the level runs at whatever the session happens to be set to,
+  and that is exactly how a silent-failure phase runs cheap. So:
+  - Never write, add, or reassign a phase's model without its level, in the table cell
+    *and* the phase line.
+  - Before starting a phase whose level is missing, pick one, write it into the plan
+    (both places, with the why), and only then start. This is the one retrofit that
+    is always allowed — see the note at the end of this file.
+  - Editing a plan's phase table for any reason (State, a model swap, a new phase)
+    fills every missing level in that table while you are there.
+- **State** — `<status>[ (#PR, …)][; note]…`. The status is one of:
+
+  | Status | Means |
+  |---|---|
+  | *(blank)* | not started |
+  | `running` | a worker is on it |
+  | `QA passed (#N)` | draft PR passed QA, waiting on the user's click and a merge |
+  | `landed (#N)` | merged into `dev` (the PR number may be missing on old phases) |
+  | `blocked; <why>` | can't proceed until something outside the table changes |
+  | `dropped; <why>` | won't be built; stays in the table for the record |
+
+  Everything else is a note after a `;`: `landed (#186); 3 human checks open`,
+  `landed (#231); in prod`. No other status words (`done`, `hard-gated`, `not planned`,
+  `optional`, `running (review 2)`); the lint fails on them.
+
+Each phase section is complete on its own: goal, files, tests, bar for done.
+
+- **Every Done-when item carries its check**: `→ verify: <command, test, or thing to look at>`.
+  An item nobody can check isn't done-able; rewrite it until it is. `pnpm plans:check` fails a
+  phase still to run (not landed, dropped, or human) that has no `## Phase <id>` section, no
+  `**Done when:**` block, or an item without `→ verify:`, and names a near miss (`-> verify`).
+- **Unknown territory gets a Research block** before Files: what to read first and the open
+  questions. The worker answers them *into the plan* (via the showrunner) before building, because
+  a wrong line in a plan becomes hundreds of wrong lines of code.
+- **Cite what already applies**: before writing a phase, `grep -ril <area> docs/learnings/
+  docs/decisions/` and link the hits in the phase, so the worker doesn't re-learn them.
+Start prompt: *"read `docs/plans/<file>.md` and do Phase N."*
+
+**Handing off a new plan.** Whoever writes a plan ends that reply with two copy-paste prompts,
+in code blocks, with the real path and the first phase's own id filled in (`0`, `1`, `R0a`):
+
+````markdown
+To start Phase 1, paste this into a fresh session:
+```
+read docs/plans/<file>.md and do Phase 1
+```
+Or build the whole plan, phase by phase, by pasting this:
+```
+read docs/plans/<file>.md and showrun it (showrunner.mdc)
+```
+````
+
+Why: the user's next move is one of those two, and a ready-to-paste line saves them
+reconstructing it from the rule.
+
+**One feature branch per phase**, draft PR into `dev` (`branching.mdc`).
+
+## Model tiers
+
+Plans and rules name a tier, never a model, so they don't date and each project picks its own
+models without touching a plan. `pnpm models` prints the table this project runs with and where
+each cell came from (`scripts/model-tiers.test.mjs` fails on a model name in any other harness file).
+
+| Tier | For |
+|---|---|
+| `quick` | Mechanical work that fails loudly. |
+| `workhorse` | Most building: the default. |
+| `deep` | Silent-failure, security, release; QA and orchestration. |
+| `frontier` | The hardest reasoning, when `deep` isn't enough. |
+
+- **`model-tiers.json`** (harness): whippletree's suggested model for each tier and lineage, with
+  the id each tool takes. Updated in whippletree when a model ships; `harness:pull` brings it as a
+  diff the project can take or leave.
+- **`agent-overrides.json`** → `models` (project, optional): `{ "<tier>": { "<lineage>": … } }`,
+  any cell; a person's gitignored `agent-overrides.local.json` wins over it (`docs/guide/overrides.md`). A model id pins it; `latest` follows the newest (home: the Claude Code family alias;
+  rival and wildcard: the tool's own default); `none` drops the pick. An unknown tier, lineage, or
+  empty value fails loudly.
+- No pick for a cell: use the tier below.
+
+Lineages are the model families, one column each:
+
+- **`home`** (Anthropic, Claude Code): what runs unless a plan says otherwise.
+- **`rival`** (OpenAI, Codex): a second opinion that doesn't share `home`'s blind spots. A pick on
+  `deep` switches on the rival in the dynamite test; no pick there switches it off
+  (`dynamite-test.mdc` → Rival).
+- **`wildcard`** (xAI, Grok CLI): a third voice, to break a tie between the other two.
+
+Setup, and how to find each tool's model ids: `docs/guide/models.md`. `pnpm models catalog` lists
+every model each vendor offers with the tier whippletree suggests for it.
+
+A plan names a lineage only when it isn't `home`, after the level: `deep (xhigh) · rival`.
+
+## Human checks
+
+Anything only a person can verify (a physical device, a real walk or reboot, another OS, a
+judgment call, a check on prod after deploy) goes in the phase section as a `Human checks`
+block, never only in prose. The wrangler compiles every block into one living checklist the
+user ticks (`wrangler.mdc` → Human checks), and ticks come back to update State.
+
+```markdown
+**Human checks**
+- `sync-p2-offline` · iPhone · 10 min · ios-release — Airplane mode, log two entries, reconnect: both appear on web.
+- `sync-p3-walk-out` · iPhone · walk · ios-release · waits #42 — Walk out the door: the geofence rule fires once.
+- `prod-still-signed-in` · prod · 2 min · deploy — After deploy, phone and web are still signed in.
+```
+
+- **id**: kebab-case, globally unique, prefixed with the plan's slug (`sync-`, `security-`,
+  `desktop-`), `prod-` for post-deploy checks, or `ci-` for repo-wide calls (billing, CI budget).
+  Never reuse or rename one: ticks are keyed on it.
+- **where**: `prod`, `iPhone`, `Watch`, `Mac`, `Windows`, `Linux`, or `decision`. This picks
+  the checklist station. The project's `docs/human-checks.json` lists its stations (each with
+  its `where` values) and its gates; those are the only values the lint accepts. Without that
+  file, the where and gate values listed here are the defaults.
+- **time**: a rough duration (`2 min`, `~45 min`, `walk`).
+- **gate**: what it blocks. `deploy` (check right after the ship lands), `ios-release`,
+  `desktop-release`, or `none` for a judgment call.
+- **waits** (optional): a PR or phase it can't start before.
+- Then the check itself, as an instruction with the pass condition in it. Its first sentence
+  becomes the checklist title, so lead with a short one.
+- An **indented line** under an item is a note on it (e.g. `  **Approved 2026-09-19** (user)`).
+  Any other non-item line ends the block.
+- Checks that belong to no plan (post-deploy `prod-`, repo-wide `ci-`) live in
+  `docs/human-checks.md`, in the same format. A runbook scenario's check lives in its runbook
+  (`docs/runbooks/<area>.md`, `testing.mdc` → tier 3).
+- `pnpm plans:check` parses every block in all three places, with the compiler's own parser
+  (`scripts/lib/human-checks.mjs`), and fails on an unparsed item, a duplicate id, an unknown
+  gate or where, a misspelled `**Human checks**` header, an item outside any block, a list item
+  in a block that isn't a check, a block with no items, an unindented line right under a check,
+  or a code fence or HTML comment that never closes. A block may sit indented inside a list; a
+  line indented past a check is a note on it.
+
+A phase whose human checks aren't all ticked says so in State (`landed; 3 human checks open`),
+not `device acceptance pending`.
+
+To run a whole plan with one session dispatching phases to worker agents, follow
+`showrunner.mdc`.
+
+Beyond the table, do not retrofit an existing plan's shape unless you are already rewriting
+it. The table itself is never grandfathered: fixing it until `pnpm plans:check` passes is always
+allowed. Landed phases may keep a model without a level (or `—` when none was recorded); every phase
+still to run needs one.
+The shape to copy: `docs/plans/_template.md`.
+
+Only plans live in `docs/plans/`: every `.md` there except `_template.md` needs the table.
+Reference material (a runbook, a seed list, a spike write-up) goes elsewhere in `docs/`.
+
+## The board
+
+`pnpm plans:board` (the `plan-board` skill) renders every plan's table as one page: a lane per
+plan with a completion line, each phase colored by where it stands (landed, landed with checks
+open, QA passed, running, ready to start, gated, blocked, waiting), and what to start next.
+With `--gh` it also flags a State that disagrees with GitHub (a merged PR on a phase not
+`landed`). The project's companion names the artifact it publishes to.

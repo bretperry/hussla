@@ -1,0 +1,9 @@
+{
+  "layers": {
+    "domain": { "may": [], "deny": ["io", "clock", "env", "process", "thread", "random", "net", "dynamic"] },
+    "usecases": { "may": ["domain"], "deny": ["io", "clock", "env", "process", "thread", "random", "net", "dynamic"] },
+    "adapters": { "may": ["domain", "usecases"], "deny": [], "anyLibrary": true }
+  },
+  "tests": "cpp/tests",
+  "tidyOff": { "cpp/tests": ["readability-function-cognitive-complexity"] }
+}

@@ -1,0 +1,57 @@
+# The Rust workspace: three crates in a line, so the compiler is the first boundary gate.
+# Part of the rust stack pack (`pnpm stack:remove rust` removes it); rules in .cursor/rules/rust.mdc.
+#
+# domain → app → adapters, each crate depending only on the ones to its left. A dependency pointing
+# the other way is a cycle, which cargo refuses. Cargo can't say "domain takes no packages" or
+# "app takes only these", so `stacks/rust/boundaries.mjs` (`pnpm rust:boundaries`) checks the
+# [workspace.metadata.layers] table below against every crate's real dependencies.
+
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+publish = false
+
+# Who may use whom. `may-use`: workspace crates (dev-dependencies too). `external`: the registry
+# crates a normal dependency may name, or "*" for any. Dev-dependencies may use any registry crate.
+# Every crate needs a row, and every name here must be a real crate: a typo fails the check.
+[workspace.metadata.layers]
+domain = { may-use = [], external = [] }
+app = { may-use = ["domain"], external = ["thiserror", "tokio"] }
+adapters = { may-use = ["domain", "app"], external = "*" }
+
+[workspace.dependencies]
+domain = { path = "crates/domain" }
+app = { path = "crates/app" }
+adapters = { path = "crates/adapters" }
+proptest = "1"
+thiserror = "2"
+tokio = { version = "1", default-features = false }
+
+# The lint floor (rust.mdc → Lint). Set once here; each crate opts in with `[lints] workspace = true`.
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Failures are values: a bug may crash, but not through a lazy unwrap.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+unreachable = "deny"
+# `&s[a..b]` panics on a char boundary.
+string_slice = "deny"
+# A lint is silenced with `#[expect(.., reason = "..")]`, which fails once it stops being needed.
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+# `xs[i]` panics: the TypeScript pack's noUncheckedIndexedAccess, here.
+indexing_slicing = "deny"
+# Pedantic noise that costs more than it finds in a crate-per-layer workspace.
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"

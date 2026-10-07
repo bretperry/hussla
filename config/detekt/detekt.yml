@@ -1,0 +1,82 @@
+# The Kotlin pack's detekt overrides, on top of detekt's defaults (buildUponDefaultConfig in build.gradle.kts).
+# In the app: `./gradlew check` and the edit hook run detekt with it; any finding fails the build.
+# Used by: build.gradle.kts (every module); stacks/kotlin/gates.mjs proves the domain import rule still bites.
+#
+# Every active rule is an error: detekt fails on any finding, and its defaults are the floor.
+# Listed here: what this pack turns on or changes, each with why. A real exception is
+# `@Suppress("<Rule>")` on the one declaration, with a why-comment; never a change here.
+
+config:
+  # An unknown rule or key fails the run, so a misspelled rule name can't leave a rule silently off.
+  validation: true
+
+style:
+  # The domain layer imports no I/O, threads, or platform. The build already keeps libraries out of
+  # :domain (build.gradle.kts → LAYERS); this keeps out the JDK's own I/O, which every module can reach.
+  # `includes` is a path glob: rename the module and this matches nothing, so `pnpm kotlin:gates`
+  # plants an import here and fails unless detekt reports it.
+  ForbiddenImport:
+    active: true
+    includes: ['**/domain/src/main/**']
+    forbiddenImports:
+      - value: 'java.io.*'
+        reason: 'domain does no I/O: put it behind a port in :usecases (docs/ports-and-adapters.md).'
+      - value: 'java.nio.*'
+        reason: 'domain does no I/O: put it behind a port in :usecases (docs/ports-and-adapters.md).'
+      - value: 'java.net.*'
+        reason: 'domain does no network: put it behind a port in :usecases (docs/ports-and-adapters.md).'
+      - value: 'java.sql.*'
+        reason: 'domain does no storage: put it behind a port in :usecases (docs/ports-and-adapters.md).'
+      - value: 'java.util.concurrent.*'
+        reason: 'domain is single-threaded pure logic: concurrency belongs in a use-case.'
+      - value: 'java.time.Clock'
+        reason: 'domain takes the time as a value; the clock is a port (WallClock).'
+      - value: 'javax.*'
+        reason: 'domain imports no platform API.'
+      - value: 'android.*'
+        reason: 'domain imports no platform API; Android code lives in an adapter or the app module.'
+      - value: 'kotlin.io.path.*'
+        reason: 'domain does no file I/O: put it behind a port in :usecases (docs/ports-and-adapters.md).'
+      - value: 'kotlin.time.Clock'
+        reason: 'domain takes the time as a value; the clock is a port (WallClock).'
+  # Off: ktfmt owns layout (it wraps code at 100), and a file header's labeled lines are one line
+  # each however long (docs.mdc), which a length rule can't tell from code.
+  MaxLineLength:
+    active: false
+  # Production code reads the clock, the environment, and classes through ports, never directly:
+  # a hidden read makes a result depend on the machine. The one adapter that wraps each (data's
+  # SystemWallClock) suppresses the rule on that line with a reason. print/println: output goes
+  # through a port (a logger adapter), never stdout. The domain's compiled classes are also
+  # scanned for these (build.gradle.kts → LAYERS bytecode), which catches what this misses.
+  ForbiddenMethodCall:
+    active: true
+    excludes: ['**/test/**', '**/testFixtures/**', '**/androidTest/**']
+    methods:
+      - value: 'kotlin.io.print'
+        reason: 'output goes through a port (a logger adapter), never stdout.'
+      - value: 'kotlin.io.println'
+        reason: 'output goes through a port (a logger adapter), never stdout.'
+      - value: 'java.lang.System.currentTimeMillis'
+        reason: 'the wall clock is a port (WallClock); data SystemWallClock is its adapter.'
+      - value: 'java.lang.System.nanoTime'
+        reason: 'the clock is a port; elapsed time in a use-case comes from the coroutine scheduler.'
+      - value: 'java.lang.System.getenv'
+        reason: 'configuration is read once, in the composition root, and passed in.'
+      - value: 'java.lang.System.getProperty'
+        reason: 'configuration is read once, in the composition root, and passed in.'
+      - value: 'java.lang.Class.forName'
+        reason: 'reflection hides a dependency from the layer map; depend on it, or take it through a port.'
+
+coroutines:
+  # GlobalScope leaks work past its owner; a use-case takes a scope or uses coroutineScope.
+  GlobalCoroutineUsage:
+    active: true
+  # runCatching around a suspend call swallows cancellation, so a cancelled flush keeps running.
+  SuspendFunSwallowedCancellation:
+    active: true
+
+naming:
+  # JUnit test names are sentences in backticks (`fun \`drop - retries ...\`()`); an instrumented
+  # test's are snake_case sentences, since a method name with spaces doesn't dex below API 30.
+  FunctionNaming:
+    excludes: ['**/test/**', '**/testFixtures/**', '**/androidTest/**']

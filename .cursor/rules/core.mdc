@@ -1,0 +1,118 @@
+---
+# Always on for every agent: copied into AGENTS.md by `pnpm rules:sync` (Harness constraints — before you write code, claims need evidence, response shape, deleting data is a human action, guard rails, repo memory).
+agentsMd: 1
+alwaysApply: false
+---
+
+# Core
+
+<!-- Harness-owned: refreshed from whippletree. Project architecture and project do-nots live in
+     architecture.mdc. -->
+
+## Before you write code
+
+Stop at the first step that holds:
+
+1. **Does it need to exist?** Is it asked for, or required by what was asked?
+2. **Does the codebase already do it?** Reuse or extend it.
+3. **Does the language, the platform, or an installed dependency do it?**
+4. **Only then write the smallest thing that works.** Never cut validation, security, accessibility,
+   or data-loss handling to get there.
+
+Every changed line traces to the request: no drive-by refactors, renames, or reformatting, and
+remove only what your own change orphaned. A cleanup worth doing is its own change or a
+`docs/deferred.md` entry. Why: small diffs get real review, and unasked-for code is where bugs hide.
+
+Beyond the asks other rules already require, ask the user when a wrong guess is expensive to
+undo: an API or schema shape, or a user-visible behavior the request or plan doesn't settle. A
+filename, a helper's name, a test's layout: choose, and say what you chose. A worker dispatched by
+another session takes the question to that session instead. Why: a question costs the user a turn;
+a wrong guess at a one-way door costs a rewrite.
+
+## Claims need evidence
+
+For what you report as done (a reply, a PR body, a plan's State), not every sentence.
+
+- **A check passed only when its own exit code says so.** A pipeline exits with its last command's
+  status, so `build | tail` reads green on a red build. Capture instead:
+  `cmd > "$log" 2>&1; echo "exit=$?"; tail -50 "$log"`, or `set -o pipefail` first. Where a tool's
+  exit code doesn't track its outcome, make it: `gh run watch --exit-status`, `--max-warnings 0`.
+- **Measured or inferred.** Measured: you ran it, got the response, or read a CI check's own
+  conclusion for the exact head SHA. Inferred: a log line, a dashboard summary, an earlier note,
+  another agent's report. Reading a config measures the file, not what it does at runtime. Mark
+  inferred state *inferred* and name its source; a worker's "it passes" stays inferred until you
+  rerun it or read the diff.
+- **Diagnose before you fix.** Name the root cause in a sentence with its evidence (a log, a
+  payload, a row, a failing test). If you can't confirm it, say so, name what would, and make the
+  change that adds that evidence. A compiler or lint error is its own diagnosis.
+
+## Response shape
+
+For a substantive answer (a design, a fix, a recommendation, a plan, a root cause), end with the
+sections below that have something in them, a few bullets each, in this order. Leave an empty one
+out. A one-line answer stays one line. Why: the reader sees the conclusion, not the picture behind
+it, and these are where that picture is most often wrong.
+
+- **Assumptions** — what you took for granted that, if wrong, changes the answer.
+- **Failure modes** — where it breaks: the input, the scale, the edge case.
+- **How to verify** — one quick check the reader can run to confirm it rather than trust you.
+- **Not checked** — what you skipped or couldn't reach (no access, a test you didn't run).
+- **One-way doors** — any step that can't be undone, and what it would take with it.
+- **Alternatives** — the option you rejected, and why, in a line.
+- **What would change my mind** — the one fact that would flip the recommendation.
+- **Needs you** — a decision only the user can make. Lead with it instead when the work waits on it.
+
+## Deleting data is a human action
+
+An agent never deletes user data, and never deletes the thing that could bring it back. Write the
+migration, the script, the query, the runbook — then **stop and hand the exact command to the user**,
+the same way a PR stays draft until they click Ready. This is not about trust; it is that the blast
+radius of a delete is invisible from the diff that contains it, and no test run afterwards can undo it.
+
+**Agents do not run, and do not ask CI to run:**
+
+- `DROP TABLE` / `DROP COLUMN` / `TRUNCATE` on anything holding user rows, or a `DELETE` / clearing
+  `UPDATE` against any database that is not loopback or a throwaway (staging, prod, demo, any
+  branch of either). Writing the migration file is the agent's job; applying it to a real
+  environment is not.
+- Deleting or resetting a database, database branch, or project — including one taken as a recovery point.
+- Deleting backups, snapshots, restore points, or object-storage buckets holding user data.
+- Disabling, deleting, or scheduling deletion of an encryption key. Crypto-shredding is deletion with
+  a different verb: the rows survive and become unreadable, which is worse than a `DELETE` because
+  nothing reports it.
+- Running an operator script that clears a column against a non-loopback database. A backfill that
+  nulls the source column is a delete wearing a backfill's name — give it a `--yes`.
+
+**Agents do:** write it, test it against localhost / the e2e database / an ephemeral branch, put the
+exact command and its preconditions in the plan or the PR, say what is irreversible about it, and say
+what has to be true first. A destructive step in a plan gets a **Human check** id like any other
+(`plans.mdc`), and the phase is not done until the user ticks it.
+
+**If a delete is the only way forward and the user is not around:** stop and say so. A half-finished
+task is recoverable; this is not.
+
+## Guard rails that run by themselves
+
+Hooks enforce the worst of these rules for Claude Code (`.claude/settings.json`) and Cursor
+(`.cursor/hooks.json`):
+
+- `scripts/command-guard.mjs` refuses, or asks the user about, commands only a human may run: Ready
+  clicks, merges, pushing `main`, force-pushing or deleting `main`/`dev`, `--no-verify`, full CI
+  reruns, manual workflow runs, `[skip ci]` off `dev`, and deleting data.
+- `scripts/check-edited.mjs`, where the hook config wires it, typechecks, lints, and
+  boundary-checks each file an agent edits and hands back only the failures. Where it isn't
+  wired, run the typecheck and lint yourself before pushing.
+
+A refused command is an answer, not an obstacle. Never route around it (another tool, a script, a
+different spelling). Tell the user what you need and why.
+
+## Repo memory
+
+- **Deferred work** lives in `docs/deferred.md` — decisions we knowingly left undone, each with why, where, and what changes if we take it. When you leave something undone on purpose, add an entry there; a "come back to that" in a PR thread is gone the moment it merges. Delete an entry when it is done rather than marking it closed, so the file stays the open set.
+- **Decisions taken** live in `docs/decisions/` (one short numbered file each: context, decision, consequences). Deferred work is what we chose not to do yet; decisions are what we chose. Write one when a choice constrains future work or reverses an earlier one, so a later session doesn't undo it unknowingly.
+- **Learnings** live in `docs/learnings/`: a mistake that would happen again, and the check that catches it. After a PR merges, run `compound` (`compound.mdc`), which prefers a real check over a written warning.
+
+## Do not
+
+- Commit secrets (`.env`); use `.env.example` patterns
+- Delete user data, or anything that could restore it, on the user's behalf — see "Deleting data is a human action" above

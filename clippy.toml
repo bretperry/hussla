@@ -1,0 +1,6 @@
+# Test code may unwrap, expect, panic, and index: a failure there is the test failing, which is the point.
+# The deny list itself is in Cargo.toml → [workspace.lints.clippy]. Part of the rust stack pack.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true

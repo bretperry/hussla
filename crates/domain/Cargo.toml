@@ -1,0 +1,13 @@
+[package]
+name = "domain"
+version = "0.0.0"
+edition.workspace = true
+publish.workspace = true
+
+# No [dependencies], on purpose: the boundary check fails the build if one appears.
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,15 @@
+---
+description: React conventions — pages, components, forms, styling, UI copy, component tests
+globs: "**/*.tsx"
+alwaysApply: false
+---
+
+# React
+
+- Keep pages as thin server shells; interactive pieces in `features/*/components` with `"use client"`.
+- Forms: React Hook Form + `zodResolver` against schemas in `features/*/schemas`.
+- Styling: Tailwind utilities + `cn(...)`. Theme tokens live in the global stylesheet. Do not hardcode new hex in components.
+- Empty / loading / error copy should match nearby screens.
+- Component tests run under jsdom. Setup: `src/test/setup.ts`.
+- Component smoke tests: Testing Library + `user-event` where interaction matters.
+<!-- Part of the react stack pack: `pnpm stack:remove react` removes it. -->

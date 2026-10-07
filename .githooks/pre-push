@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# Refuse to push `main` unless its content came from `dev`, and run the fast checks before code leaves the machine.
+# In the app: enforces .cursor/rules/branching.mdc (only dev merges to main; local runs are free, CI is not).
+# Used by: scripts/install-git-hooks.sh → .git/hooks/pre-push. Bypass: `git push --no-verify` (human only; command-guard refuses it).
+# Uses: the ref list git feeds on stdin ("<local ref> <local sha> <remote ref> <remote sha>"); `npm run check`; scripts/sync-claude-rules.mjs; scripts/plans-status.mjs.
+#
+# The rule: main only ever takes changes through dev. A real `dev → main` merge —
+# fast-forward, or `--no-ff` with nothing else added — produces a main whose tree
+# is identical to dev's. A direct commit on main, or a merge of some other branch,
+# changes the tree away from dev. So the guard is: main's new tip must have the
+# same tree as `dev` (or `origin/dev`).
+#
+# `git merge` gives a hook no reliable way to name the branch being merged, so the
+# check lives here at the push line — nothing matters until main reaches origin.
+# A bad local merge just won't leave the machine (`git reset --hard @{1}` to undo).
+# Keep `origin/dev` fresh with fetch; the check falls back to it when local `dev`
+# is behind.
+#
+# Fast checks: when a pushed range touches anything beyond docs-only paths (the same list as
+# branching.mdc → docs-only), `npm run check` (the harness's own checks, then each stack pack's) runs
+# once for the whole push. It is skipped before `pnpm install`, when package.json has no `check`
+# script, and for main (main only ever takes dev's already-checked tree). They check the working
+# tree, as any hook does, so commit what you mean to push. Human escape hatch: WHIPPLETREE_SKIP_CHECKS=1 git push.
+
+# Unset variables are errors; no `set -e` so a git lookup miss can `|| exit 0` on its own terms.
+set -u
+
+# Repo root, or bail clean if this somehow runs outside a work tree.
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$ROOT" || exit 0
+
+# The all-zero sha git sends for a branch that is being deleted.
+zero="0000000000000000000000000000000000000000"
+# Accumulates the exit code; stays 0 until a ref fails the check.
+status=0
+# Set when any pushed range touches a non-docs path; the fast checks then run once at the end.
+needs_checks=0
+# Set when a pushed range touches the rules; the generated-copy drift check then runs.
+needs_rules_check=0
+# Set when a pushed range touches what the plan-table lint reads; it then runs.
+needs_plans_check=0
+# Docs-only paths (branching.mdc): prose that cannot break the build.
+docs_only='^(docs/|\.cursor/rules/|\.claude/(skills|rules)/|[^/]+\.md$|harness(\.project)?\.json$)'
+# What sync-claude-rules.mjs --check reads or writes.
+rules_paths='^(\.(cursor|claude)/rules/|AGENTS\.md$)'
+# What plans-status.mjs check reads: plans, runbooks, the loose Human checks and their config
+# (scripts/lib/human-checks.mjs), and the two scripts themselves.
+plans_paths='^(docs/(plans|runbooks)/|docs/human-checks\.(md|json)$|scripts/plans-status\.mjs$|scripts/lib/human-checks\.mjs$)'
+
+# Scratch file for one range's NUL-separated path list (bash variables can't hold NUL); removed on exit.
+changed_file="$(mktemp)" || exit 1
+trap 'rm -f "$changed_file"' EXIT
+
+# A range we can't list (no base, or git refused the diff): run every check rather than guess it's docs.
+everything_changed() {
+  needs_checks=1
+  needs_rules_check=1
+  needs_plans_check=1
+}
+
+# Trees of local dev and origin/dev — a valid main tip must match one of them.
+# `|| true` so a missing ref is empty string, not a `set -e`-style abort.
+dev_tree="$(git rev-parse --verify --quiet 'refs/heads/dev^{tree}' || true)"
+origin_dev_tree="$(git rev-parse --verify --quiet 'refs/remotes/origin/dev^{tree}' || true)"
+
+# git feeds one line per pushed ref on stdin; the `|| [[ -n ... ]]` catches a last line with no newline.
+while read -r local_ref local_sha remote_ref remote_sha || [[ -n "${local_ref:-}" ]]; do
+  # Branch deletion — nothing to validate.
+  [[ "$local_sha" == "$zero" ]] && continue
+
+  # Not main: decide whether this range needs the fast checks, then move on.
+  if [[ "$remote_ref" != "refs/heads/main" ]]; then
+    # Diff against what the remote has, or against origin/dev for a new branch. A remote tip this
+    # clone has never fetched (someone else pushed) can't be diffed, which used to read as "nothing
+    # changed" and ran no checks; measure from where the branch left origin/dev instead.
+    if [[ "$remote_sha" == "$zero" ]] || ! git cat-file -e "${remote_sha}^{commit}" 2>/dev/null; then
+      base="$(git merge-base origin/dev "$local_sha" 2>/dev/null || true)"
+    else
+      base="$remote_sha"
+    fi
+    # No base to diff (no origin/dev yet): check everything, rather than guess it's docs.
+    if [[ -z "$base" ]]; then
+      everything_changed
+      continue
+    fi
+    # The range's changed paths, once. `-z` with quotePath off, because git otherwise C-quotes a
+    # non-ASCII path ("src/na\303\257ve.ts") and no pattern below matches it; `--no-renames`, so a
+    # file moved out of code into docs/ still lists the code path it left. A diff git refuses
+    # (a bad object) checks everything instead of reading as an empty range.
+    if ! git -c core.quotePath=false diff --name-only --no-renames -z "$base" "$local_sha" > "$changed_file" 2>/dev/null; then
+      everything_changed
+      continue
+    fi
+    # read -d '' splits on NUL and works in macOS's bash 3.2, unlike mapfile -d.
+    changed=()
+    while IFS= read -r -d '' path; do changed+=("$path"); done < "$changed_file"
+    # Nothing changed in this range (a new branch at an existing commit): nothing to check.
+    [[ "${#changed[@]}" -eq 0 ]] && continue
+    for path in "${changed[@]}"; do
+      # Any changed path outside the docs-only list means code is leaving the machine.
+      [[ "$path" =~ $docs_only ]] || needs_checks=1
+      # Rules are docs-only, but the generated copies (.claude/rules, AGENTS.md) must match them (no deps needed).
+      [[ "$path" =~ $rules_paths ]] && needs_rules_check=1
+      # Plans are docs-only too, and a docs push to dev runs no CI, so a broken phase table would
+      # otherwise reach dev unchecked (the plan board and every showrunner read it).
+      [[ "$path" =~ $plans_paths ]] && needs_plans_check=1
+    done
+    continue
+  fi
+
+  # Tree of the main commit about to be pushed.
+  main_tree="$(git rev-parse --verify --quiet "${local_sha}^{tree}" || true)"
+
+  # Neither dev ref resolved — can't judge main, so refuse and tell them to fetch.
+  # 
+  # Concatenating them and testing -z is a compact "both are empty" check — no 
+  # separator needed because a valid SHA can never be empty and there's nothing to 
+  # ambiguously split. If either dev ref resolved, the string is non-empty and hook proceeds 
+  #
+  if [[ -z "$dev_tree$origin_dev_tree" ]]; then
+    echo "✗ pre-push: cannot resolve dev or origin/dev to check main against. Run 'git fetch origin'." >&2
+    status=1
+    continue
+  fi
+
+  # main's tree differs from both dev trees → it carries work that never went through dev. Block it.
+  if [[ "$main_tree" != "$dev_tree" && "$main_tree" != "$origin_dev_tree" ]]; then
+    echo "✗ Refusing to push 'main' — its tree does not match dev." >&2
+    echo "  Only 'dev' may merge into 'main' (see .cursor/rules/branching.mdc)." >&2
+    echo "  Land the work on dev, push dev, then merge dev → main (or fast-forward it)." >&2
+    status=1
+  fi
+done
+
+# A blocked main push already failed; don't spend time checking the rest.
+[[ "$status" -ne 0 ]] && exit "$status"
+
+# Rules drift: .claude/rules/*.md must be regenerated from .cursor/rules/*.mdc (node only, no install needed).
+if [[ "$needs_rules_check" -eq 1 ]] && ! node scripts/sync-claude-rules.mjs --check < /dev/null; then
+  exit 1
+fi
+
+# Plan tables, runbooks, and Human checks must follow plans.mdc (node only, no install needed; skipped
+# in a project that hasn't taken scripts/plans-status.mjs).
+if [[ "$needs_plans_check" -eq 1 && -f scripts/plans-status.mjs ]] && ! node scripts/plans-status.mjs check < /dev/null; then
+  echo "✗ pre-push: a plan table, runbook, or Human check breaks plans.mdc; fix it before pushing (pnpm plans:check)." >&2
+  exit 1
+fi
+
+# Whether package.json defines a `check` script; a project whose full suite is too heavy for every push leaves it out.
+has_check=0
+node -e 'process.exit(JSON.parse(require("fs").readFileSync("package.json","utf8")).scripts?.check ? 0 : 1)' 2>/dev/null && has_check=1
+
+# Whether deps are installed: node_modules exists, or package.json declares none (a project with no Node stack pack).
+installed=0
+[[ -d node_modules ]] && installed=1
+node -e 'const p=JSON.parse(require("fs").readFileSync("package.json","utf8"));process.exit(Object.keys({...p.dependencies,...p.devDependencies}).length===0?0:1)' 2>/dev/null && installed=1
+
+# Fast checks, once per push: only when code changed, deps are installed, there is a `check`, and the human hasn't opted out.
+if [[ "$needs_checks" -eq 1 && "$has_check" -eq 1 && "$installed" -eq 1 && "${WHIPPLETREE_SKIP_CHECKS:-}" != "1" ]]; then
+  echo "pre-push: running fast checks (npm run check); WHIPPLETREE_SKIP_CHECKS=1 skips them." >&2
+  # stdin from /dev/null: git's ref list is on stdin and a test runner must not read it.
+  if ! npm run --silent check < /dev/null; then
+    echo "✗ pre-push: checks failed; fix them before pushing (CI would fail on the same thing)." >&2
+    status=1
+  fi
+fi
+
+# Non-zero if any guarded ref failed; git then aborts the whole push.
+exit "$status"

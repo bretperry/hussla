@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "outputStyle": "Concise",
+  "extraKnownMarketplaces": {
+    "openai-codex": { "source": { "source": "github", "repo": "openai/codex-plugin-cc" } }
+  },
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true,
+    "gopls-lsp@claude-plugins-official": true,
+    "codex@openai-codex": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm lint *)",
+      "Bash(pnpm boundaries)",
+      "Bash(pnpm knip)",
+      "Bash(pnpm test)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm check)",
+      "Bash(pnpm test:harness)",
+      "Bash(pnpm stack:list)",
+      "Bash(pnpm harness:status)",
+      "Bash(pnpm migrations:lint)",
+      "Bash(pnpm exec squawk --version)",
+      "Bash(pnpm exec vitest *)",
+      "Bash(pnpm exec depcruise *)",
+      "Bash(pnpm rust:fmt)",
+      "Bash(pnpm rust:lint)",
+      "Bash(pnpm rust:boundaries)",
+      "Bash(pnpm rust:test)",
+      "Bash(pnpm rust:deny)",
+      "Bash(pnpm rust:advisories)",
+      "Bash(cargo fmt *)",
+      "Bash(cargo clippy *)",
+      "Bash(cargo check *)",
+      "Bash(cargo nextest run *)",
+      "Bash(pnpm py:lint)",
+      "Bash(pnpm py:types)",
+      "Bash(pnpm py:boundaries)",
+      "Bash(pnpm py:test)",
+      "Bash(pnpm py:tooling)",
+      "Bash(pnpm py:selftest)",
+      "Bash(uv run ruff *)",
+      "Bash(uv run pyright *)",
+      "Bash(uv run pytest *)",
+      "Bash(uv run lint-imports)",
+      "Bash(pnpm go:lint)",
+      "Bash(pnpm go:gates)",
+      "Bash(pnpm go:test)",
+      "Bash(pnpm go:tidy)",
+      "Bash(go test *)",
+      "Bash(go vet *)",
+      "Bash(golangci-lint run *)",
+      "Bash(pnpm infra:fmt)",
+      "Bash(pnpm infra:validate)",
+      "Bash(pnpm infra:lint)",
+      "Bash(pnpm infra:docker)",
+      "Bash(terraform fmt *)",
+      "Bash(terraform validate *)",
+      "Bash(tflint *)",
+      "Bash(hadolint *)",
+      "Bash(pnpm swift:boundaries)",
+      "Bash(pnpm swift:lint)",
+      "Bash(pnpm swift:gates)",
+      "Bash(pnpm swift:test)",
+      "Bash(swift test *)",
+      "Bash(swift build *)",
+      "Bash(swift format lint *)",
+      "Bash(swift format -i *)",
+      "Bash(pnpm kotlin:check)",
+      "Bash(pnpm kotlin:gates)",
+      "Bash(pnpm kotlin:device)",
+      "Bash(./gradlew check)",
+      "Bash(./gradlew ktfmtFormat)",
+      "Bash(./gradlew :*:test --tests *)",
+      "Bash(pnpm cpp:build)",
+      "Bash(pnpm cpp:lint)",
+      "Bash(pnpm cpp:test)",
+      "Bash(pnpm cpp:gates)",
+      "Bash(cmake --preset *)",
+      "Bash(cmake --build build-cpp/*)",
+      "Bash(ctest --test-dir build-cpp/*)",
+      "Bash(clang-format -i cpp/*)",
+      "Bash(clang-tidy -p build-cpp/asan *)",
+      "Bash(gh pr list *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr diff *)",
+      "Bash(gh pr checks *)",
+      "Bash(gh run list *)",
+      "Bash(gh run view *)",
+      "Bash(pnpm models)",
+      "Bash(pnpm models *)",
+      "Bash(pnpm rival doctor)",
+      "Bash(pnpm rival scope)",
+      "Bash(pnpm rival review *)",
+      "Bash(pnpm rival chat *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.*.local)",
+      "Read(./.env.production)",
+      "Read(./secrets/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/scripts/command-guard-hook.mjs\" claude || exit 2", "timeout": 10 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/scripts/check-edited.mjs\" claude", "timeout": 90 }
+        ]
+      }
+    ]
+  }
+}

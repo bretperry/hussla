@@ -1,0 +1,75 @@
+---
+# Always on for every agent: copied into AGENTS.md by `pnpm rules:sync` (Branch flow — only dev merges to main; ship it = dev → main).
+agentsMd: 3
+alwaysApply: false
+---
+
+# Branching & shipping
+
+- Agents work in a **git worktree based off `dev`**, not in the primary clone and not off
+  `main`, unless the user says otherwise. "Add this to the open PR" means stay on that
+  PR's branch (in its worktree). The primary clone stays on `dev` so ship commands have
+  a clean tree.
+  `git fetch origin dev && git worktree add -b <branch> <path> origin/dev`
+  Put the worktree next to the clone (`../<repo>-<slug>`) or under the tool's worktree
+  dir. Do not `git checkout` a feature branch in the primary clone.
+- Work happens on a **feature branch**, then a PR into `dev`. Do not commit directly on `dev`
+  (a ruleset rejects it). The one exception is the docs-only rule below.
+- **Docs-only changes skip the PR and skip CI.** Commit them on `dev` in the primary clone and
+  push, with `[skip ci]` in the commit message. Docs-only means prose and nothing else:
+  `docs/**`, root `*.md` (README, AGENTS, CHANGELOG), `.cursor/rules/**`, `.claude/rules/**`
+  (generated; run `pnpm rules:sync` first), `.claude/skills/**`, `harness.json`,
+  `harness.project.json`. A project adds its own prose paths in `branching.project.mdc`.
+  Anything under `src/`, `scripts/`, `.github/`, or config is **not** docs-only. A mixed diff
+  is a PR — one code file makes the whole change a PR, prose included.
+  Why: a prose PR buys a review round trip plus CI minutes to gate a change that cannot break
+  the build.
+
+  `[skip ci]` is safe **only** on this path. Never put it on a branch with a PR open: a
+  workflow that never ran reports nothing, the required checks stay pending, and the PR is
+  stuck forever.
+- Open every PR **as a draft** (`gh pr create --draft`). The user marks it ready when the change is
+  done enough for the expensive CI signal (heavy jobs skip while draft). The draft exists so
+  more can land on it before that signal; do not pile unrelated concerns onto it just because
+  it is still draft. Never convert a ready PR back to draft: someone marked it ready on
+  purpose, and flipping it skips the expensive CI jobs that merging depends on.
+- **PR descriptions are short.** Fill the PR template's sections only, in bullets, no prose
+  paragraphs. Aim for ~3 bullets each in What/why and Verification (commands run + result). More is
+  fine when each extra bullet carries something the reviewer needs — a migration, a
+  behavior change, a risk; padding is not a reason. No
+  file-by-file change lists, no restating the diff, no test-plan checklists, no attribution
+  footer. A ship PR's production block is the one exception.
+- Merge feature work into **`dev`** first.
+- **Only `dev` may merge into `main`.** Never merge a feature branch (or other branch) directly into `main`.
+- When the user says **ship it** (or equivalent): land ready work on `dev` if needed, then merge **`dev` → `main`** and push unless they say otherwise. After shipping, **checkout `dev`** so day-to-day work stays off `main`. Steps: `ship.mdc` (the `ship` skill).
+- After a successful ship, say so out loud — brief, hyped, human. Encouraged vibes: "this shit is goin live", "we're live", "shipped". Don't be stiff about it.
+
+## CI minutes are a resource: every run must be intentional
+
+Every action that starts CI must have a purpose you can name: a new commit that needs
+checking, a failure that needs a real retry, or a merge the user asked for. Anything else is
+waste. macOS runners bill ~10× Linux.
+
+- **Never re-run the same checks on the same commit.** If a head SHA already has a green run,
+  nothing that only re-triggers CI on that SHA is allowed. That includes draft ↔ ready toggles,
+  close/reopen, changing the base, empty commits, and full-workflow reruns.
+- **Don't touch a PR's draft/ready state.** The one exception: the wrangler marks a PR ready when
+  the user says they have read that PR and asks for it (`wrangler.mdc`). Each flip back to ready re-runs
+  the full suite on the same code.
+- **Rerun only the failed jobs** (`gh run rerun <id> --failed`), and only after reading the
+  failure and finding a flake or infra cause. Never rerun the whole workflow. Never rerun a run
+  that a newer push has already replaced.
+- **Push once per working chunk, not once per commit.** Run typecheck / lint / test locally
+  first, because local runs are free. Don't merge `dev` into a branch just to keep it current.
+  Do it only when there's a conflict, or when the branch needs something that has landed since.
+- **Bundle: one draft per plan phase or theme.** Before opening a PR, look for an open draft
+  on the same phase or theme and push to it; open a new PR only for a new concern. Why: every PR
+  pays a Checks run per push, a ready run, and a run when it merges, and a draft is barely cheaper
+  than a ready PR (only Build and the macOS job wait for ready).
+- **No `workflow_dispatch` "just to check"**, and no touching the CI workflow or its path
+  classifier outside a CI-focused change. Either one runs everything.
+- **Before starting CI, say what will run and why.** If you can't name the purpose, don't do it.
+  Ask the user instead.
+
+What enforces this (pre-push hook, agent hooks, rulesets, required check names): `branch-protection.mdc`,
+which loads when you touch `.github/`, `.githooks/`, or the hook config.

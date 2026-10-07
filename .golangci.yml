@@ -1,0 +1,134 @@
+# Go pack lint floor and import boundaries: golangci-lint v2, run by `pnpm go:lint` and the edit hook.
+# In the app: nothing at runtime; the gate on every Go change (pnpm check, pre-push, CI).
+# Used by: stacks/go/pack.json checks; stacks/go/gates.mjs proves each gate below still bites.
+# Uses: golangci-lint v2.5.0 (pinned in ci.yml; keep the two in step).
+#
+# Lint floor: the `standard` set (errcheck, govet, ineffassign, staticcheck, unused) plus the
+# linters that catch what Go lets slide: errors compared with == (errorlint), errors returned
+# unwrapped across a package boundary (wrapcheck), a switch that misses an enum member
+# (exhaustive), common mistakes (gocritic), and a `//nolint` with no reason (nolintlint).
+# gofumpt is the formatter: stricter than gofmt, so there is one way to write it.
+#
+# Boundaries are `depguard` rules, one per layer (docs/ports-and-adapters.md). depguard matches
+# a rule's `files` globs against file paths, and a glob that matches nothing is silent: a
+# misspelled path would turn the whole gate off and still pass. So stacks/go/gates.mjs (layer
+# directories in stacks/go/gates.project.json) checks that every internal/ directory is covered
+# by a rule here, plants a violation per layer on a scratch copy and fails unless it is reported,
+# and does the same for the lint rules named in its probe list. A linter dropped from `enable`
+# fails there only if it has a probe; add one when you add a linter you rely on. Rename a
+# directory here and in gates.project.json together; the module path is `go.mod`'s, so rename
+# them together too.
+#
+# Two ways a file can hide from every rule, both closed: a "Code generated ... DO NOT EDIT."
+# header (`exclusions.generated: disable`, so lint reads generated-looking files too), and a build
+# tag (gates.mjs fails on a `//go:build` in internal/ that isn't only OS/arch names).
+
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: standard
+  enable:
+    - depguard
+    - errorlint
+    - errname
+    - exhaustive
+    - gocritic
+    - nolintlint
+    - wrapcheck
+  exclusions:
+    # A "Code generated" header would otherwise exempt the file from every linter, depguard included.
+    generated: disable
+    rules:
+      # A test's spies and helpers pass errors through untouched; wrapping them would hide what the test is about.
+      - path: _test\.go
+        linters:
+          - wrapcheck
+  settings:
+    exhaustive:
+      # Maps keyed by an enum too, not only switches. (A sum-type interface isn't covered: add
+      # gochecksumtype if you use one; go.mdc.)
+      check:
+        - switch
+        - map
+      # A `default:` case doesn't excuse a missing member: a new Outcome must be decided everywhere.
+      default-signifies-exhaustive: false
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    depguard:
+      rules:
+        # domain: pure rules. The standard library's pure parts, config knobs, and nothing else:
+        # no I/O packages, no other layer, no third party. Strict mode denies whatever isn't listed.
+        domain:
+          list-mode: strict
+          files:
+            - "**/internal/domain/**"
+            - "!$test"
+          allow:
+            - context
+            - errors
+            - fmt
+            - strconv
+            - time
+            - example.com/app/internal/config
+          deny: []
+        # domain tests may also use the test tooling. `**_test.go`, not `**/*_test.go`: the latter
+        # matches no file directly in internal/domain (gates.mjs plants one to prove it).
+        domain-tests:
+          list-mode: strict
+          files:
+            - "**/internal/domain/**_test.go"
+          allow:
+            - $gostd
+            - pgregory.net/rapid
+            - example.com/app/internal/config
+            - example.com/app/internal/domain
+        # config: knobs only. A leaf; it imports no layer. Its tests are unruled on purpose.
+        config:
+          list-mode: strict
+          files:
+            - "**/internal/config/**"
+            - "!$test"
+          allow:
+            - time
+        # app: use-cases and their ports. Strict: the pure standard library, sync, and the inner layers
+        # (domain, config, itself). No I/O package, no adapter, no test support, no other new layer.
+        app:
+          list-mode: strict
+          files:
+            - "**/internal/app/**"
+            - "!$test"
+          allow:
+            - context
+            - errors
+            - fmt
+            - sync
+            - time
+            - example.com/app/internal/app
+            - example.com/app/internal/config
+            - example.com/app/internal/domain
+        # adapters: I/O lives here. They may use the inner layers, never test support.
+        adapters:
+          list-mode: lax
+          files:
+            - "**/internal/adapters/**"
+            - "!$test"
+          deny:
+            - pkg: example.com/app/internal/testsupport
+              desc: "production code never imports test support"
+        # testsupport: fakes of the ports, for tests only. They model the far side; they don't call the real one.
+        testsupport:
+          list-mode: lax
+          files:
+            - "**/internal/testsupport/**"
+          deny:
+            - pkg: example.com/app/internal/adapters
+              desc: "a fake models an adapter's far side; it doesn't depend on the real adapter"
+
+formatters:
+  enable:
+    - gofumpt
