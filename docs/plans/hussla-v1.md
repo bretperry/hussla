@@ -4,19 +4,25 @@ Bret tracks a job search across dozens of companies while agents on other comput
 research, apply and draft follow-ups. Hussla is the one place all of it lands: a page per job
 (description, contacts, reviews, follow-up email, résumé sent, activity) and a page per company
 (quick take, stats, money, facts, anecdotes, news, reviews, contacts, call button, editable
-emails sent through the server). It runs on Bret's NAS in Docker as one Go binary serving a React app; Tailscale gives him password-free
-access from his own devices; agents use per-device keys. Email goes out through a provider
+emails sent through the server). It is one Go binary serving a React app, run in Docker (or as a
+plain binary) on whatever the owner has: a laptop, desktop, home server, NAS, or a rented cloud
+server. A laptop sleeps and shuts down, so Hussla must stop at any moment and come back clean:
+no lost writes, no email sent twice, no burst of queued sends on wake. Tailscale gives the owner
+password-free access from their own devices; agents use per-agent keys, through a built-in MCP
+endpoint (Claude Code, Claude Desktop, Cursor …) or the plain HTTP API. Email goes out through a provider
 adapter (iCloud, Gmail, Outlook, Yahoo, Fastmail, Zoho, any SMTP server, Resend, Postmark,
 SendGrid, Mailgun), only after Bret approves each message, at a human pace. Setup must work for a
-non-technical person: one Tailscale key in the NAS's Docker screen, everything else in a
-first-run wizard in the browser.
+non-technical person: one Tailscale key in the Docker screen (NAS) or Docker Desktop (laptop),
+everything else in a first-run wizard in the browser.
 
 Done looks like: Bret opens `https://hussla.<tailnet>.ts.net` on his phone, sees his jobs and
 companies, edits and approves a follow-up, and it arrives from his own address.
 
 Deliberately not building: multi-user accounts (one owner per install; agents are keys), a
 public internet exposure (tailnet only; an optional API-only Funnel), automatic sending without
-approval, Postgres (SQLite in a Docker volume is enough for one person), an email inbox reader.
+approval, Postgres (SQLite in a Docker volume is enough for one person), an email inbox reader,
+a hosted multi-customer service, and signed native desktop apps (Docker Desktop or the plain
+binary covers laptops; code-signing and installers are deferred).
 
 A working prototype exists (plain JS, same features minus provider adapters and the wizard):
 `/mnt/project-files/tracker/app` in the Bizzness project. Port its behavior, not its code
@@ -27,10 +33,11 @@ shape. Its seed bundle (`seed/seed.json`: jobs, companies, answers, events) is t
 | 0 | Repo from template, stacks (Go, TypeScript, React, infra), placeholders, architecture | —; repo created by Bret | quick (low) | running |
 | 1 | Go domain types, pure rules, knobs; API contract (OpenAPI) and generated UI types | 0 | deep (high) | |
 | 2 | Storage ports, SQLite adapters, migrations, seed import | 1 | workhorse (high) | |
-| 3 | HTTP API, auth (Tailscale identity, agent keys), use-cases | 2 | deep (xhigh) | |
+| 3 | HTTP API, auth (Tailscale identity, local sign-in link, agent keys), use-cases | 2 | deep (xhigh) | |
+| 3b | MCP endpoint for agents, "Add an agent" setup snippet | 3 | workhorse (high) | |
 | 4 | Mail port, provider catalog, adapters, secret store, outbox pacing | 1 | deep (high) | |
 | 5 | React UI: jobs, job, companies, compare, company, outbox, answers, activity, settings | 1 | workhorse (medium) | |
-| 6 | First-run wizard, Docker image, compose with Tailscale, non-techy install guide | 3, 4, 5 | workhorse (medium) | |
+| 6 | First-run wizard, Docker image, compose with Tailscale, binaries, install guides (NAS, laptop, cloud) | 3, 3b, 4, 5 | workhorse (medium) | |
 | 7 | Install on the NAS and accept on phone | 6; NAS model, Tailscale account | — (human) | |
 
 ## Phase 0 — Repo setup
@@ -87,11 +94,18 @@ forward-only migrations embedded with `embed`, and an idempotent import of the p
 **Files:** `internal/app/*/ports.go` (jobs, companies, events, answers, files, tokens, settings,
 emails), `internal/adapters/sqlite/*.go`, `internal/adapters/sqlite/migrations/*.sql`,
 `internal/app/importseed/`, `internal/testsupport/fakes/*`.
+Crash safety: WAL mode, `synchronous=FULL`, every write and what it implies in one
+transaction, so killing the process (laptop lid, power cut) at any instant loses at most the
+request in flight; startup runs an integrity check and refuses to serve a corrupt file, pointing
+to the latest automatic backup (daily, last 7 kept, in the data folder).
 **Tests:** one contract suite run against SQLite (temp file) and the in-memory fakes;
+a kill test: a child process writing in a loop is SIGKILLed at random points and the reopened
+database passes the integrity check with every acknowledged write present;
 migration from empty and from the prototype's schema; import twice = same rows.
 **Done when:**
 - Contract suite green on both → verify: `pnpm go:test`
 - Prototype DB opens and upgrades without loss → verify: test `TestMigratesPrototypeDB`
+- Survives being killed mid-write → verify: test `TestKilledMidWriteLosesNothingAcknowledged`
 
 ## Phase 3 — API and auth
 
@@ -100,6 +114,9 @@ migration from empty and from the prototype's schema; import twice = same rows.
 **Goal:** the JSON API (parity with the prototype's `AGENTS.md`, plus company profile, news and
 company emails), use-cases, and the composition root.
 Auth: Tailscale Serve identity headers trusted only from loopback and only for `ALLOWED_USERS`;
+without Tailscale (a laptop used on its own), `hussla open` prints and opens a one-time sign-in
+link that sets a long-lived HttpOnly, SameSite=Strict session cookie for that browser (never a
+"localhost is the owner" rule: any local program could then approve email);
 agent bearer keys (hashed, revocable, named in the activity log); browser writes need the
 `X-Hussla` header; agent keys cannot approve email, delete, change settings or manage keys.
 A token-only API listener for an optional Funnel.
@@ -108,9 +125,32 @@ and `internal/domain`, never an adapter), `internal/app/*`, `cmd/hussla/main.go`
 root, serves the built UI from `embed`), `docs/agents-api.md` (served at `/api/docs`).
 **Tests:** route tests through the real router with fakes; auth matrix (no identity, wrong user,
 spoofed header from non-loopback, agent on user-only routes, missing CSRF header) all refused.
+Lifecycle: SIGTERM/SIGINT drain in-flight requests (short timeout) and stop the dispatcher
+between sends; startup to serving in under a second on a laptop.
 **Done when:**
 - Auth matrix green → verify: `go test ./internal/httpapi/...`
+- Clean stop and fast start → verify: test `TestGracefulShutdownAndRestart`
 - Prototype API calls work unchanged → verify: test `TestAgentsDocExamples` replays every curl in the doc
+
+## Phase 3b — MCP endpoint for agents
+
+**Model:** workhorse · **Thinking:** high — a tool that takes the wrong action reaches a recruiter or loses data.
+
+**Goal:** a built-in MCP server (Streamable HTTP at `/mcp`, the same agent bearer keys and the same
+use-cases as the HTTP API, so permissions can't drift) exposing tools named for what agents do:
+find/get/update job, add event, add contact, upsert company profile, add review or news, draft a
+follow-up email, list outbox, read answers. No tool approves, sends, deletes, changes settings or
+manages keys. Settings gets "Add an agent": name it, get a key, and copy a ready snippet for
+Claude Code (`claude mcp add …`), Claude Desktop/Cursor (JSON), or a plain-API prompt.
+**Research:** read the current MCP spec (transport, auth header, tool annotations) and pick a
+maintained Go MCP library or a minimal stdlib implementation; answer into this plan first.
+**Files:** `internal/mcpapi/` (with its depguard rule and gates entry, like `internal/httpapi`),
+`src/features/settings/` (Add an agent), `docs/agents-api.md`.
+**Tests:** every tool through an MCP client against the real router with fakes; an agent key
+can't reach a user-only action by any tool; tool list matches the HTTP API's agent routes.
+**Done when:**
+- Tools work and refuse what agents may not do → verify: `go test ./internal/mcpapi/...`
+- Claude Code connects with the copied snippet → verify: `claude mcp add` against a local run, then a tool call updates a job
 
 ## Phase 4 — Mail
 
@@ -127,7 +167,10 @@ a "send test" use-case.
 `internal/adapters/secretfile/`.
 **Tests:** SMTP adapter against an in-process fake server (STARTTLS, auth failure, dot-stuffing,
 UTF-8 subject); HTTP adapters against `httptest.Server`; dispatcher under `testing/synctest` (retries, cap,
-window, crash mid-send returns to queue); secret store round-trip and wrong-key failure.
+window, crash mid-send, wake from sleep). Crash mid-send: an email found in `sending` at startup
+may or may not have gone out, so it moves to `failed` with "may have been sent: check your Sent
+folder" and is never resent without the owner's new approval. Waking after hours asleep sends the
+queue at the normal pace, never a burst, and an approval older than the window simply waits; secret store round-trip and wrong-key failure.
 **Done when:**
 - Adapter and dispatcher suites green → verify: `pnpm go:test`
 - No secret in any API response or log line → verify: test `TestSecretsNeverLeave`
@@ -157,11 +200,14 @@ placeholder warning) and the compare table sort.
 **Goal:** first-run wizard (your name and email; pick an email provider from the catalog with
 its steps and a link to its app-password page; paste the password; send a test; make the first
 agent key), Docker image (one static binary on a distroless base, non-root, healthcheck), `docker-compose.yml` with a
-Tailscale sidecar where the only required value is `TS_AUTHKEY`, and an install guide with
-Synology Container Manager steps written for a non-technical reader.
+Tailscale sidecar where the only required value is `TS_AUTHKEY`, `restart: unless-stopped` so it
+comes back after a reboot or wake, plain binaries for macOS, Windows and Linux (amd64, arm64),
+and install guides written for a non-technical reader: NAS (Synology Container Manager),
+laptop or desktop (Docker Desktop; or the binary plus `hussla open`), and a rented cloud server.
 **Files:** `src/features/setup/`, `internal/app/setup/`, `Dockerfile` (multi-stage: Node builds the
 UI, Go builds a static binary, final stage distroless non-root),
-`docker-compose.yml`, `tailscale/serve.json`, `docs/install.md`.
+`docker-compose.yml`, `tailscale/serve.json`, `docs/install/{nas,laptop,cloud}.md`, release build
+script for the binaries.
 **Tests:** wizard flow component test; `pnpm infra:docker` (hadolint); container smoke test.
 **Done when:**
 - Fresh container shows the wizard and finishes it → verify: Playwright run against `docker run`
@@ -174,4 +220,5 @@ UI, Go builds a static binary, final stage distroless non-root),
 **Human checks**
 - `hussla-p7-phone` · iPhone · 5 min · deploy — With Tailscale on, open the Hussla address on your phone. It opens signed in, with your jobs.
 - `hussla-p7-mail` · iPhone · 5 min · deploy — In Settings, send a test email. It arrives in your inbox from your address.
+- `hussla-p7-agent` · Mac · 10 min · deploy — In Settings, add an agent and paste its snippet into Claude Code. Ask it to add a note to a job; the note appears on that job's page.
 - `hussla-p7-followup` · Mac · 10 min · deploy — On a company page, edit a follow-up, approve it to yourself as the recipient, and confirm it arrives as written.
