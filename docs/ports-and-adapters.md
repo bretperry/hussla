@@ -3,6 +3,12 @@
 The layer map, which way imports may point, and how it's enforced. Each language pack's boundary
 check holds the rules; this file is the *why* behind them and what to do when one fires. The
 decision: `docs/decisions/0003-ports-and-adapters.md`.
+
+Why it pays here: Hussla's whole point is swapping what's behind a port. Every email provider
+(iCloud, Gmail, Outlook, Resend, Postmark …) is one `MailSender` adapter, the secret store can
+move from a key file to the NAS's own vault, and storage can grow past SQLite, each without
+touching a use-case. In Hussla the server layers are Go (`internal/`), and the TypeScript layers
+hold only the React UI (`docs/decisions/0008-go-server.md`).
 <!-- [stack:typescript] -->
 TypeScript pack: the rules live in `.dependency-cruiser.cjs` (`docs/decisions/0001-ports-and-adapters-enforced-by-dependency-cruiser.md`).
 <!-- [/stack:typescript] -->
@@ -98,6 +104,10 @@ Keep the hole the size of the imports it excuses:
      a CRDT engine, abstracting the auth library, a BFF per client …). This list is what stops a
      future session "finishing" the architecture. -->
 
+- **A message bus or event sourcing for the activity log.** One owner and a handful of agents
+  write a few hundred rows a day; an `events` table written in the same transaction is enough.
+- **Abstracting Tailscale identity.** It is two request headers trusted from loopback; a port for
+  it would hide the one security check that matters behind indirection.
 - **An effect system (Effect-TS) in the domain.** It makes every domain signature an Effect, which
   puts a framework in the layer this whole file exists to keep framework-free. Expected failures
   are plain `Result` values (each language pack ships its own).

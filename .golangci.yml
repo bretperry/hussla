@@ -73,8 +73,10 @@ linters:
             - errors
             - fmt
             - strconv
+            - strings
             - time
-            - example.com/app/internal/config
+            - unicode
+            - github.com/bretperry/hussla/internal/config
           deny: []
         # domain tests may also use the test tooling. `**_test.go`, not `**/*_test.go`: the latter
         # matches no file directly in internal/domain (gates.mjs plants one to prove it).
@@ -85,8 +87,8 @@ linters:
           allow:
             - $gostd
             - pgregory.net/rapid
-            - example.com/app/internal/config
-            - example.com/app/internal/domain
+            - github.com/bretperry/hussla/internal/config
+            - github.com/bretperry/hussla/internal/domain
         # config: knobs only. A leaf; it imports no layer. Its tests are unruled on purpose.
         config:
           list-mode: strict
@@ -108,9 +110,9 @@ linters:
             - fmt
             - sync
             - time
-            - example.com/app/internal/app
-            - example.com/app/internal/config
-            - example.com/app/internal/domain
+            - github.com/bretperry/hussla/internal/app
+            - github.com/bretperry/hussla/internal/config
+            - github.com/bretperry/hussla/internal/domain
         # adapters: I/O lives here. They may use the inner layers, never test support.
         adapters:
           list-mode: lax
@@ -118,7 +120,7 @@ linters:
             - "**/internal/adapters/**"
             - "!$test"
           deny:
-            - pkg: example.com/app/internal/testsupport
+            - pkg: github.com/bretperry/hussla/internal/testsupport
               desc: "production code never imports test support"
         # testsupport: fakes of the ports, for tests only. They model the far side; they don't call the real one.
         testsupport:
@@ -126,7 +128,7 @@ linters:
           files:
             - "**/internal/testsupport/**"
           deny:
-            - pkg: example.com/app/internal/adapters
+            - pkg: github.com/bretperry/hussla/internal/adapters
               desc: "a fake models an adapter's far side; it doesn't depend on the real adapter"
 
 formatters:

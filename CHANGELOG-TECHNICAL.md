@@ -1,6 +1,6 @@
 # Technical changelog
 
-Internal record of how {{PROJECT_NAME}} was built, newest first. Every entry says **what** changed and **why**.
+Internal record of how Hussla was built, newest first. Every entry says **what** changed and **why**.
 
 - User-facing notes: [`CHANGELOG.md`](CHANGELOG.md). Same version numbers; this file is the engineering view behind them.
 
@@ -14,6 +14,10 @@ Internal record of how {{PROJECT_NAME}} was built, newest first. Every entry say
 - **Other agents (Cursor, Codex …):** tag what you add `— *Cursor*` / `— *Codex*`. Correct a wrong entry in place; never add a second bullet that contradicts it. Only add what a commit, PR, plan, or file backs; mark anything else *(inferred)*.
 
 ## [Unreleased — dev only]
+
+### Hussla setup
+
+- **Hussla from whippletree: Go server, React UI.** Packs kept: go, typescript, react, infra; the template's note-sync demo removed in both languages (skipped in `harness.project.json` so `harness:pull` keeps it out). Module `github.com/bretperry/hussla`; one owner per install (`docs/decisions/0007-single-owner.md`); Go server (`docs/decisions/0008-go-server.md`); build plan `docs/plans/hussla-v1.md`. *Why:* Bret asked for whippletree and chose Go for a lean NAS install.
 
 ### Infra & deploy
 
