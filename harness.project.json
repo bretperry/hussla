@@ -1,0 +1,12 @@
+{
+  "base": "",
+  "skip": {},
+  "removedStacks": [
+    "cpp",
+    "kotlin",
+    "python",
+    "rust",
+    "sql-migrations",
+    "swift"
+  ]
+}

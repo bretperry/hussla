@@ -40,31 +40,12 @@ tests, generated-file drift), then each stack pack's — and is what pre-push ru
 <!-- [stack:typescript] -->
 TypeScript pack, singly: `pnpm typecheck`, `pnpm lint`, `pnpm boundaries`, `pnpm test`, `pnpm knip`.
 <!-- [/stack:typescript] -->
-<!-- [stack:rust] -->
-Rust pack, singly: `pnpm rust:fmt`, `pnpm rust:lint`, `pnpm rust:boundaries`, `pnpm rust:test`, `pnpm rust:deny`, `pnpm rust:advisories` (needs network; not in `check`).
-Needs `cargo install cargo-nextest cargo-deny --locked` once.
-<!-- [/stack:rust] -->
-<!-- [stack:python] -->
-Python pack, singly: `pnpm py:lint`, `pnpm py:types`, `pnpm py:boundaries`, `pnpm py:test`, `pnpm py:tooling` (stdlib only, no install), `pnpm py:selftest`. Needs `uv` and `python3` 3.11+.
-<!-- [/stack:python] -->
 <!-- [stack:go] -->
 Go pack, singly: `pnpm go:lint` (lint, vet, boundaries), `pnpm go:gates`, `pnpm go:test`, `pnpm go:tidy`.
 <!-- [/stack:go] -->
 <!-- [stack:infra] -->
 Infra pack, singly: `pnpm infra:fmt`, `pnpm infra:validate`, `pnpm infra:lint`, `pnpm infra:docker`; tools: `bash stacks/infra/install-tools.sh`.
 <!-- [/stack:infra] -->
-<!-- [stack:swift] -->
-Swift pack, singly: `pnpm swift:boundaries` (no swift needed), `pnpm swift:lint`, `pnpm swift:gates`, `pnpm swift:test`.
-<!-- [/stack:swift] -->
-<!-- [stack:kotlin] -->
-Kotlin pack, singly: `pnpm kotlin:check` (`./gradlew check`: compile, detekt, ktfmt, Android lint, layer map, tests), `pnpm kotlin:gates`, `pnpm kotlin:device` (instrumented tests on an emulator or device; takes a lock, exits 75 if held); `./gradlew ktfmtFormat` fixes formatting. Needs a JDK 21 and an Android SDK (`bash stacks/kotlin/android-sdk.sh`).
-<!-- [/stack:kotlin] -->
-<!-- [stack:sql-migrations] -->
-SQL migrations pack, singly: `pnpm migrations:lint` (squawk plus the atomic-file check on every migration).
-<!-- [/stack:sql-migrations] -->
-<!-- [stack:cpp] -->
-C++ pack, singly: `pnpm cpp:build` (asan + tsan trees, layers as built), `pnpm cpp:lint` (source rules, clang-format, clang-tidy), `pnpm cpp:test` (GoogleTest under the sanitizers), `pnpm cpp:gates`; tools: clang 18, cmake, ninja (`bash stacks/cpp/install-tools.sh` on Linux).
-<!-- [/stack:cpp] -->
 Harness sync with whippletree: `pnpm harness:status` / `harness:pull` / `harness:push`; `pnpm harness:eject` takes it out of a release (`docs/guide/keeping-in-step.md`).
 Stack packs: `pnpm stack:list` / `stack:remove <name>`.
 
@@ -84,33 +65,15 @@ When you touch matching files (Cursor and Claude load these; any other tool, rea
 <!-- [stack:typescript] -->
 - `typescript.mdc` / `testing-ts.mdc` — TypeScript and its test tooling (TypeScript pack)
 <!-- [/stack:typescript] -->
-<!-- [stack:rust] -->
-- `rust.mdc` / `testing-rust.mdc` — Rust and its test tooling (Rust pack)
-<!-- [/stack:rust] -->
-<!-- [stack:python] -->
-- `python.mdc` / `testing-python.mdc` — Python (app and stdlib-only tooling profiles) and its test tooling (Python pack)
-<!-- [/stack:python] -->
 <!-- [stack:go] -->
 - `go.mdc` / `testing-go.mdc` — Go and its test tooling (Go pack)
 <!-- [/stack:go] -->
-<!-- [stack:swift] -->
-- `swift.mdc` / `testing-swift.mdc` — Swift and its test tooling (Swift pack)
-<!-- [/stack:swift] -->
-<!-- [stack:kotlin] -->
-- `kotlin.mdc` / `testing-kotlin.mdc` — Kotlin and its test tooling (Kotlin pack)
-<!-- [/stack:kotlin] -->
-<!-- [stack:cpp] -->
-- `cpp.mdc` / `testing-cpp.mdc` — C++ and its test tooling (C++ pack)
-<!-- [/stack:cpp] -->
 <!-- [stack:react] -->
 - `react.mdc` — React conventions for `*.tsx` (React pack)
 <!-- [/stack:react] -->
 <!-- [stack:infra] -->
 - `infra.mdc` — Terraform layout, humans apply, OIDC deploys, Dockerfiles, staging teardown, infra checks (infra pack)
 <!-- [/stack:infra] -->
-<!-- [stack:sql-migrations] -->
-- `migrations.mdc` — SQL migrations in any language: atomic files, live-table locks, backfills, who applies them (`pnpm migrations:lint`; SQL migrations pack)
-<!-- [/stack:sql-migrations] -->
 - `docs.mdc` / `docs-scripts.mdc` / `docs-infra.mdc` — file-header and why-comment standard; line-by-line narration for scripts; non-TS examples
 - `plans.mdc` — `docs/plans/` shape: phase table with After + Model near the top so a fresh session can start a phase from the file alone
 - `branch-protection.mdc` — pre-push hook, agent hooks, rulesets, required check names (when you touch `.github/` or hooks)
@@ -296,24 +259,9 @@ different spelling). Tell the user what you need and why.
 <!-- [stack:typescript] -->
   TypeScript pack: the check is `.dependency-cruiser.cjs` (`pnpm boundaries`; `docs/decisions/0001-ports-and-adapters-enforced-by-dependency-cruiser.md`).
 <!-- [/stack:typescript] -->
-<!-- [stack:rust] -->
-  Rust pack: the layers are crates (`domain` → `app` → `adapters`, so cargo refuses an inward dependency), and `pnpm rust:boundaries` checks `[workspace.metadata.layers]` in `Cargo.toml`.
-<!-- [/stack:rust] -->
-<!-- [stack:python] -->
-  Python pack: one import-linter `layers` contract in `pyproject.toml` (`pnpm py:boundaries`; rules in `python.mdc`).
-<!-- [/stack:python] -->
 <!-- [stack:go] -->
   Go pack: the check is the `depguard` rules in `.golangci.yml` (`pnpm go:lint`), proved by planted violations in `pnpm go:gates`.
 <!-- [/stack:go] -->
-<!-- [stack:swift] -->
-  Swift pack: layers are SwiftPM targets; the check is `swift-layers.json` read by `pnpm swift:boundaries`, proved by planted violations in `pnpm swift:gates`.
-<!-- [/stack:swift] -->
-<!-- [stack:kotlin] -->
-  Kotlin pack: the layers are Gradle modules, checked by `LAYERS` in `build.gradle.kts` on every build (`pnpm kotlin:check`), proved by planted violations in `pnpm kotlin:gates`.
-<!-- [/stack:kotlin] -->
-<!-- [stack:cpp] -->
-  C++ pack: the layers are CMake targets (`domain` ← `usecases` ← `adapters`), so linking is the gate; `cpp-layers.json` is checked against the configured build (File API), the compiler's include record, and each layer's undefined symbols (`pnpm cpp:build`), proved by planted violations in `pnpm cpp:gates`.
-<!-- [/stack:cpp] -->
 - **Storage behind ports.** Repositories take the tenant (`userId`) first and take no raw `where`; tenant scoping is structural, not remembered. ORM ↔ domain mapping lives in the adapter, so a use-case never sees a row. A write and whatever it implies go in one unit of work.
 - **Writes are patches, not replacements.** A write names what it speaks for and leaves the rest alone, so a client cannot delete what it never rendered. Retries must be no-ops.
 - **Product rename:** customer-facing copy only, from one product-config file in the config layer (display name, description, tagline). None ships with the template: create it with the first customer-facing copy and name it here. Leave slugs, package names, Docker, and infra. Do **not** rename files or folders.

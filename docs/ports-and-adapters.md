@@ -6,24 +6,9 @@ decision: `docs/decisions/0003-ports-and-adapters.md`.
 <!-- [stack:typescript] -->
 TypeScript pack: the rules live in `.dependency-cruiser.cjs` (`docs/decisions/0001-ports-and-adapters-enforced-by-dependency-cruiser.md`).
 <!-- [/stack:typescript] -->
-<!-- [stack:rust] -->
-Rust pack: the layers are the `domain`, `app`, and `adapters` crates, and `[workspace.metadata.layers]` in `Cargo.toml` holds who may use whom. A finding means either the code or the row is wrong: invert the dependency behind a port in `app` rather than widening the row.
-<!-- [/stack:rust] -->
-<!-- [stack:python] -->
-Python pack: the rules live in the `[tool.importlinter]` contract and ruff's `TID251` ban list, both in `pyproject.toml` (`python.mdc`).
-<!-- [/stack:python] -->
 <!-- [stack:go] -->
 Go pack: the rules are `depguard` entries in `.golangci.yml`, one per layer (`internal/domain`, `internal/config`, `internal/app`). A `files` glob that matches no path passes silently, so `pnpm go:gates` fails an `internal/` directory no rule covers and plants a violation in each layer on a scratch copy, failing unless depguard reports it. Fixing a finding: move the import behind a port in `internal/app/<use-case>/ports.go` and wire the adapter in the composition root.
 <!-- [/stack:go] -->
-<!-- [stack:swift] -->
-Swift pack: layers are SwiftPM targets (`Config` → `Domain` → `UseCases` → `Adapters`), and `swift-layers.json` lists what each may import. SwiftPM puts every built module in one directory, so a target can import a module it never declared if that module built first and the build stays green; `pnpm swift:boundaries` therefore reads the source, and `pnpm swift:gates` plants a violation per rule (every import a layer doesn't allow, an unlisted target, a `default:` in `Domain`) and fails unless each is reported. Fixing a finding: move the import behind a port in `Sources/UseCases/Ports.swift` and wire the adapter in the composition root.
-<!-- [/stack:swift] -->
-<!-- [stack:kotlin] -->
-Kotlin pack: each layer is a Gradle module (`:domain` ← `:usecases` ← `:data` ← `:app`, the Android app and composition root), so the compiler refuses an import from a module that isn't a dependency, and only `:app` is an Android module, so an Android API doesn't compile in the layers below it. `LAYERS` in `build.gradle.kts` says which modules and libraries each may depend on, and fails the build on a dependency off its row, a module with no row, or a row naming no module. detekt's `ForbiddenImport` keeps the JDK's I/O out of `domain/src/main`. `pnpm kotlin:gates` plants a violation of each in a scratch copy and fails unless the build reports it. Fixing a finding: move the dependency behind a port in `:usecases` and wire the adapter in the composition root.
-<!-- [/stack:kotlin] -->
-<!-- [stack:cpp] -->
-C++ pack: each layer is a CMake target (`domain` ← `usecases` ← `adapters`) whose public include directory is `cpp/<layer>/include`, so a layer can only include what it links. Text can lie about a build, so the checks read the build itself: `cpp-layers.json` says which layers each may link and which system families (I/O, clock, env, process, thread, random, net, dynamic loading) the inner layers may not call; `pnpm cpp:build` checks the configured targets (CMake File API: links, include paths, warning flags, sanitizers), every header each unit really included (`ninja -t deps`), and every symbol each layer's archive leaves undefined (`nm`). `pnpm cpp:gates` plants a violation of each in a scratch copy and fails unless it is reported. Fixing a finding: move the call behind a port in `cpp/usecases/include/usecases/<use-case>/ports.hpp` and implement it in `adapters`.
-<!-- [/stack:cpp] -->
 
 <!-- Per project: say what future justifies ports here (a native client, a second datastore,
      a vendor you expect to swap). Nothing in this doc is architecture for its own sake. -->
@@ -74,24 +59,9 @@ or a fake directly, which is how the ports get exercised.
 <!-- [stack:typescript] -->
 - **`pnpm boundaries`** on its own (TypeScript pack).
 <!-- [/stack:typescript] -->
-<!-- [stack:rust] -->
-- **`pnpm rust:boundaries`** on its own (Rust pack).
-<!-- [/stack:rust] -->
-<!-- [stack:python] -->
-- **`pnpm py:boundaries`** on its own (Python pack); `pnpm py:selftest` proves it still fails on a violation.
-<!-- [/stack:python] -->
 <!-- [stack:go] -->
 - **`pnpm go:lint`** on its own (Go pack), and **`pnpm go:gates`** to prove the rules still bite.
 <!-- [/stack:go] -->
-<!-- [stack:swift] -->
-- **`pnpm swift:boundaries`** on its own (Swift pack; needs no swift), and **`pnpm swift:gates`** to prove the rules still bite.
-<!-- [/stack:swift] -->
-<!-- [stack:kotlin] -->
-- **`pnpm kotlin:check`** (any `./gradlew` run checks `LAYERS`; Kotlin pack), and **`pnpm kotlin:gates`** to prove the rules still bite.
-<!-- [/stack:kotlin] -->
-<!-- [stack:cpp] -->
-- **`pnpm cpp:build`** (C++ pack; the layer checks run on the built trees), and **`pnpm cpp:gates`** to prove the rules still bite.
-<!-- [/stack:cpp] -->
 - **Pre-push**, as part of `npm run check` when code changed (`.githooks/pre-push`).
 - **CI "Checks"**, the "Stack pack checks" step.
 
@@ -118,15 +88,6 @@ Keep the hole the size of the imports it excuses:
 <!-- [stack:go] -->
 - Go: `//nolint:depguard // <why>` on that one import line (`nolintlint` rejects it without a reason; never list `nolintlint` in the directive, `pnpm go:gates` fails that). Never add the package to a layer's `allow` list to make one file pass.
 <!-- [/stack:go] -->
-<!-- [stack:swift] -->
-- Swift: there is no per-line escape. Keep the import in a layer whose row in `swift-layers.json` allows it, or add the module to that one row with a decision recording why. Never add a module to every row to make one file pass.
-<!-- [/stack:swift] -->
-<!-- [stack:kotlin] -->
-- Kotlin: a forbidden import is `@file:Suppress("ForbiddenImport")` on that one file with a why-comment. A module dependency has no per-file hole: move the code, or change the module's `LAYERS` row on purpose.
-<!-- [/stack:kotlin] -->
-<!-- [stack:cpp] -->
-- C++: there is no per-line escape; the checks read the build, not comments. Move the code to a layer whose row in `cpp-layers.json` allows it, or change that one row on purpose with a decision recording why.
-<!-- [/stack:cpp] -->
 - Never widen a rule's `pathNot` to a whole directory to make one file pass. The rule's letter is
   kept and its point is lost.
 - Record the carve-out and its why in a decision (`docs/decisions/`).

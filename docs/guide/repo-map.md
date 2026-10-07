@@ -70,43 +70,10 @@ Paths in a stack pack's table disappear with `pnpm stack:remove <pack>`.
 | `src/domain/result.ts` | pack seed | `Result` type for expected failures; its test is the property-test example. |
 | `src/server/services/note-sync.ts`, `src/domain/note.ts`, `src/test/chaos/` | pack seed | Tier-2 example: a use-case that queues and delivers writes, a fault-scripted model server and outbox, one test per fault kind. |
 <!-- [/stack:typescript] -->
-<!-- [stack:swift] -->
-**Swift pack** (`stacks/swift/pack.json`):
-
-| Path | Owner | What |
-|---|---|---|
-| `.cursor/rules/swift.mdc`, `testing-swift.mdc` | pack | Swift conventions; Swift Testing and seeded-property test tooling. |
-| `stacks/swift/*.mjs` | pack (harness-synced) | The per-edit check; the import-boundary scan; the gate script that plants a violation per rule; the test runner that fails on zero executed tests; the CI scope for the macOS job. |
-| `Package.swift`, `swift-layers.json`, `.swift-format`, package.json `swift:*` scripts | pack (project-owned) | The layers as SwiftPM targets and what each may import (your layer names); the format config. |
-| `Sources/`, `Tests/NoteSyncTests/` | pack seed | Tier-2 example: a use-case that queues and delivers writes, a fault-scripted model server and outbox, one test per fault kind; `Failures.swift` is the expected-failures-as-values example. |
-<!-- [/stack:swift] -->
 <!-- [stack:react] -->
 
 **React pack** (`stacks/react/pack.json`, requires typescript): `.cursor/rules/react.mdc`, React conventions for `*.tsx`.
 <!-- [/stack:react] -->
-<!-- [stack:rust] -->
-
-**Rust pack** (`stacks/rust/pack.json`):
-
-| Path | Owner | What |
-|---|---|---|
-| `.cursor/rules/rust.mdc`, `testing-rust.mdc` | pack | Rust conventions; nextest + proptest + paused-time test tooling. |
-| `rust-toolchain.toml`, `rustfmt.toml`, `clippy.toml`, `stacks/rust/check-edited.mjs`, `stacks/rust/boundaries.mjs` | pack (harness-synced) | Toolchain pin, format and lint floor, the per-edit fmt / clippy / boundaries, the layer-map check. |
-| `Cargo.toml`, `Cargo.lock`, `deny.toml`, package.json `rust:*` scripts | pack (project-owned) | Workspace, lint deny list, `[workspace.metadata.layers]` (who may use whom), cargo-deny policy. |
-| `crates/domain`, `crates/app`, `crates/adapters` | pack seed | Tier-2 example: `note-sync`, a fault-scripted model server and outbox, one test per fault kind plus a proptest over random fault scripts. |
-<!-- [/stack:rust] -->
-<!-- [stack:python] -->
-
-**Python pack** (`stacks/python/pack.json`): two profiles, one pack. Needs `uv` and `python3` 3.11+ (`uv sync` once).
-
-| Path | Owner | What |
-|---|---|---|
-| `.cursor/rules/python.mdc`, `testing-python.mdc` | pack | Python conventions; pytest + hypothesis, the virtual-time loop, unittest for tooling. |
-| `stacks/python/check-edited.mjs`, `stacks/python/boundaries_test.py` | pack (harness-synced) | The per-edit ruff / pyright / import-linter check; proof that each boundary check fails on a violation. |
-| `scripts/lib/run_unittests.py` (+ test) | pack (harness-synced) | Tooling profile: stdlib-only scripts and tests run on the system `python3`, no install; fails on 0 tests. |
-| `pyproject.toml`, `uv.lock`, package.json `py:*` scripts | pack (project-owned) | Dev tools, ruff and pyright strictness, the import-linter `layers` contract. |
-| `src/app/`, `tests/` | pack seed | `Result`, the note-sync tier-2 example (fault-scripted model server and outbox, one test per fault kind). Rename `app`. |
-<!-- [/stack:python] -->
 <!-- [stack:go] -->
 
 **Go pack** (`stacks/go/pack.json`):
@@ -129,37 +96,3 @@ Paths in a stack pack's table disappear with `pnpm stack:remove <pack>`.
 | `.tflint.hcl`, `.hadolint.yaml` | pack (project-owned) | tflint and hadolint policy (no `latest` base image). |
 | `.dockerignore`, the Terraform lines in `.gitignore` | project | What a build never sends; state, plans, and tfvars never committed. Seeded with the pack, kept on `stack:remove infra` so no secret becomes committable. |
 <!-- [/stack:infra] -->
-<!-- [stack:kotlin] -->
-
-**Kotlin pack** (`stacks/kotlin/pack.json`):
-
-| Path | Owner | What |
-|---|---|---|
-| `.cursor/rules/kotlin.mdc`, `testing-kotlin.mdc` | pack | Kotlin conventions; JUnit 6, kotest-property, `runTest` virtual-time test tooling. |
-| `stacks/kotlin/check-edited.mjs`, `run.mjs`, `gates.mjs`, `android-sdk.sh` | pack (harness-synced) | The per-edit compile / detekt / ktfmt of the edited source set; the `gradle check` and device-test runner (the device lock); the gate script that plants a violation per boundary and lint rule and fails unless each is reported; the Android SDK installer. |
-| `settings.gradle.kts`, `build.gradle.kts`, `gradle.properties`, `gradle/` (catalog, wrapper), `gradlew*`, `config/detekt/detekt.yml`, package.json `kotlin:*` scripts | pack (project-owned) | Modules, `LAYERS` (who may use whom), versions, the pinned Gradle wrapper, the lint floor. |
-| `app/` | pack seed | The Android app and composition root: `AppGraph`, the application class, one screen, its resources, a host test and an instrumented test. |
-| `domain/`, `usecases/`, `data/` | pack seed | Tier-2 example: `NoteSync`, a fault-scripted model server and outbox (test fixtures), one test per fault kind plus a property over random scripts; `Outcome` is the expected-failures-as-values example. |
-<!-- [/stack:kotlin] -->
-<!-- [stack:cpp] -->
-
-**C++ pack** (`stacks/cpp/pack.json`):
-
-| Path | Owner | What |
-|---|---|---|
-| `.cursor/rules/cpp.mdc`, `testing-cpp.mdc` | pack | C++20 conventions, the warning set and tidy floor, what the gates refuse; GoogleTest under ASan+UBSan and TSan, seeded properties, virtual-time fault tests. |
-| `stacks/cpp/tool.mjs`, `sources.mjs`, `evaluated.mjs`, `run.mjs`, `gates.mjs`, `check-edited.mjs`, `install-tools.sh` | pack (harness-synced) | Tool floors and process-group timeouts; source rules; checks on the build as evaluated (File API, `ninja -t deps`, `nm`); the build / lint / test runner; the gate script that plants a violation per rule; the per-edit check; Linux sanitizer runtimes. |
-| `CMakeLists.txt`, `CMakePresets.json`, `cpp-layers.json`, `.clang-tidy`, `.clang-format`, package.json `cpp:*` scripts | pack (project-owned) | Targets per layer and the warning set, the `asan` / `tsan` / `gcc` presets, who may link and call what (and what a nested `.clang-tidy` may turn off), the tidy floor and format. |
-| `cpp/` | pack seed | Tier-2 example: `NoteSync`, a fault-scripted model server and outbox on a virtual clock (test fixtures), one test per fault kind plus a property over random scripts; `Outcome` is the expected-failures-as-values example. |
-<!-- [/stack:cpp] -->
-<!-- [stack:sql-migrations] -->
-
-**SQL migrations pack** (`stacks/sql-migrations/pack.json`, add-on, any language; Postgres):
-
-| Path | Owner | What |
-|---|---|---|
-| `.cursor/rules/migrations.mdc` | pack | Atomic migration files, live-table locks, backfills, who applies them; Prisma first, notes for sqlx, goose, Alembic. |
-| `stacks/sql-migrations/lint.mjs`, package.json `migrations:lint` + `squawk-cli` | pack (harness-synced) | squawk plus an atomic-file check on every `*.sql` under `migrations/`, in `pnpm check`, CI, and the edit hook. |
-| `.squawk.toml` | pack (project-owned) | Rules skipped (with why), whether the migration tool wraps each file, history to skip. |
-| `stacks/sql-migrations/kill-partway.test.mjs`, `fixtures/` | pack seed | Tier-2 example: a migration killed partway on a throwaway loopback Postgres lands on the old schema or the new one. Needs Postgres server binaries; skips loudly without them, fails under CI. |
-<!-- [/stack:sql-migrations] -->

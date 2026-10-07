@@ -14,22 +14,6 @@ That is the [command guard](roles.md#command-guard) working. Its message names t
 - **Every command is refused, naming a file** — a rule file (`command-guard.project.json`, or a pack's under `scripts/command-guard.d/` if a pack ships one) is present but does not load: bad JSON, an unknown key, a missing reason, a duplicate key, or a pattern that does not compile. A broken file read as "no rules" would quietly allow everything, so it blocks everything instead. Fix the file (the message gives the error).
   - **Escape hatch, for exactly this case:** if the broken file now blocks the agent from helping you repair it, repair it yourself, or start the agent from a shell with `WHIPPLETREE_GUARD=off`, fix the file, and turn it back on. It is not a way around a refusal, and nobody (human or agent) should leave it set; with it off, nothing stops a force-push or a delete.
 
-<!-- [stack:sql-migrations] -->
-### A database command was refused or asked (SQL migrations pack)
-
-The guard judges a database command by where it points (`.cursor/rules/migrations.mdc` → The guard):
-
-- **Destructive against a remote database → refused.** A reset, rollback, or drop, or a SQL client whose SQL drops, truncates, deletes, or nulls a column. Applying it to a real environment is yours or CI's; the agent writes the migration and hands you the command.
-- **Host or SQL it cannot read → asks.** An unknown host (`$VAR`, a service file, a `cd` it cannot follow), SQL it cannot see (stdin, `-c "$SQL"`, `DO`/`EXECUTE`), or a deploy to a real database. Say yes only if you know where it points.
-- **Loopback → runs.** `localhost`, `127.0.0.1`, `::1`, or a local socket directory. A Prisma reset runs only when the guard has read a datasource whose `url` and `directUrl` are all loopback; with no schema it can read, it asks.
-- **Name `localhost` yourself.** Do not tunnel a real database to a local port: the guard reads that as loopback.
-- **A tool that reads another variable than `DATABASE_URL`** (goose reads `GOOSE_DBSTRING`) is invisible to it; add a deny to `command-guard.project.json`.
-
-### `pnpm migrations:lint` fails
-
-- A finding names a squawk rule; the fix is at `https://squawkhq.com/docs/<rule>`. A multi-statement file needs `BEGIN;` and `COMMIT;` unless your migration tool wraps each file (`.squawk.toml` → `assume_in_transaction`).
-- A migration that deletes rows needs a `-- data-loss: <human-check-id>` comment naming its Human check.
-<!-- [/stack:sql-migrations] -->
 
 ### Is the guard even running?
 
@@ -62,15 +46,6 @@ Expect JSON with `"permissionDecision":"ask"`. No output means the guard had no 
 <!-- [stack:typescript] -->
 - **Warm TypeScript:** `pnpm typecheck`
 <!-- [/stack:typescript] -->
-<!-- [stack:rust] -->
-- **Warm Rust:** `pnpm rust:lint`
-<!-- [/stack:rust] -->
-<!-- [stack:kotlin] -->
-- **Warm Kotlin:** `pnpm kotlin:check` (a first Gradle run also downloads the pinned Gradle)
-<!-- [/stack:kotlin] -->
-<!-- [stack:cpp] -->
-- **Warm C++:** `pnpm cpp:build` (a first configure also downloads GoogleTest)
-<!-- [/stack:cpp] -->
 - **"unchecked" or `SKIPPED` messages** mean the pack's tool is missing. It is never a pass. Install the tool ([prerequisites](getting-started.md#prerequisites)).
 - **Still too slow for your project?** List `scripts/check-edited.mjs` in `harness.project.json` → `skip` with a reason (so `pull` stops overwriting it), then change your copy. The checks still run in `pnpm check`, pre-push, and CI.
 <!-- [stack:typescript] -->
@@ -94,15 +69,6 @@ See [keeping in step](keeping-in-step.md).
 
 TypeScript 7 ships no `tsserver`, so Claude Code's `typescript-lsp` plugin needs TypeScript 6 globally (`npm i -g typescript-language-server typescript@6`; see [agents](agents.md#claude-code)). This only affects in-editor intelligence. `pnpm typecheck` uses the project's TypeScript 7 and is unaffected. If the plugin errors on start, that global install is the first thing to check.
 <!-- [/stack:typescript] -->
-<!-- [stack:cpp] -->
-
-## C++ tests fail with `ThreadSanitizer: unexpected memory mapping`
-
-The kernel's mmap randomness is higher than TSan's memory layout accepts (some Linux 6.x images default `vm.mmap_rnd_bits` to 32).
-
-- **Fix:** `bash stacks/cpp/install-tools.sh`. It lowers `vm.mmap_rnd_bits` to 28 (needs sudo) and adds any missing sanitizer runtime (ASan, UBSan, TSan).
-- **In a container or WSL** `/proc/sys` is often read-only. The script then stops and says so. Lower it on the host, or run the tsan tree on a machine you control. Do not drop the tsan tree from `pnpm check` to get past it.
-<!-- [/stack:cpp] -->
 
 ## The pre-push hook does not run
 

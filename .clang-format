@@ -1,9 +1,0 @@
-# clang-format for the C++ pack: Google style, 120 columns. `pnpm cpp:lint` fails a file that isn't formatted this way.
-# Fix a file with `clang-format -i <file>`. A `// clang-format off` needs a reason after a colon
-# (`// clang-format off: <why>`); stacks/cpp/sources.mjs refuses a bare one.
-BasedOnStyle: Google
-ColumnLimit: 120
-DerivePointerAlignment: false
-PointerAlignment: Left
-# Header lines are one line each however long (docs.mdc), so comments are never reflowed.
-ReflowComments: false

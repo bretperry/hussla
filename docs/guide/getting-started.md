@@ -34,30 +34,12 @@ A pack whose tool is missing either fails right away, naming what to install, or
 <!-- [stack:typescript] -->
 - **TypeScript / React:** nothing beyond Node and pnpm. `pnpm install` brings the compiler, oxlint, Vitest, knip, and dependency-cruiser.
 <!-- [/stack:typescript] -->
-<!-- [stack:rust] -->
-- **Rust:** `rustup`. `rust-toolchain.toml` pins the `stable` channel with `clippy` and `rustfmt`, so the first `cargo` command installs them. Also `cargo-nextest` (the test runner) and `cargo-deny` (the dependency audit); for example `cargo install --locked cargo-nextest cargo-deny`.
-<!-- [/stack:rust] -->
-<!-- [stack:python] -->
-- **Python:** `python3` 3.11 or newer on PATH, and [`uv`](https://docs.astral.sh/uv/). Then `uv sync` once to make `.venv`.
-<!-- [/stack:python] -->
 <!-- [stack:go] -->
 - **Go:** Go 1.25 or newer (`go.mod`'s `go` line is the floor; an older Go downloads the right toolchain itself). `golangci-lint` v2 on PATH; CI pins v2.5.0, so match it. `gopls` only if you use Claude Code's `gopls-lsp` plugin.
 <!-- [/stack:go] -->
-<!-- [stack:swift] -->
-- **Swift:** Swift 6.2 (`swift --version`). On a Mac that is Xcode 26. The `swift format` formatter ships in the toolchain. CI runs `swift test` on a macOS runner, which bills about ten times a Linux minute. Without the toolchain, the check prints `SKIPPED` locally and fails under `CI=true`.
-<!-- [/stack:swift] -->
-<!-- [stack:kotlin] -->
-- **Kotlin:** a JDK 21 (`java` on PATH or `JAVA_HOME`), and an Android SDK for the app module: `bash stacks/kotlin/android-sdk.sh` installs one in `~/Android/Sdk`, then point `ANDROID_HOME` at it (no Android app? delete `app/`, its `include`, its `LAYERS` row, and the Android steps and job in `ci.yml`: `kotlin.mdc` lists them). Never a system Gradle: `./gradlew` downloads the pinned one on first use. An emulator or device only for `pnpm kotlin:device`.
-<!-- [/stack:kotlin] -->
-<!-- [stack:cpp] -->
-- **C++:** clang 18 or newer with `clang-tidy` and `clang-format`, cmake 3.28 or newer, and ninja; g++ 13 for the second-compiler tree CI adds. On Linux, `bash stacks/cpp/install-tools.sh` adds the sanitizer runtimes (apt's `libclang-rt-18-dev`) and lowers `vm.mmap_rnd_bits` for ThreadSanitizer (both need sudo). The first build downloads GoogleTest, pinned by sha256. A missing tool prints `SKIPPED` locally and fails under `CI=true`.
-<!-- [/stack:cpp] -->
 <!-- [stack:infra] -->
 - **Infra (Terraform, Docker):** `bash stacks/infra/install-tools.sh` installs pinned, checksum-verified `terraform`, `tflint`, and `hadolint` into `~/.local/bin` (set `INFRA_TOOLS_DIR` to change it). Put that directory on PATH. Docker itself is only needed to build images. A missing tool prints `SKIPPED` locally and fails under `CI=true`.
 <!-- [/stack:infra] -->
-<!-- [stack:sql-migrations] -->
-- **SQL migrations (Postgres, any language):** nothing beyond Node and pnpm. `squawk-cli` is a pinned devDependency (`package.json`), so `pnpm install` brings the linter and `pnpm exec squawk --version` checks it. The optional kill-partway test needs Postgres server binaries (`initdb`, `postgres`) and skips loudly without them; under `CI=true` it fails instead.
-<!-- [/stack:sql-migrations] -->
 <!-- [stack:infra] -->
 
 <!-- doc-run: skip downloads binaries into your home directory -->
@@ -65,54 +47,15 @@ A pack whose tool is missing either fails right away, naming what to install, or
 bash stacks/infra/install-tools.sh
 ```
 <!-- [/stack:infra] -->
-<!-- [stack:cpp] -->
-
-<!-- doc-run: skip installs packages with sudo and changes a kernel setting (Linux) -->
-```bash
-bash stacks/cpp/install-tools.sh
-```
-<!-- [/stack:cpp] -->
 
 Check what you have. A tool you do not need may say "absent"; that is fine.
 
-<!-- [stack:rust] -->
-```bash
-rustc --version
-cargo nextest --version
-cargo deny --version
-```
-<!-- [/stack:rust] -->
-<!-- [stack:python] -->
-```bash
-uv --version
-python3 --version
-```
-<!-- [/stack:python] -->
 <!-- [stack:go] -->
 ```bash
 go version
 golangci-lint --version
 ```
 <!-- [/stack:go] -->
-<!-- [stack:swift] -->
-```bash
-swift --version
-```
-<!-- [/stack:swift] -->
-<!-- [stack:kotlin] -->
-```bash
-java -version
-```
-<!-- [/stack:kotlin] -->
-<!-- [stack:cpp] -->
-```bash
-clang++ --version
-clang-tidy --version
-clang-format --version
-cmake --version
-ninja --version
-```
-<!-- [/stack:cpp] -->
 <!-- [stack:infra] -->
 ```bash
 terraform version
@@ -135,14 +78,6 @@ pnpm install
 pnpm hooks:install
 ```
 
-<!-- [stack:sql-migrations] -->
-SQL migrations pack: `pnpm install` brought the linter; check it.
-
-<!-- doc-run: skip runs after pnpm install; the docs:run copy has no node_modules -->
-```bash
-pnpm exec squawk --version
-```
-<!-- [/stack:sql-migrations] -->
 
 ## 2. Choose your stacks
 
@@ -153,9 +88,6 @@ pnpm stack:list
 ```
 
 Packs that ship: `typescript`, `react` (needs `typescript`), `rust`, `python`, `go`, `swift`, `kotlin`, `infra` (add-on, any language), `sql-migrations` (add-on, Postgres, any language).
-<!-- [stack:cpp] -->
-Also `cpp` (C++20 on CMake, with sanitizer test trees).
-<!-- [/stack:cpp] -->
 Do this **before bootstrap**: bootstrap makes every pack still present a required check on both PR rulesets, so a pack removed afterwards leaves a check nothing reports (Swift's `Swift tests`, say), and the removal PR itself waits on it. Keeping everything? Skip to [bootstrap](#3-bootstrap-github).
 
 Removing a pack changes code and CI (`package.json`, `ci.yml`, the lockfile), so it is not docs-only: do it in a worktree off `dev` (the same flow as "Your first PR", below), one command per pack, then open a draft PR. Your primary clone stays on `dev`.
@@ -211,9 +143,6 @@ Run it in your primary clone after your stack choice is merged. What it does (sa
 - records the whippletree commit you started from in `harness.project.json` → `base` (it looks the commit up in upstream's history, using your `gh` login). It prints the commit command: docs-only, so straight on `dev` with `[skip ci]`. If it could not read upstream, it says so and leaves `base` empty; re-run it when you can.
 
 **Required checks** are `Checks` and `Build`, plus each present pack's `requiredChecks`. `main` also requires `Only dev merges to main`.
-<!-- [stack:swift] -->
-Today only the Swift pack adds one: `Swift tests`.
-<!-- [/stack:swift] -->
 This prints just the pack-added names, comma-separated (nothing when no present pack adds one):
 
 ```bash
