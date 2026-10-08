@@ -283,3 +283,17 @@ merged block the sync owns, like AGENTS.md's.
 `open` · recorded 2026-10-04 · from the "agent override config" project thread (decision 0006)
 
 `agent-overrides.json` replaces both, and `scripts/agent-overrides.mjs` still reads them beneath it. **Why deferred:** projects made before it may hold either file, and dropping them quietly would change who reviews and on which model. **Where:** `LEGACY` in `scripts/agent-overrides.mjs`, the legacy tests in `scripts/model-tiers.test.mjs` and `scripts/rival-review.test.mjs`. **If we take it:** fail loudly when either file exists, naming the move (`tiers` → `models`, keys → `dynamiteTest`), once every project on whippletree has moved.
+
+
+## Where uploaded file bytes live
+
+`open` · recorded 2026-10-08 · from Phase 2 (`docs/plans/hussla-v1.md`)
+
+Storage keeps only each attached file's record (`internal/app/files`: name, kind, mime, size, job). **Why deferred:** the bytes need an upload route, size limits and a place beside the database (`DATA_DIR/files/<id>`?) that the backups also cover; that is Phase 3's API work, and a backup of `hussla.db` alone does not contain them. **Where:** `internal/app/files/ports.go`, `internal/adapters/sqlite/files.go`. **If we take it:** add a `FileStore` port (put/open/delete by id), a disk adapter under the data directory, and include the folder in the install guides' "copy backups off the device".
+
+## One process per data directory (the lock)
+
+`open` · recorded 2026-10-08 · from Phase 2 (`docs/plans/hussla-v1.md`)
+
+The plan's exclusive `flock` and `TestSecondProcessRefused` belong to Phase 3's lifecycle tests; the SQLite adapter alone does not stop a second Hussla opening the same file (SQLite itself keeps the data consistent, but two dispatchers could both send). **Where:** `cmd/hussla` (Phase 3), `internal/adapters/sqlite.Open`. **If we take it:** take the lock on `<DATA_DIR>/hussla.lock` before `Open`.
+
