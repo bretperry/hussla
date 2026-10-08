@@ -1,0 +1,8 @@
+# 2026/10/07 23:58:47.664865 [TestNoOperationMakesAnUndeclaredMove] [rapid] draw operations: []domain_test.emailOperation{domain_test.emailOperation{name:"markSendFailed", run:(func(domain.Email) (domain.Email, error))(0x66a200)}}
+# 2026/10/07 23:58:47.664880 [TestNoOperationMakesAnUndeclaredMove] markSendFailed left an approved email with no approver
+# 
+v0.4.8#12259095425681756053
+0x0
+0x6b74f03291620
+0x4
+0x0

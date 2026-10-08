@@ -69,13 +69,21 @@ linters:
             - "**/internal/domain/**"
             - "!$test"
           allow:
+            - cmp
             - context
             - errors
             - fmt
+            # math, slices: rounding the average rating and sorting news; arithmetic, no I/O.
+            - math
+            - slices
+            # regexp: the markdown-to-plain rules (text.go); RE2, linear time, no I/O.
+            - regexp
             - strconv
             - strings
             - time
             - unicode
+            # unicode/utf8: cutting stored text without splitting a character.
+            - unicode/utf8
             - github.com/bretperry/hussla/internal/config
           deny: []
         # domain tests may also use the test tooling. `**_test.go`, not `**/*_test.go`: the latter
