@@ -12,6 +12,7 @@ package mailsetup
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -394,13 +395,21 @@ func IsHostName(host string) bool {
 }
 
 // Redact removes a credential from text a provider produced (an error, a reply), in case the
-// provider echoed it back. Very short secrets are still removed: a leak of any length is a leak.
+// provider echoed it back, raw or base64 (the form SMTP AUTH and HTTP basic auth carry it in).
+// Very short secrets are still removed: a leak of any length is a leak.
 func Redact(text string, secret Secret) string {
 	value := secret.Reveal()
 	if value == "" {
 		return text
 	}
-	return strings.ReplaceAll(text, value, redactedText)
+	for _, form := range []string{
+		base64.StdEncoding.EncodeToString([]byte(value)),
+		base64.RawStdEncoding.EncodeToString([]byte(value)),
+		value,
+	} {
+		text = strings.ReplaceAll(text, form, redactedText)
+	}
+	return text
 }
 
 // MessageIDFor is the deterministic Message-ID of an email at a version (without angle

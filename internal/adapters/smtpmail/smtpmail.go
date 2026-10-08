@@ -199,21 +199,15 @@ func (sender *Sender) tlsConfig() *tls.Config {
 	return &tls.Config{ServerName: sender.connection.Host, RootCAs: sender.options.RootCAs, MinVersion: tls.VersionTLS12}
 }
 
-// redact removes the password, and the base64 forms AUTH sends it in, from server text.
+// redact removes the password from server text: AUTH PLAIN's base64 of "\0user\0password" first,
+// then the forms mailsetup.Redact knows (raw, and base64 as AUTH LOGIN sends it).
 func (sender *Sender) redact(text string) string {
-	password := sender.connection.Secret.Reveal()
-	if password == "" {
+	secret := sender.connection.Secret
+	if secret.IsEmpty() {
 		return text
 	}
-	username := sender.connection.Username
-	for _, form := range []string{
-		base64.StdEncoding.EncodeToString([]byte("\x00" + username + "\x00" + password)),
-		base64.StdEncoding.EncodeToString([]byte(password)),
-		password,
-	} {
-		text = strings.ReplaceAll(text, form, "[redacted]")
-	}
-	return text
+	plain := base64.StdEncoding.EncodeToString([]byte("\x00" + sender.connection.Username + "\x00" + secret.Reveal()))
+	return mailsetup.Redact(strings.ReplaceAll(text, plain, "[redacted]"), secret)
 }
 
 func hasMechanism(mechanisms, name string) bool {

@@ -146,6 +146,8 @@ linters:
             # crypto/sha256, encoding/hex: the seed import's content identity for an event (importseed); hashing, no I/O.
             - crypto/sha256
             # encoding/json: the one JSON codec for stored rows, the seed file and (Phase 3) the API (wire); pure in-memory encode/decode.
+            # encoding/base64: mailsetup.Redact removes a credential's base64 form from provider text; pure encoding, no I/O.
+            - encoding/base64
             - encoding/hex
             - encoding/json
             - errors
