@@ -1,4 +1,4 @@
-# 0011 — Mail delivery: classified failures, one dispatcher, secrets in a key-file store
+# 0012 — Mail delivery: classified failures, one dispatcher, secrets in a key-file store
 
 `accepted` · 2026-10-08 · from `docs/plans/hussla-v1.md` Phase 4
 
