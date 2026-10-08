@@ -176,7 +176,7 @@ func (decoder *Decoder) DecodeCompanyPatch(object Object) (domain.CompanyPatch, 
 	patch.Name, errs[0] = textField(decoder, object, "name")
 	patch.QuickTake, errs[1] = textField(decoder, object, "quickTake")
 	patch.Profile, errs[2] = decodeField(decoder, object, "profile", parseProfile)
-	patch.Financials, errs[3] = decodeField(decoder, object, "financials", parseFinancials)
+	patch.Financials, errs[3] = decodeField(decoder, object, "financials", decoder.parseFinancials)
 	patch.Facts, errs[4] = textsField(decoder, object, "facts")
 	patch.Anecdotes, errs[5] = decodeField(decoder, object, "anecdotes", parseAnecdotes)
 	patch.News, errs[6] = decodeField(decoder, object, "news", parseNews)
@@ -223,14 +223,18 @@ func parseProfile(raw json.RawMessage) (domain.Profile, error) {
 	}, nil
 }
 
-func parseFinancials(raw json.RawMessage) (domain.Financials, error) {
+func (decoder *Decoder) parseFinancials(raw json.RawMessage) (domain.Financials, error) {
 	var encoded financialsJSON
 	if err := json.Unmarshal(raw, &encoded); err != nil {
 		return domain.Financials{}, errors.New("must be an object")
 	}
 	signal, err := domain.ParseHealthSignal(encoded.HealthSignal)
 	if err != nil {
-		return domain.Financials{}, err
+		if !decoder.Lenient {
+			return domain.Financials{}, err //nolint:wrapcheck // the ValidationError passes through untouched: Decoder.problem reads its Problem text
+		}
+		// Stored and seeded data: keep the money picture, drop only the health spelling that isn't one of ours.
+		_ = decoder.problem("financials.healthSignal", err)
 	}
 	financials := domain.Financials{
 		TotalFunding: encoded.TotalFunding, TotalFundingUSD: encoded.TotalFundingUSD,

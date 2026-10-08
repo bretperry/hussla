@@ -55,7 +55,7 @@ func (r tokenRepository) List(ctx context.Context) ([]tokens.Token, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list tokens: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck // read cursor; rows.Err below reports failures
+	defer rows.Close() //nolint:errcheck // closing a read-only handle loses nothing
 	var found []tokens.Token
 	for rows.Next() {
 		token, err := scanToken(rows)

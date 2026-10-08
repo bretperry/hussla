@@ -76,7 +76,7 @@ func (r eventRepository) List(ctx context.Context, filter events.Filter) ([]doma
 	if err != nil {
 		return nil, fmt.Errorf("list events: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck // read cursor; rows.Err below reports failures
+	defer rows.Close() //nolint:errcheck // closing a read-only handle loses nothing
 	var found []domain.Event
 	for rows.Next() {
 		var (

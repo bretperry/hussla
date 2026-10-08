@@ -43,7 +43,7 @@ func (r answerRepository) List(ctx context.Context) ([]domain.Answer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list answers: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck // read cursor; rows.Err below reports failures
+	defer rows.Close() //nolint:errcheck // closing a read-only handle loses nothing
 	var found []domain.Answer
 	for rows.Next() {
 		answer, err := scanAnswer(rows)

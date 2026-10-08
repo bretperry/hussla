@@ -104,15 +104,6 @@ func parseWholeNumber(raw json.RawMessage) (*int, error) {
 	return &whole, nil
 }
 
-func parseBigNumber(raw json.RawMessage) (*int64, error) {
-	var number float64
-	if err := json.Unmarshal(raw, &number); err != nil || number != float64(int64(number)) {
-		return nil, errors.New("must be a whole number")
-	}
-	whole := int64(number)
-	return &whole, nil
-}
-
 // parseMoment reads a time: RFC 3339 in any offset, or a bare date (UTC midnight) like the prototype's.
 func parseMoment(raw json.RawMessage) (time.Time, error) {
 	text, err := parseText(raw)
@@ -122,7 +113,7 @@ func parseMoment(raw json.RawMessage) (time.Time, error) {
 	if date, dateErr := time.Parse(time.DateOnly, text); dateErr == nil {
 		return domain.NormalizeTime(date), nil
 	}
-	return domain.ParseTimestamp(text)
+	return domain.ParseTimestamp(text) //nolint:wrapcheck // the ValidationError passes through untouched: Decoder.problem reads its Problem text
 }
 
 func textField(decoder *Decoder, object Object, key string) (domain.Field[string], error) {

@@ -59,8 +59,10 @@ func runWriterChild(dir, roundText string) int {
 	for i := 0; i < 1_000_000; i++ { // bounded: the parent kills long before this
 		id := jobIDFor(round, i)
 		now := time.Now()
-		job := domain.Job{ID: id, CompanySlug: "kill-co", CreatedAt: domain.NormalizeTime(now), UpdatedAt: domain.NormalizeTime(now),
-			Company: "Kill Co", Title: "Role " + id, Status: domain.JobStatusReview, Description: padding}
+		job := domain.Job{
+			ID: id, CompanySlug: "kill-co", CreatedAt: domain.NormalizeTime(now), UpdatedAt: domain.NormalizeTime(now),
+			Company: "Kill Co", Title: "Role " + id, Status: domain.JobStatusReview, Description: padding,
+		}
 		err := opened.Atomically(ctx, func(tx store.Tx) error {
 			if err := tx.Jobs().Create(ctx, job); err != nil {
 				return err

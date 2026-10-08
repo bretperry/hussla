@@ -14,7 +14,11 @@ import "reflect"
 // unexported fields (time.Time) is copied whole: those hold no mutable shared state here.
 func deepCopy[T any](value T) T {
 	copied := copyValue(reflect.ValueOf(&value).Elem())
-	return copied.Interface().(T) //nolint:errcheck,forcetypeassert // copyValue returns the same type it was given
+	result, ok := copied.Interface().(T)
+	if !ok {
+		panic("fakes: deepCopy changed a value's type") // a broken invariant of copyValue
+	}
+	return result
 }
 
 func copyValue(source reflect.Value) reflect.Value {
@@ -53,7 +57,12 @@ func copyValue(source reflect.Value) reflect.Value {
 			}
 		}
 		return target
-	default:
+	case reflect.Invalid, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128, reflect.String,
+		reflect.Array, reflect.Chan, reflect.Func, reflect.Interface, reflect.UnsafePointer:
+		// Plain values copy by assignment. (An array, interface or channel holding mutable state isn't used by any stored record.)
 		return source
 	}
+	return source
 }

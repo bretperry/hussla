@@ -161,7 +161,7 @@ func (s *Store) run(ctx context.Context, readOnly bool, work func(store.Tx) erro
 		if rollbackErr := transaction.Rollback(); rollbackErr != nil {
 			return errors.Join(workErr, fmt.Errorf("rollback: %w", rollbackErr))
 		}
-		return workErr //nolint:wrapcheck // the caller's own error, returned exactly as the unit of work produced it
+		return workErr
 	}
 	finished = true
 	if readOnly {

@@ -164,8 +164,8 @@ func syncDirectory(dir string) {
 	if err != nil {
 		return
 	}
-	_ = directory.Sync()  //nolint:errcheck // best effort, see above
-	_ = directory.Close() //nolint:errcheck // read-only handle
+	_ = directory.Sync()
+	_ = directory.Close()
 }
 
 func removeQuietly(path string) error {

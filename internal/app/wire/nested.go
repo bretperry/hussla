@@ -10,6 +10,7 @@ package wire
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/bretperry/hussla/internal/domain"
@@ -53,7 +54,11 @@ func (decoder *Decoder) contactsField(object Object, key string) (domain.Field[[
 		for index, item := range encoded {
 			emailStatus, err := domain.ParseEmailCheck(item.EmailStatus)
 			if err != nil {
-				return nil, err
+				if !decoder.Lenient {
+					return nil, err //nolint:wrapcheck // the ValidationError passes through untouched: Decoder.problem reads its Problem text
+				}
+				// Stored and seeded data: keep the contact, drop only the spelling that isn't one of ours.
+				_ = decoder.problem(fmt.Sprintf("%s[%d].emailStatus", key, index), err)
 			}
 			contacts[index] = domain.Contact{
 				Priority: item.Priority, Name: item.Name, Role: item.Role, Email: item.Email, EmailStatus: emailStatus,

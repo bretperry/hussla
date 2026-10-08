@@ -38,7 +38,7 @@ func buildPrototypeDB(t *testing.T, dir string, withCompanySlug bool) {
 	if err != nil {
 		t.Fatalf("open prototype db: %v", err)
 	}
-	defer raw.Close() //nolint:errcheck // test cleanup
+	defer raw.Close() //nolint:errcheck // closing a read-only handle loses nothing
 	statements := []string{
 		schema,
 		`INSERT INTO jobs (id, company, companySlug, title, status, score, url, location, workType, salaryMin, salaryMax, payText, source, resume,
@@ -83,7 +83,7 @@ func openIn(t *testing.T, dir, version string) *sqlite.Store {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	t.Cleanup(func() { _ = opened.Close() }) //nolint:errcheck // a double close after the test closed it is fine
+	t.Cleanup(func() { _ = opened.Close() })
 	return opened
 }
 
@@ -182,7 +182,7 @@ func TestMigratesPrototypeDB(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer backup.Close() //nolint:errcheck // test cleanup
+			defer backup.Close() //nolint:errcheck // closing a read-only handle loses nothing
 			var jobCount int
 			if err := backup.QueryRow(`SELECT COUNT(*) FROM jobs`).Scan(&jobCount); err != nil || jobCount != 2 {
 				t.Errorf("the backup should hold the original 2 jobs: %d, %v", jobCount, err)
@@ -279,7 +279,7 @@ func TestRefusesADamagedDatabaseAndPointsToTheLatestBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, suffix := range []string{"-wal", "-shm"} {
-		_ = os.Remove(filepath.Join(dir, "hussla.db"+suffix)) //nolint:errcheck // may not exist
+		_ = os.Remove(filepath.Join(dir, "hussla.db"+suffix))
 	}
 	if err := os.WriteFile(filepath.Join(dir, "hussla.db"), []byte(strings.Repeat("this is not a database", 500)), 0o600); err != nil {
 		t.Fatal(err)
@@ -319,7 +319,7 @@ func TestDailyBackupAndPruning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = opened.Close() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() { _ = opened.Close() })
 	made, err := opened.BackupDaily(t.Context())
 	if err != nil || !made {
 		t.Fatalf("first daily = (%v, %v), want made", made, err)

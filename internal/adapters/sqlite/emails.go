@@ -162,7 +162,7 @@ func (r emailRepository) collect(ctx context.Context, what, query string, args .
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", what, err)
 	}
-	defer rows.Close() //nolint:errcheck // read cursor; rows.Err below reports failures
+	defer rows.Close() //nolint:errcheck // closing a read-only handle loses nothing
 	var found []domain.Email
 	for rows.Next() {
 		email, err := scanEmail(rows)

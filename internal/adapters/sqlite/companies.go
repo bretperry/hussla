@@ -45,7 +45,7 @@ func (r companyRepository) List(ctx context.Context) ([]domain.Company, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list companies: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck // read cursor; rows.Err below reports failures
+	defer rows.Close() //nolint:errcheck // closing a read-only handle loses nothing
 	var found []domain.Company
 	for rows.Next() {
 		company, err := scanCompany(rows)

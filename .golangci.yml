@@ -47,6 +47,10 @@ linters:
       - path: _test\.go
         linters:
           - wrapcheck
+      # Test support (the contract suite, fakes) hands a repository's error straight to the test that asserts on it.
+      - path: internal/testsupport/
+        linters:
+          - wrapcheck
   settings:
     exhaustive:
       # Maps keyed by an enum too, not only switches. (A sum-type interface isn't covered: add
@@ -115,9 +119,19 @@ linters:
             - "**/internal/app/**"
             - "!$test"
           allow:
+            # bytes, strings: text handling in the JSON codec (wire) and slug matching; pure functions, no I/O.
+            - bytes
             - context
+            # crypto/sha256, encoding/hex: the seed import's content identity for an event (importseed); hashing, no I/O.
+            - crypto/sha256
+            # encoding/json: the one JSON codec for stored rows, the seed file and (Phase 3) the API (wire); pure in-memory encode/decode.
+            - encoding/hex
+            - encoding/json
             - errors
             - fmt
+            # io: importseed reads its input through an io.Reader it is handed; the use-case opens no file itself.
+            - io
+            - strings
             - sync
             - time
             - github.com/bretperry/hussla/internal/app

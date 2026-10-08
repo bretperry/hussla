@@ -45,7 +45,7 @@ func (r settingRepository) All(ctx context.Context) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list settings: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck // read cursor; rows.Err below reports failures
+	defer rows.Close() //nolint:errcheck // closing a read-only handle loses nothing
 	all := map[string]string{}
 	for rows.Next() {
 		var key, value string

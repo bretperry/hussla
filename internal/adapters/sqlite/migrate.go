@@ -129,7 +129,7 @@ func (s *Store) appliedVersions(ctx context.Context) (versions []int, writtenBy 
 	if err != nil {
 		return nil, "", fmt.Errorf("read schema_migrations: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck // a read-only cursor; Err below reports what matters
+	defer rows.Close() //nolint:errcheck // closing a read-only handle loses nothing
 	for rows.Next() {
 		var version int
 		if err := rows.Scan(&version, &writtenBy); err != nil {

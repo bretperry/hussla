@@ -218,8 +218,10 @@ func companiesCreateUpdateList(t *testing.T, newStore NewStore) {
 	s := newStore(t)
 	write(t, s, func(tx store.Tx) error {
 		for _, company := range []domain.Company{
-			{Slug: "zed", Name: "Zed", UpdatedAt: at(0)}, {Slug: "acme", Name: "acme", UpdatedAt: at(0)},
-			{Slug: "acme-2", Name: "Acme", UpdatedAt: at(0)}, {Slug: "beta", Name: "Beta", UpdatedAt: at(0)},
+			{Slug: "zed", Name: "Zed", UpdatedAt: at(0)},
+			{Slug: "acme", Name: "acme", UpdatedAt: at(0)},
+			{Slug: "acme-2", Name: "Acme", UpdatedAt: at(0)},
+			{Slug: "beta", Name: "Beta", UpdatedAt: at(0)},
 		} {
 			if err := tx.Companies().Create(background, company); err != nil {
 				return err

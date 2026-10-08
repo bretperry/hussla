@@ -18,7 +18,7 @@ func TestBackupInterruptedMidwayNeverReplacesAGoodOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = opened.Close() }) //nolint:errcheck // test cleanup
+	t.Cleanup(func() { _ = opened.Close() })
 	if err := opened.Atomically(t.Context(), func(tx store.Tx) error { return tx.Settings().Set(t.Context(), "k", "v") }); err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestBackupInterruptedMidwayNeverReplacesAGoodOne(t *testing.T) {
 	}
 	contents := map[string][]byte{}
 	for _, path := range good {
-		contents[path], _ = os.ReadFile(path) //nolint:errcheck // compared below
+		contents[path], _ = os.ReadFile(path)
 	}
 
 	// A backup cut off after the copy is made: nothing new is published, nothing old is pruned or touched.

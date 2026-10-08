@@ -39,7 +39,7 @@ func (r fileRepository) ListByJob(ctx context.Context, jobID string) ([]files.Fi
 	if err != nil {
 		return nil, fmt.Errorf("list files: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck // read cursor; rows.Err below reports failures
+	defer rows.Close() //nolint:errcheck // closing a read-only handle loses nothing
 	var found []files.File
 	for rows.Next() {
 		file, err := scanFile(rows)
