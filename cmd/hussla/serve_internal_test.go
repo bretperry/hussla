@@ -9,8 +9,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -121,5 +124,20 @@ func TestOwnerPinMismatchIsLogged(t *testing.T) {
 	adoptNodeOwner(ctx, service, auth.TailnetPeer{UserID: "1001", Login: "Owner@Example.com"}, logger)
 	if strings.Contains(log.String(), "doesn't match") {
 		t.Fatalf("mismatch logged for the pinned login:\n%s", log.String())
+	}
+}
+
+// TestMCPIsMountedBesideTheAPI: /mcp goes to the MCP handler, everything else to the HTTP API, and nothing falls between.
+func TestMCPIsMountedBesideTheAPI(t *testing.T) {
+	answer := func(name string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, name) })
+	}
+	mounted := withMCP(answer("api"), answer("mcp"))
+	for path, want := range map[string]string{"/mcp": "mcp", "/api/jobs": "api", "/": "api", "/mcp/": "api", "/mcpx": "api", "/healthz": "api"} {
+		recorder := httptest.NewRecorder()
+		mounted.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, path, nil))
+		if got := recorder.Body.String(); got != want {
+			t.Errorf("%s went to %q, want %q", path, got, want)
+		}
 	}
 }
