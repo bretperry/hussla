@@ -1,0 +1,309 @@
+{
+  "config": {
+    "autoApplyMinScore": 3,
+    "excludedCompanies": [],
+    "homeMetro": "Example homeMetro",
+    "hybridMode": "Example hybridMode",
+    "hybridRadiusMiles": 3,
+    "intervalHours": 3,
+    "maxAppliesPerDay": 3,
+    "minScore": 3,
+    "onsiteMode": "Example onsiteMode",
+    "paused": true,
+    "payless": "Example payless",
+    "remoteMode": "Example remoteMode",
+    "roles": [
+      {
+        "enabled": true,
+        "name": "Acme Robotics",
+        "resume": "Example resume"
+      },
+      {
+        "enabled": true,
+        "name": "Acme Robotics",
+        "resume": "Example resume"
+      }
+    ],
+    "salaryMax": 190000,
+    "salaryMin": 150000,
+    "scamLevel": "Example scamLevel",
+    "sources": {
+      "ashby": true,
+      "builtin": true,
+      "dice": true,
+      "glassdoor": true,
+      "greenhouse": true,
+      "hiringcafe": true,
+      "hn": true,
+      "indeed": true,
+      "lever": true,
+      "linkedin": true,
+      "wellfound": true,
+      "workday": true,
+      "wttj": true,
+      "wwr": true,
+      "yc": true,
+      "ziprecruiter": true
+    },
+    "updatedAt": "2026-09-01T12:00:00.000Z"
+  },
+  "companies": [
+    {
+      "slug": "acme-robotics",
+      "name": "Acme Robotics",
+      "reviews": [
+        {
+          "source": "Example source",
+          "rating": 4.1,
+          "ratingScale": 3,
+          "reviewCount": 3,
+          "summary": "Example summary",
+          "pros": [
+            "Example pros",
+            "Example pros"
+          ],
+          "cons": [
+            "Example cons",
+            "Example cons"
+          ],
+          "url": "https://example.com/url",
+          "fetchedAt": "2026-09-01T12:00:00.000Z"
+        },
+        {
+          "source": "Example source",
+          "rating": 3,
+          "ratingScale": 3,
+          "reviewCount": 3,
+          "summary": "Example summary",
+          "pros": [
+            "Example pros"
+          ],
+          "cons": [
+            "Example cons"
+          ],
+          "url": "https://example.com/url",
+          "fetchedAt": "2026-09-01T12:00:00.000Z"
+        }
+      ],
+      "reviewsFetchedAt": "2026-09-01T12:00:00.000Z",
+      "quickTake": "Example quickTake",
+      "profile": {
+        "website": "https://example.com/website",
+        "careersUrl": "https://example.com/careersurl",
+        "linkedin": null,
+        "hq": "Example hq",
+        "founded": 3,
+        "employees": "Example employees",
+        "ceo": null,
+        "type": "Example type",
+        "ticker": null,
+        "stage": "Example stage",
+        "phone": "Example phone",
+        "phoneLabel": "recruiter@example.com",
+        "remotePolicy": "Example remotePolicy"
+      },
+      "financials": {
+        "totalFunding": "Example totalFunding",
+        "totalFundingUsd": null,
+        "lastRound": null,
+        "valuation": null,
+        "valuationUsd": null,
+        "revenue": null,
+        "revenueUsd": null,
+        "growth": "Example growth",
+        "profitability": "Example profitability",
+        "marketCap": null,
+        "stockNote": null,
+        "investors": [
+          "Example investors"
+        ],
+        "layoffs": [],
+        "healthSignal": "Example healthSignal",
+        "healthNote": "Example healthNote"
+      },
+      "facts": [
+        "Example facts",
+        "Example facts"
+      ],
+      "anecdotes": [
+        {
+          "text": "Example text",
+          "source": "Example source",
+          "url": "https://example.com/url"
+        },
+        {
+          "text": "Example text",
+          "source": "Example source",
+          "url": "https://example.com/url"
+        }
+      ],
+      "news": [
+        {
+          "date": "2026-09-01T12:00:00.000Z",
+          "headline": "Example headline",
+          "summary": "Example summary",
+          "source": "Example source",
+          "url": "https://example.com/url"
+        },
+        {
+          "date": "2026-09-01T12:00:00.000Z",
+          "headline": "Example headline",
+          "summary": "Example summary",
+          "source": "Example source",
+          "url": "https://example.com/url"
+        }
+      ],
+      "interview": "Example interview",
+      "sources": [
+        "https://example.com/sources",
+        "https://example.com/sources"
+      ],
+      "profileFetchedAt": "2026-09-01T12:00:00.000Z"
+    }
+  ],
+  "jobs": [
+    {
+      "id": "acme-robotics-senior-engineer",
+      "company": "Acme Robotics",
+      "title": "Example title",
+      "status": "review",
+      "score": 72,
+      "url": "https://example.com/url",
+      "location": "Example location",
+      "workType": "Example workType",
+      "salaryMin": 150000,
+      "salaryMax": 190000,
+      "source": "Example source",
+      "resume": "Example resume",
+      "foundAt": "2026-09-01T12:00:00.000Z",
+      "reasons": [
+        "Example reasons",
+        "Example reasons"
+      ],
+      "scamFlags": [],
+      "headsUp": "Example headsUp",
+      "payText": "Example payText",
+      "whyScore": "Example whyScore",
+      "contacts": [
+        {
+          "priority": "Example priority",
+          "name": "Acme Robotics",
+          "role": "Example role",
+          "email": "recruiter@example.com",
+          "emailStatus": "Example emailStatus",
+          "phone": "Example phone",
+          "source": "Example source"
+        },
+        {
+          "priority": "Example priority",
+          "name": "Acme Robotics",
+          "role": "Example role",
+          "email": "recruiter@example.com",
+          "emailStatus": "Example emailStatus",
+          "phone": "Example phone",
+          "source": "Example source"
+        }
+      ],
+      "bestChannel": "Example bestChannel",
+      "followup": {
+        "to": "recruiter@example.com",
+        "subject": "Example subject",
+        "body": "recruiter@example.com",
+        "linkedin": "Example linkedin",
+        "callNotes": "recruiter@example.com"
+      },
+      "companyNotes": "recruiter@example.com",
+      "roleNotes": "Example roleNotes",
+      "sources": [
+        "https://example.com/sources",
+        "https://example.com/sources"
+      ],
+      "nextAction": "Example nextAction",
+      "description": "Example description",
+      "postingStatus": "Example postingStatus",
+      "compensation": "Example compensation",
+      "descriptionFetchedAt": "2026-09-01T12:00:00.000Z"
+    },
+    {
+      "id": "acme-robotics-staff-engineer",
+      "company": "Acme Robotics",
+      "title": "Example title",
+      "status": "review",
+      "score": 72,
+      "url": "https://example.com/url",
+      "location": "Example location",
+      "workType": "Example workType",
+      "salaryMin": 150000,
+      "salaryMax": 190000,
+      "source": "Example source",
+      "resume": "Example resume",
+      "foundAt": "2026-09-01T12:00:00.000Z",
+      "reasons": [
+        "Example reasons",
+        "Example reasons"
+      ],
+      "scamFlags": [],
+      "headsUp": "Example headsUp",
+      "payText": "Example payText",
+      "whyScore": "Example whyScore",
+      "contacts": [
+        {
+          "priority": "Example priority",
+          "name": "Acme Robotics",
+          "role": "Example role",
+          "email": "recruiter@example.com",
+          "emailStatus": "Example emailStatus",
+          "phone": "Example phone",
+          "source": "Example source"
+        },
+        {
+          "priority": "Example priority",
+          "name": "Acme Robotics",
+          "role": "Example role",
+          "email": "recruiter@example.com",
+          "emailStatus": "Example emailStatus",
+          "phone": "Example phone",
+          "source": "https://example.com/source"
+        }
+      ],
+      "bestChannel": "Example bestChannel",
+      "followup": {
+        "to": "recruiter@example.com",
+        "subject": "Example subject",
+        "body": "recruiter@example.com",
+        "linkedin": "Example linkedin",
+        "callNotes": "recruiter@example.com"
+      },
+      "companyNotes": "Example companyNotes",
+      "roleNotes": "Example roleNotes",
+      "sources": [
+        "https://example.com/sources",
+        "https://example.com/sources"
+      ],
+      "nextAction": "Example nextAction",
+      "description": "Example description",
+      "postingStatus": "Example postingStatus",
+      "compensation": "Example compensation",
+      "descriptionFetchedAt": "2026-09-01T12:00:00.000Z"
+    }
+  ],
+  "answers": [
+    {
+      "id": "Example id",
+      "question": "Example question",
+      "answer": "Example answer",
+      "jobIds": [],
+      "createdAt": "2026-09-01T12:00:00.000Z",
+      "answeredAt": null
+    }
+  ],
+  "events": [
+    {
+      "at": "2026-09-01T12:00:00.000Z",
+      "actor": "Example actor",
+      "action": "Example action",
+      "detail": "Example detail",
+      "jobId": null
+    }
+  ]
+}

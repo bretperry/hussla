@@ -97,7 +97,7 @@ in `harness.json` are shared with every project: put this project's additions in
 
 ## Stack
 
-Node 24 · TypeScript · node:http + Zod · SQLite (`node:sqlite`) · React 19 + Vite + Tailwind · Docker + Tailscale sidecar
+Go 1.25 server (`net/http`, pure-Go SQLite) · React 19 + TypeScript + Vite + Tailwind UI · Docker + Tailscale sidecar
 
 Stack packs (`stacks/<name>/pack.json`, `pnpm stack:list`) own each stack's rules, configs, checks,
 and CI steps; `pnpm stack:remove <name>` takes one out whole (`docs/decisions/0002-stack-packs.md`).
@@ -256,11 +256,11 @@ different spelling). Tell the user what you need and why.
      standing philosophy every project starts with. -->
 
 - **Two halves.** The server is Go (`cmd/hussla`, `internal/`); the UI is a React SPA in TypeScript (`src/`), built by Vite and served as static files by the Go binary. They meet only at the JSON API; UI types are generated from the API contract, never hand-copied (`docs/decisions/0008-go-server.md`).
-- **One owner per install.** Hussla runs on one person's NAS; there is no tenant id. The owner is whoever Tailscale Serve says is signing in (an `ALLOWED_USERS` login); agents are named, revocable API keys. Repositories therefore take no `userId` (`docs/decisions/0007-single-owner.md`).
+- **One owner per install.** Hussla runs for one person on their own machine or NAS; there is no tenant id. The owner is the Tailscale user who owns the node, identified from the connection by embedded Tailscale (`tsnet` `WhoIs`), never from headers; owner-only actions also need a passkey tap; agents are named, revocable API keys and a key is never upgraded to owner (security model in `docs/plans/hussla-v1.md`). Repositories therefore take no `userId` (`docs/decisions/0007-single-owner.md`).
 - **Server layers.** `internal/domain` pure rules; `internal/app/<use-case>` use-cases with their ports; `internal/adapters/<name>` I/O; `internal/httpapi` routing, auth and input parsing, calling use-cases only; `cmd/hussla` is the composition root.
 - **Storage.** SQLite in the data volume (`DATA_DIR`) through a pure-Go driver (no cgo, so one static binary for any NAS chip), forward-only SQL migrations embedded in the binary. Uploaded files and the encrypted secret store live beside it.
 - **Mail.** One `MailSender` port; one adapter per provider kind (SMTP, Resend, Postmark, SendGrid, Mailgun). Providers are a catalog in `internal/config`. Nothing is sent without the owner's approval; the outbox dispatcher paces sends with knobs in `internal/config`.
-- **Time.** Store UTC RFC 3339 strings; convert to the owner's time zone only for display and the send window.
+- **Time.** Store UTC as fixed-width `2006-01-02T15:04:05.000Z` strings (they sort as text); convert to the owner's time zone only for display and the send window.
 - **Product name** lives in `internal/config/product.go`; the UI reads it from `GET /api/me`.
 
 - **Layering.** Pure domain logic lives in the domain layer — free of framework, I/O, and feature imports (each pack's path is in `docs/ports-and-adapters.md`). Feature modules own UI + validation schemas. Server I/O lives in services behind ports; the API layer validates input, then calls a use-case port, never a service or the ORM directly. Enforced by each language pack's boundary check, not memory (`docs/decisions/0003-ports-and-adapters.md`); the map, and the fix for each rule, is `docs/ports-and-adapters.md`. Why: ports and a composition root keep native clients and a second datastore possible without a rewrite.
@@ -284,7 +284,7 @@ different spelling). Tell the user what you need and why.
 - Rename files or folders, Docker volumes, or other non-customer-facing identifiers as part of a product name change
 - Send email without an owner approval on that exact message, or let an agent key approve one
 - Return or log a stored secret (mail passwords, API keys, agent keys) from any API or log line
-- Trust Tailscale identity headers on a connection that isn't from loopback
+- Trust a Tailscale identity header from any connection, loopback included (identity comes from `tsnet` `WhoIs`)
 
 ## Branching & shipping
 
