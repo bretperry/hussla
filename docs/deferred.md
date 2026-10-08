@@ -25,6 +25,21 @@ reason, then deleted).
 
 What. **Why deferred:** … **Where:** … **If we take it:** … -->
 
+## Mail: OAuth2 sign-in for Outlook.com and Microsoft 365 (and Gmail without app passwords)
+`open` · recorded 2026-10-08 · from `docs/plans/hussla-v1.md` Phase 4
+
+Personal Outlook.com/Hotmail accounts lost SMTP password login on 2024-09-16, and Microsoft 365 turns SMTP AUTH off by default from late December 2026; Google Workspace admins can disable app passwords. **Why deferred:** XOAUTH2 needs a registered app, a browser consent flow and token refresh, which v1's "paste an app password" setup doesn't have; the catalog says so in the Outlook entry instead. **Where:** `internal/config/mailproviders.go` (Outlook warning), `internal/adapters/smtpmail` (would add an XOAUTH2 `smtp.Auth`). **If we take it:** a token store beside the secret store, a consent screen in the wizard, and an `auth: oauth2` field per catalog entry.
+
+## Mail: router-level `TestSecretsNeverLeave`
+`open` · recorded 2026-10-08 · from `docs/plans/hussla-v1.md` Phase 4
+
+The plan's Done-when runs `TestSecretsNeverLeave` through the Phase 3 router. Phase 4 was built beside Phase 3, so the test exists at the use-case and adapter level (`internal/app/mailsetup/secrets_test.go`: every returned value, error, stored row and log line, with a provider that echoes the password). **Why deferred:** the router didn't exist yet. **Where:** `internal/httpapi` once Phases 3 and 4 meet. **If we take it:** drive mail settings save/view/test and the outbox listing through the real router with the same echoing fake provider and capturing slog handler, asserting on response bodies too.
+
+## Mail: per-provider Message-ID on the API adapters
+`open` · recorded 2026-10-08 · from `docs/plans/hussla-v1.md` Phase 4
+
+SMTP mail carries the deterministic `hussla.<id>.v<version>@domain` Message-ID; Resend, Postmark, SendGrid and Mailgun assign their own, and Hussla sends `X-Hussla-Message-Id` instead. **Why deferred:** none of the four documents overriding Message-ID, and a request a provider rejects would block every send; only a live account can confirm. **Where:** `internal/adapters/{resend,postmark,sendgrid,mailgun}`. **If we take it:** try `Message-ID` (Mailgun `h:Message-Id`) against a test account per provider and keep it where it sticks.
+
 <!-- [stack:typescript] -->
 ## Drop dependency-cruiser's swc parser once it supports TypeScript 7
 
