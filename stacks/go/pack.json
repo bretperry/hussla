@@ -1,7 +1,7 @@
 {
   "name": "go",
   "kind": "language",
-  "summary": "Go 1.25: golangci-lint v2 (errorlint, wrapcheck, exhaustive, gofumpt), depguard layer boundaries with planted-violation gates, go test -race + rapid, testing/synctest fault injection.",
+  "summary": "Go 1.27: golangci-lint v2 (errorlint, wrapcheck, exhaustive, gofumpt), depguard layer boundaries with planted-violation gates, go test -race + rapid, testing/synctest fault injection.",
   "requires": [],
   "docs": [
     ".cursor/rules/go.mdc",
