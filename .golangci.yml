@@ -53,10 +53,12 @@ linters:
           - wrapcheck
   settings:
     wrapcheck:
-      # The defaults (errors made here need no wrapping), plus two kinds of pass-through: a repository
-      # method's error inside a unit of work (the use-case wraps it once, after Atomically returns), and
-      # a domain rule's refusal (a ValidationError or sentinel the HTTP layer maps by type). An error
-      # from any other package, the app layer's own use-cases included, must still be wrapped.
+      # The defaults (errors made here need no wrapping), plus three kinds of pass-through: a repository
+      # method's error inside a unit of work (the use-case wraps it once, after Atomically returns); a
+      # domain rule's refusal (a ValidationError or sentinel the HTTP layer maps by type); and the mail
+      # failure constructors, whose *mailsetup.DeliveryError (may it have been sent?) is built where the
+      # failure is understood, so wrapping it again would only prefix the reason the owner reads. An
+      # error from any other package, the app layer's own use-cases included, must still be wrapped.
       ignore-sig-regexps:
         - '\.Errorf\('
         - 'errors\.New\('
@@ -69,6 +71,13 @@ linters:
         - '\.WithStack\('
         - 'internal/app/[a-z]+\.Repository\)\.'
         - 'github\.com/bretperry/hussla/internal/domain\.'
+        - 'mailsetup\.NotSentRetry\('
+        - 'mailsetup\.NotSentRefused\('
+        - 'mailsetup\.MaybeSent\('
+        - 'mailsetup\.ValidateMessage\('
+      # The shared HTTP mail plumbing returns those same classified errors for every API adapter.
+      ignore-package-globs:
+        - github.com/bretperry/hussla/internal/adapters/mailhttp
     exhaustive:
       # Maps keyed by an enum too, not only switches. (A sum-type interface isn't covered: add
       # gochecksumtype if you use one; go.mdc.)
@@ -150,12 +159,18 @@ linters:
             # encoding/base64: secrets as URL-safe text (auth).
             - encoding/base64
             # encoding/json: the one JSON codec for stored rows, the seed file and (Phase 3) the API (wire); pure in-memory encode/decode.
+            # encoding/base64: mailsetup.Redact removes a credential's base64 form from provider text; pure encoding, no I/O.
+            - encoding/base64
             - encoding/hex
             - encoding/json
             - errors
             - fmt
             # io: importseed reads its input through an io.Reader it is handed; the use-case opens no file itself.
             - io
+            # log/slog: use-cases log what happened (a send, a failure) through the *slog.Logger the composition root hands them; no output of their own.
+            - log/slog
+            # math/rand/v2: the outbox draws each gap's jitter; randomness, no I/O.
+            - math/rand/v2
             # slices, sort: ordering lists the API returns (tracker); pure.
             - slices
             - strings
