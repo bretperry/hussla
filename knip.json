@@ -1,7 +1,19 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["scripts/*.{mjs,ts}"],
-  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.{mjs,ts}"],
-  "ignoreDependencies": ["@swc/core"],
-  "ignoreBinaries": ["mkfifo"]
+  "entry": [
+    "scripts/*.{mjs,ts}"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "scripts/**/*.{mjs,ts}"
+  ],
+  "ignoreDependencies": [
+    "@swc/core"
+  ],
+  "ignoreBinaries": [
+    "mkfifo"
+  ],
+  "ignore": [
+    "src/shared/api-types.ts"
+  ]
 }

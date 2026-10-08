@@ -40,7 +40,8 @@
     "stack:check": "node scripts/stack.mjs check --packs",
     "stack:drift": "node scripts/stack.mjs drift",
     "check": "node scripts/stack.mjs check",
-    "hooks:install": "bash scripts/install-git-hooks.sh"
+    "hooks:install": "bash scripts/install-git-hooks.sh",
+    "api:types": "openapi-typescript api/openapi.yaml --output src/shared/api-types.ts"
   },
   "devDependencies": {
     "@swc/core": "1.16.12",
@@ -48,6 +49,7 @@
     "dependency-cruiser": "18.4.0",
     "fast-check": "4.10.2",
     "knip": "6.38.0",
+    "openapi-typescript": "7.13.0",
     "oxlint": "1.86.0",
     "oxlint-tsgolint": "7.0.2003",
     "typescript": "7.0.2",

@@ -1,0 +1,24 @@
+{
+  "name": "api",
+  "kind": "add-on",
+  "summary": "Hussla's API contract (api/openapi.yaml) and the UI types generated from it by openapi-typescript; drift-checked in pnpm check.",
+  "requires": ["typescript"],
+  "docs": [],
+  "code": [],
+  "owns": [
+    "api/openapi.yaml",
+    "src/shared/api-types.ts",
+    ".pnpmfile.cjs"
+  ],
+  "checks": [],
+  "generated": [
+    {
+      "script": "api:types",
+      "files": ["src/shared/api-types.ts"]
+    }
+  ],
+  "packageJson": {
+    "scripts": ["api:types"],
+    "devDependencies": ["openapi-typescript"]
+  }
+}
