@@ -97,7 +97,7 @@ in `harness.json` are shared with every project: put this project's additions in
 
 ## Stack
 
-Node 24 · TypeScript · node:http + Zod · SQLite (`node:sqlite`) · React 19 + Vite + Tailwind · Docker + Tailscale sidecar
+Go 1.25 server (`net/http`, pure-Go SQLite) · React 19 + TypeScript + Vite + Tailwind UI · Docker + Tailscale sidecar
 
 Stack packs (`stacks/<name>/pack.json`, `pnpm stack:list`) own each stack's rules, configs, checks,
 and CI steps; `pnpm stack:remove <name>` takes one out whole (`docs/decisions/0002-stack-packs.md`).
