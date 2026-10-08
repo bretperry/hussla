@@ -4,9 +4,9 @@
 //
 // Fail closed: until an owner record exists nobody is the owner, and a tailnet identity is the
 // owner only when its user id equals the recorded one and its device is not tagged. The setup code
-// is needed twice in a life: to claim a tagged node (no owning user to adopt), and to register the
-// first passkey (so an agent with the owner's tailnet identity can't register its own before the
-// owner does). It is printed to the log only, guessed at most config.SetupCodeAttempts times, and
+// is needed to claim a tagged node (no owning user to adopt), and to register the first passkey on
+// each address (so an agent with the owner's tailnet identity, or on the owner's laptop, can't
+// register its own before the owner does). It is printed to the log only, guessed at most config.SetupCodeAttempts times, and
 // used once.
 
 package auth
@@ -200,20 +200,23 @@ func (s *Service) IssueSetupCode(ctx context.Context) error {
 	if err != nil || !needed {
 		return err
 	}
+	s.issueSetupCode()
+	return nil
+}
+
+func (s *Service) issueSetupCode() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.setup.code == "" {
 		s.setup = setupCode{code: newSetupCode()}
 		s.announce(s.setup.code)
 	}
-	return nil
 }
 
-// Status reports the setup state for a relying party, issuing a code if setup needs one.
+// Status reports the setup state for a relying party. It issues a code when this address has no
+// passkey yet: a passkey works on one address only, so the owner's first passkey on a second
+// address (the local listener after the tailnet one) needs the code from the log again.
 func (s *Service) Status(ctx context.Context, rp RelyingParty) (SetupStatus, error) {
-	if err := s.IssueSetupCode(ctx); err != nil {
-		return SetupStatus{}, err
-	}
 	enrolled, err := s.Enrolled(ctx)
 	if err != nil {
 		return SetupStatus{}, err
@@ -222,11 +225,9 @@ func (s *Service) Status(ctx context.Context, rp RelyingParty) (SetupStatus, err
 	if err != nil {
 		return SetupStatus{}, err
 	}
-	count := 0
-	for _, passkey := range passkeys {
-		if passkey.RPID == rp.ID {
-			count++
-		}
+	count := len(forRelyingParty(passkeys, rp.ID))
+	if !enrolled || count == 0 {
+		s.issueSetupCode()
 	}
 	s.mu.Lock()
 	live := s.setup.code != ""
@@ -242,14 +243,21 @@ func (s *Service) Claim(ctx context.Context, caller Principal, typed string) (Pr
 	if caller.role == RoleAgent || caller.role == RoleNone {
 		return Principal{}, "", ErrNotOwner
 	}
+	// Refuse whoever could never claim before touching the code, so they can't burn or rotate it.
+	if caller.role == RolePeer {
+		record, found, err := s.readOwner(ctx)
+		if err != nil {
+			return Principal{}, "", err
+		}
+		if caller.peer.Tagged || caller.peer.UserID == "" || (found && record.TailnetUserID != "") {
+			return Principal{}, "", ErrNotOwner
+		}
+	}
 	if err := s.spendSetupCode(typed); err != nil {
 		return Principal{}, "", err
 	}
 	owner := caller
 	if caller.role == RolePeer {
-		if caller.peer.Tagged || caller.peer.UserID == "" {
-			return Principal{}, "", ErrNotOwner
-		}
 		claimed := false
 		err := s.store.Atomically(ctx, func(tx store.Tx) error {
 			var record ownerRecord

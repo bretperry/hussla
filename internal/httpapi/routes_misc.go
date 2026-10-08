@@ -254,6 +254,11 @@ const placeholderPage = `<!doctype html><html lang="en"><head><meta charset="utf
 
 // serveUI serves the web app: a file when one matches, index.html otherwise (client-side routes).
 func (server *api) serveUI(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		writeError(w, http.StatusMethodNotAllowed, errorBody{Error: "the web app is read with GET"})
+		return
+	}
 	if server.deps.UI == nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, placeholderPage)

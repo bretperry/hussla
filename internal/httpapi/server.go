@@ -154,7 +154,7 @@ func (server *api) routes() {
 	server.handle("/api/", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, errorBody{Error: "no such endpoint; GET /api lists them"})
 	}))
-	server.handle("GET /", http.HandlerFunc(server.serveUI))
+	server.handle("/", http.HandlerFunc(server.serveUI)) // GET and HEAD only; serveUI refuses the rest
 }
 
 type okBody struct {
