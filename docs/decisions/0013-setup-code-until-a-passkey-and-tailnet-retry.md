@@ -1,4 +1,4 @@
-# 0012 — The setup code lasts until a passkey is stored; the tailnet join never gives up
+# 0013 — The setup code lasts until a passkey is stored; the tailnet join never gives up
 
 `accepted` · 2026-10-08 · from the first-run review (`reviews/first-run-claude.md` items 3, 6, 11, 12, 13, 19) on PR #5
 

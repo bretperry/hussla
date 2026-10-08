@@ -299,6 +299,6 @@ Passkeys can be added (setup code for the first on each address, then a tap with
 
 ## A lost log loses a live setup code
 
-`open` · recorded 2026-10-08 · from the first-run review (decision 0012)
+`open` · recorded 2026-10-08 · from the first-run review (decision 0013)
 
 Only the setup code's hash is stored, so a restart reminds the owner of the code printed earlier instead of printing it again. If that log line is gone (the container recreated before setup finished), no code can be read and none is issued. **Why deferred:** the review asked for a hash, not the code, at rest; Phase 6 decides how the first passkey is authorized without the log (review blocker 1), which may retire the code. **Where:** `internal/app/auth/owner.go` (`issueSetupCode`), settings key `auth.setupCode`. **If we take it:** a `hussla new-setup-code` command (data-directory access is the proof, like `hussla open`) that replaces the stored hash and prints the new code.
