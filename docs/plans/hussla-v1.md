@@ -81,15 +81,15 @@ mail must keep these true and test them.
 
 | Phase | What | After | Model | State |
 |---|---|---|---|---|
-| 0 | Repo from template, stacks (Go, TypeScript, React, infra), placeholders, architecture | —; repo created by Bret | quick (low) | running |
-| 1 | Go domain types, pure rules, knobs; API contract (OpenAPI) and generated UI types | 0 | deep (high) | |
+| 0 | Repo from template, stacks (Go, TypeScript, React, infra), placeholders, architecture | —; repo created by Bret | quick (low) | QA passed (#1) |
+| 1 | Go domain types, pure rules, knobs; API contract (OpenAPI) and generated UI types | 0 | deep (high) | QA passed (#2); stacked on #1 |
 | 2 | Storage ports, SQLite adapters, migrations, seed import | 1 | workhorse (high) | |
-| 3 | HTTP API, auth (embedded Tailscale, owner enrollment, local sign-in, passkey step-up, agent keys), use-cases | 2 | deep (xhigh) | |
+| 3 | HTTP API, auth (embedded Tailscale, owner enrollment, local sign-in, passkey step-up, agent keys), use-cases | 2 | deep (xhigh) | QA passed (#5); stacked on #3 |
 | 3b | MCP endpoint for agents, "Add an agent" setup snippet | 3, 5 | workhorse (high) | |
-| 4 | Mail port, provider catalog, adapters, secret store, outbox pacing | 2 | deep (high) | |
+| 4 | Mail port, provider catalog, adapters, secret store, outbox pacing | 2 | deep (high) | QA passed (#4); stacked on #3 |
 | 5 | React UI: jobs, job, companies, compare, company, outbox, answers, activity, settings | 1 | workhorse (medium) | |
 | 5b | Pitches: ten honed pitches, dashboard billboard, versions and side-by-side compare | 3b, 5 | workhorse (medium) | |
-| 6 | First-run wizard, Docker image, compose with Tailscale, binaries, install guides (NAS, laptop, cloud) | 3, 3b, 4, 5, 5b | workhorse (medium) | |
+| 6 | First-run wizard, prebuilt image, no-key no-terminal NAS install, binaries, install guides (NAS, laptop, cloud) | 3, 3b, 4, 5, 5b | workhorse (medium) | |
 | 7 | Install on the NAS and accept on phone | 6; NAS model, Tailscale account | — (human) | |
 
 ## Phase 0 — Repo setup
@@ -250,10 +250,48 @@ queue at the normal pace, never a burst, and an approval older than the window s
 **Model:** workhorse · **Thinking:** medium — visible work, reviewed with screenshots.
 
 **Goal:** Vite + React SPA with the prototype's pages (`docs/reference/prototype/agents-api.md`
-lists them) in the brand direction the owner picks from the mockups, plus: company page (quick take,
+lists them) in the brand the owner picked (below), plus: company page (quick take,
 stat tiles, money, facts, anecdotes, news, reviews, contacts with call and email links, editable
 follow-up drafts per job and a new-email composer, sent/queued history), companies table with
 sorting and a 2–4 company side-by-side compare. Works at 390px.
+**Brand (picked 2026-10-08): "The Gazette", a designed newspaper; front page is mockup 8c.**
+The mockup is board "8c" on the owner's design canvas (private; the build follows this spec, not
+the canvas, and the repo carries no copy because the mockup shows the owner's own pitches).
+- **Colors:** paper `#FBFAF7`, ink `#121212`, hairlines `#D9D5CC`, secondary text `#555`, and one red
+  accent `#C8102E`. Red is used only for urgent or live items (kickers, the awaiting-signature ear) and for
+  the nameplate's period, never as a fill. Review & sign is the only solid black button on the page.
+- **Type:** Bodoni Moda for the nameplate (112), headlines (lead 56; news and pitch 24–32), the
+  pitch quote in italic, and body text (18/28). Libre Franklin for UI text and buttons (13–16).
+  IBM Plex Mono for kickers, dates and counts (10–11, caps, tracked). Headlines use `text-wrap:
+  balance`, body uses `pretty`, and quotes are curly. Self-host the font files (CSP: no
+  Google Fonts call).
+- **Grid:** at 1280, 64px margins and 12 columns of 74px with 24px gutters. Hairline column rules
+  sit centered in the gutter. Spacing scale is 4/8/16/24/32 only. The same relationship always
+  gets the same gap: rule → kicker 8, kicker → headline 8, headline → body 16, body →
+  buttons 16, section → section 24. Every section opens with a 2px rule, then a mono kicker.
+- **Masthead:** a dateline row (issue number and date, the motto centered, nav on the right). Below it,
+  a left ear ("Awaiting your signature": count, a 44px Review & sign button, the companies), the
+  nameplate "Hussla." centered, and a right ear (overnight agent counts: applied, reviews,
+  profiles, plus "Read the agent wire →"). Then an 8px black rule over a 1px hairline under the title,
+  with no rule above it.
+- **Body, 8 + 4 columns:**
+  - **Lead story (left 8):** kicker, headline, and one body column (about 56 characters a
+    line) with an outlined Open/Prep pair. Beside it sits an "<Company> at a glance" fact box
+    (valuation, revenue, cash flow, next event) drawn from that company's money fields.
+  - **Pitch of the hour (left 8, below the lead):** kicker with `n / 10`; the pitch title and a
+    44px Next pitch button on one row; the quote in large italic across the 8 columns; a byline.
+    Its box is sized to the longest pitch the config allows, so rotation never reflows the
+    page (900ms fade, none under reduced motion). Phase 5b fills it.
+  - **Rail (right 4):** latest news (headline, one-line context, date), then "On the board" (the top
+    jobs with status tags and an "All N jobs →" link). The rail's second rule sits on the same
+    line as the pitch rule.
+  - **Bottom:** both columns end on the same line.
+- **Phone (390):** the masthead, then the awaiting-signature ear first, the lead, the pitch, news, then the board.
+- **States:** Phase 5 designs and builds these.
+  - **Day one:** no jobs and no pitches.
+  - **No lead story:** the fact box is hidden.
+  - **Nothing to sign:** the ear says so, with no button.
+- **Tokens:** these live in `src/shared/ui/`, not as literals in features.
 **Applies:** `react.mdc`; architecture "Client state".
 **Files:** `src/features/{jobs,companies,outbox,answers,activity,settings}/`, `src/shared/ui/*`,
 `src/shared/api.ts` (typed client over the generated `api-types.ts`), `index.html`, `vite.config.ts`;
@@ -266,6 +304,7 @@ inferred-address warning, placeholder warning), the compare table sort, and the 
 **Done when:**
 - Component tests green → verify: `pnpm test src/features`
 - Screens work on desktop and phone → verify: Playwright screenshots at 1280px and 390px attached to the PR, no horizontal scroll, no console errors
+- Front page matches the 8c spec → verify: a DOM check in the Playwright test that the lead and rail columns end within 4px of each other and that every section's left edge sits on a grid column, plus a stylist pass (finishing passes) on the 1280 screenshot noted in the PR
 
 ## Phase 5b — Pitches
 
@@ -302,24 +341,85 @@ hover, skips the fade under reduced motion; compare view shows the diff and timi
 
 **Model:** workhorse · **Thinking:** medium — the bar is a non-technical person finishing setup alone.
 
-**Goal:** first-run flow: enter the setup code from the log (Security model), register a passkey,
+**Goal:** first-run flow: authorize the first passkey (First run, below), register it,
 then the wizard (your name and email; pick an email provider from the catalog with its steps
 and a link to its app-password page; paste the password; send a test; optionally import a seed
 file; make the first agent key). Docker image (one static binary on a distroless base, non-root,
-healthcheck) with Tailscale embedded, so `docker-compose.yml` is one service whose only required
-value is `TS_AUTHKEY`, `restart: unless-stopped`, and a named volume (a distroless non-root image
-can't write a Synology bind mount owned by another uid). Plain binaries for macOS, Windows and
+healthcheck) with Tailscale embedded, so `docker-compose.yml` is one service with no required
+value, `restart: unless-stopped`, and a named volume (a distroless non-root image
+can't write a Synology bind mount owned by another uid, and Synology won't create a missing bind
+folder at all). `TS_AUTHKEY` is optional: without it, the first start prints tsnet's Tailscale
+sign-in link in the log, so there is no key to make, copy once, or paste. The image is prebuilt for
+amd64 and arm64 and published to GitHub's registry; the compose file uses `image:`, never `build:`
+(a small NAS must not build). The NAS path needs no terminal and no log reading: Container Manager →
+Project → Create, paste the compose file, Done, then open `http://<NAS address>:<port>` on the home
+network, which shows one **Connect to Tailscale** button (tsnet's login link) and, once joined,
+**Make it mine** (Mojodojo's foolproof first run is the pattern). The owner is whoever owns the node
+after that sign-in (`WhoIs`, Security model above); there is no allowed-users list to fill in, so a login
+that isn't the person's email (a GitHub login) can't lock them out. Once on the tailnet, the
+first page shows the `https://…ts.net` address and a QR code for the phone. Plain binaries for macOS, Windows and
 Linux (amd64, arm64). Install guides for a non-technical reader: NAS (Synology Container Manager),
 laptop or desktop (Docker Desktop, or the binary plus `hussla open`), and a rented cloud server
 (firewall closed; reachable only over Tailscale); each says to copy backups off the device.
+Guides follow what tripped up the first real NAS install (2026-10-08): one linear path with no
+"if you already did step N" branches; no placeholders to edit inside commands (prompt instead);
+any terminal step is one line (never `ssh` and a command pasted as two lines); every guide ends
+with a check that it is running and what to paste back if not.
+
+**First run on a headless host** (from an adversarial review, 2026-10-08;
+Phase 3 fixes the code bugs it found, on PR #5):
+- **Home-network page.** A second listener on the LAN port serves only: Tailscale state (needs
+  login with tsnet's link / waiting for approval / needs HTTPS / running), then the ts.net address
+  and QR. It accepts only a private source address and a `Host` that is a private IP, a bare name
+  or `.local` (checked on the connection, against DNS rebinding), never grants identity, and is
+  never published on a cloud host.
+- **First passkey without the log** (Bret's pick pending: first-start window, log code, or both):
+  window = never owned, within 15 minutes of start, the Tailscale node owner, from the LAN page's
+  one-time link; outside it, the setup code from the log. The code stays valid until a passkey is
+  stored, so a cancelled Face ID retries without a new code.
+- **Show who owns it.** Until the first passkey exists, the pages say "Owner: `<login>`, not you?
+  Start over"; the person who'll use it must be the one who clicks Connect (family tailnets).
+  A refusal page names the owner and the login it saw.
+- **HTTPS and MagicDNS.** If certificates are off, the LAN page shows the one switch to flip (with
+  the admin link) and the app retries without a restart.
+- **Phone.** A wizard step: install Tailscale on the phone, sign in as `<owner login>` with the same
+  provider, turn it on, scan the QR.
+- **Keep it signed in.** A wizard step to disable key expiry (link to the machine's admin page), a
+  Settings banner from the node's key expiry, and the LAN page offers Connect again whenever
+  Tailscale needs a login.
+- **Lost passkey, no terminal.** The owner (by identity) can ask for a recovery code in the log,
+  register a new passkey and remove old ones; the wizard suggests registering a second device.
+- **Hosts.** Cloud: publish no port; join with `TS_AUTHKEY` set in the provider's console (one
+  prompted line), non-ephemeral, untagged. Docker Desktop laptop: the LAN listener on
+  `127.0.0.1:<port>`, or drop that path for the binary. Pi: 64-bit OS required (say so).
+- **Names.** Watch for a node rename instead of fixing the host at start; the guide says to remove
+  the old machine before reinstalling, so there is no `hussla-1` surprise; plain `http://` and the
+  short name redirect to the full https address.
+- **Devices without passkeys** (iCloud Keychain off, Linux browsers): detect it and say what to turn
+  on, or register on the phone first.
 **Files:** `src/features/setup/`, `internal/app/setup/`, `Dockerfile` (multi-stage: Node builds the
 UI, Go builds a static binary, final stage distroless non-root), `docker-compose.yml`,
 `docs/install/{nas,laptop,cloud}.md`, README install link, release build script for the binaries.
 **Tests:** wizard flow component test; `pnpm infra:docker` (hadolint); container smoke test:
-a fresh container serves only the setup-code screen, and a wrong code is refused.
+a fresh container's LAN page shows only Tailscale state, a wrong code is refused, and the LAN port
+refuses `Host: evil.example` and a public source address. Playwright fakes Tailscale (say how) and
+drives the LAN listener, not the container's loopback.
 **Done when:**
-- Fresh container needs the setup code, then finishes the wizard → verify: Playwright run against `docker run`
+- Fresh container goes from the LAN page to a passkey to the finished wizard → verify: Playwright run against `docker run`
+- A tailnet with HTTPS certificates off shows the switch and recovers without a restart → verify: test with a fake tailnet status
+- A cancelled passkey prompt retries with the same code; a restart mid-setup resumes → verify: `go test ./internal/app/auth/...`
+- Recreating the container with the volume keeps the address and sign-in → verify: container smoke test
+- Key expiry warns ahead of time → verify: unit test with a fake clock
 - Image lint clean → verify: `pnpm infra:docker`
+- A fresh Synology (DSM 7.2, Container Manager) installs with no terminal and no auth key, from
+  Project → Create to the job board on a phone, in under 5 minutes → verify: Human check `hussla-p6-nas`
+
+**Human checks**
+- `hussla-p6-mom` · decision · 30 min · none — Hand the NAS guide to someone non-technical and watch without helping. They reach their job board on their phone with no terminal and no questions; every place they stall becomes a guide or installer fix.
+- `hussla-p6-strangers` · Mac · 10 min · none — While setting up, open the LAN page from a second laptop first. It can't take ownership silently: the owner's login shows with Start over.
+- `hussla-p6-other-account` · iPhone · 5 min · none — Open Hussla on a phone signed in to Tailscale as another account. The page names the owner and the account it saw.
+- `hussla-p6-cloud` · Linux · 20 min · none — Install on a rented cloud server. No port is reachable from outside (nmap), and the job board opens on the phone.
+- `hussla-p6-nas` · Mac · 10 min · none — Install on a fresh Synology with no terminal. Container Manager → Project → Create, paste the compose file, open the NAS address in a browser and click Connect; the job board opens on your phone within 5 minutes, with no auth key and no folders made by hand.
 
 ## Phase 7 — Install and accept
 
