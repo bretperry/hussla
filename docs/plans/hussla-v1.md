@@ -250,10 +250,24 @@ queue at the normal pace, never a burst, and an approval older than the window s
 **Model:** workhorse · **Thinking:** medium — visible work, reviewed with screenshots.
 
 **Goal:** Vite + React SPA with the prototype's pages (`docs/reference/prototype/agents-api.md`
-lists them) in the brand direction the owner picks from the mockups, plus: company page (quick take,
+lists them) in the brand the owner picked (below), plus: company page (quick take,
 stat tiles, money, facts, anecdotes, news, reviews, contacts with call and email links, editable
 follow-up drafts per job and a new-email composer, sent/queued history), companies table with
 sorting and a 2–4 company side-by-side compare. Works at 390px.
+**Brand (picked 2026-10-08): "The Gazette", a designed newspaper.**
+- Colors: paper `#FBFAF7`, ink `#121212`, one red accent `#C8102E`, hairlines `#D9D5CC`,
+  secondary text `#555`. Red is a pop (the masthead period, kickers, the interview count), never a fill.
+- Type: Bodoni Moda (masthead 900, headlines 700–900, the pitch in italic), Libre Franklin
+  (body and buttons), IBM Plex Mono (dates, counts, small-caps kickers with letter-spacing).
+  Self-host the font files; no Google Fonts call from the app (CSP).
+- Front page: a dateline row with the nav; the masthead "Hussla" with a red period between a
+  6px top rule and a hairline, with a motto on the left and counts on the right; the pitch billboard
+  ("Pitch of the hour": the title, the pitch as a large italic quote, `n / 10`, a Next button,
+  900ms fade; Phase 5b fills it); then three columns: the lead story (the top job), latest
+  news, and desk notes (follow-ups awaiting signature as a black card, overnight agent work, the
+  calendar).
+- Buttons: black solid primary, 1px black outline secondary, square corners.
+- These are tokens in `src/shared/ui/`, not literals in features.
 **Applies:** `react.mdc`; architecture "Client state".
 **Files:** `src/features/{jobs,companies,outbox,answers,activity,settings}/`, `src/shared/ui/*`,
 `src/shared/api.ts` (typed client over the generated `api-types.ts`), `index.html`, `vite.config.ts`;
