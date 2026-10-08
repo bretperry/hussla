@@ -351,8 +351,12 @@ can't write a Synology bind mount owned by another uid, and Synology won't creat
 folder at all). `TS_AUTHKEY` is optional: without it, the first start prints tsnet's Tailscale
 sign-in link in the log, so there is no key to make, copy once, or paste. The image is prebuilt for
 amd64 and arm64 and published to GitHub's registry; the compose file uses `image:`, never `build:`
-(a small NAS must not build). The NAS path needs no terminal: Container Manager → Project → Create,
-paste the compose file, Done, then open the log and click the sign-in link. Once on the tailnet, the
+(a small NAS must not build). The NAS path needs no terminal and no log reading: Container Manager →
+Project → Create, paste the compose file, Done, then open `http://<NAS address>:<port>` on the home
+network, which shows one **Connect to Tailscale** button (tsnet's login link) and, once joined,
+**Make it mine** (Mojodojo's foolproof first run is the pattern). The owner is whoever owns the node
+after that sign-in (`WhoIs`, Security model above); there is no allowed-users list to fill in, so a login
+that isn't the person's email (a GitHub login) can't lock them out. Once on the tailnet, the
 first page shows the `https://…ts.net` address and a QR code for the phone. Plain binaries for macOS, Windows and
 Linux (amd64, arm64). Install guides for a non-technical reader: NAS (Synology Container Manager),
 laptop or desktop (Docker Desktop, or the binary plus `hussla open`), and a rented cloud server
@@ -373,6 +377,7 @@ a fresh container serves only the setup-code screen, and a wrong code is refused
   Project → Create to the job board on a phone, in under 5 minutes → verify: Human check `hussla-p6-nas`
 
 **Human checks**
+- `hussla-p6-mom` · decision · 30 min · none — Hand the NAS guide to someone non-technical and watch without helping. They reach their job board on their phone with no terminal and no questions; every place they stall becomes a guide or installer fix.
 - `hussla-p6-nas` · Mac · 10 min · none — Install on a fresh Synology with no terminal. Container Manager → Project → Create, paste the compose file, click the Tailscale link in the log; the job board opens on your phone within 5 minutes, with no auth key and no folders made by hand.
 
 ## Phase 7 — Install and accept
