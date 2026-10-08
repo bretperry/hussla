@@ -40,8 +40,8 @@ func TestDeclaredEmailTransitionsExactly(t *testing.T) {
 		{domain.EmailStatusApproved, domain.EmailStatusDraft}:    true, // edited after approval
 		{domain.EmailStatusApproved, domain.EmailStatusCanceled}: true,
 		{domain.EmailStatusSending, domain.EmailStatusSent}:      true,
-		{domain.EmailStatusSending, domain.EmailStatusFailed}:    true,
-		{domain.EmailStatusSending, domain.EmailStatusApproved}:  true, // retry, or a crash mid-send
+		{domain.EmailStatusSending, domain.EmailStatusFailed}:    true, // out of attempts, or may have been sent
+		{domain.EmailStatusSending, domain.EmailStatusApproved}:  true, // retry after a definite failure
 		{domain.EmailStatusFailed, domain.EmailStatusApproved}:   true, // approved again for another try
 		{domain.EmailStatusFailed, domain.EmailStatusDraft}:      true, // edited after failing
 		{domain.EmailStatusFailed, domain.EmailStatusCanceled}:   true,
@@ -164,12 +164,18 @@ func TestFailedSendRetriesThenFails(t *testing.T) {
 	}
 }
 
-func TestRequeueAfterCrash(t *testing.T) {
+func TestUncertainSendNeedsNewApproval(t *testing.T) {
 	email, _ := newTestEmail(t).Approve("Owner", patchedAt)
 	sending, _ := email.StartSending()
-	requeued, err := sending.Requeue()
-	if err != nil || requeued.Status != domain.EmailStatusApproved || requeued.Attempts != 1 {
-		t.Fatalf("requeue = %+v, %v; want approved with the attempt counted", requeued, err)
+	uncertain, err := sending.MarkSendUncertain()
+	if err != nil || uncertain.Status != domain.EmailStatusFailed || uncertain.Error != domain.UncertainSendError {
+		t.Fatalf("uncertain send = %+v, %v; want failed with the check-your-Sent-folder note", uncertain, err)
+	}
+	if _, err := uncertain.StartSending(); !errors.Is(err, domain.ErrTransitionNotAllowed) {
+		t.Fatalf("an uncertain send went back out without approval: err = %v", err)
+	}
+	if _, err := email.MarkSendUncertain(); !errors.Is(err, domain.ErrTransitionNotAllowed) {
+		t.Fatalf("an approved email that never started sending was marked uncertain: err = %v", err)
 	}
 }
 
@@ -198,7 +204,7 @@ var emailOperations = []emailOperation{
 	{"startSending", domain.Email.StartSending},
 	{"markSent", func(e domain.Email) (domain.Email, error) { return e.MarkSent("id", patchedAt) }},
 	{"markSendFailed", func(e domain.Email) (domain.Email, error) { return e.MarkSendFailed("boom", config.MailMaxAttempts) }},
-	{"requeue", domain.Email.Requeue},
+	{"markSendUncertain", domain.Email.MarkSendUncertain},
 	{"editBody", func(e domain.Email) (domain.Email, error) {
 		return e.Edit(domain.EmailEdit{Body: domain.Set(e.Body + " more")})
 	}},

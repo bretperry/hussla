@@ -5,8 +5,9 @@
 //
 // States: draft → approved → sending → sent | failed; draft, approved and failed can be canceled.
 // Editing an approved (or failed) email's content returns it to draft, because an approval covers
-// the exact text Bret read. A failed send retries (sending → approved) until the attempts run out.
-// A crash mid-send also returns it to approved: the dispatcher re-queues "sending" rows on start.
+// the exact text Bret read. A send that definitely failed retries (sending → approved) until the
+// attempts run out. A send that may have gone out (found in sending at startup, or cut off after
+// the provider took it) goes to failed and waits for a new approval: never sent twice by itself.
 // Who may do what (only the owner approves; agents edit only drafts) is the HTTP layer's rule.
 
 package domain
@@ -212,8 +213,8 @@ func (email Email) MarkSent(messageID string, sentAt time.Time) (Email, error) {
 	return next, nil
 }
 
-// MarkSendFailed records a failed attempt: back to approved for a retry while attempts remain
-// (fewer than maxAttempts), failed after that.
+// MarkSendFailed records an attempt the provider definitely refused (nothing went out): back to
+// approved for a retry while attempts remain (fewer than maxAttempts), failed after that.
 func (email Email) MarkSendFailed(deliveryError string, maxAttempts int) (Email, error) {
 	if email.Status != EmailStatusSending {
 		return Email{}, transitionError(email.Status, "record a failed send for")
@@ -230,13 +231,22 @@ func (email Email) MarkSendFailed(deliveryError string, maxAttempts int) (Email,
 	return next, nil
 }
 
-// Requeue returns an email a crash left in sending to the queue; its attempt still counts.
-// Only from sending: approved is also reachable from draft, and that move is the owner's Approve.
-func (email Email) Requeue() (Email, error) {
+// UncertainSendError is what an email shows when nobody knows whether it went out.
+const UncertainSendError = "May have been sent: check your Sent folder before approving it again."
+
+// MarkSendUncertain records a send whose outcome is unknown: the process stopped mid-send (a
+// crash, a laptop lid) or the provider dropped the connection after taking the message. It goes
+// to failed, never back to the queue, so it is sent again only after the owner looks and approves.
+func (email Email) MarkSendUncertain() (Email, error) {
 	if email.Status != EmailStatusSending {
-		return Email{}, transitionError(email.Status, "requeue")
+		return Email{}, transitionError(email.Status, "record an uncertain send for")
 	}
-	return email.moveTo(EmailStatusApproved)
+	next, err := email.moveTo(EmailStatusFailed)
+	if err != nil {
+		return Email{}, err
+	}
+	next.Error = UncertainSendError
+	return next, nil
 }
 
 // moveTo applies one declared transition, or refuses with ErrTransitionNotAllowed.
