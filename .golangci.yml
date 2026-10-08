@@ -52,6 +52,27 @@ linters:
         linters:
           - wrapcheck
   settings:
+    wrapcheck:
+      # The defaults, plus the mail failure constructors: a mail adapter's error IS the classified
+      # *mailsetup.DeliveryError (may it have been sent?), built where the failure is understood;
+      # wrapping it again would only prefix the reason the owner reads.
+      ignore-sigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Unwrap(
+        - errors.Join(
+        - .Wrap(
+        - .Wrapf(
+        - .WithMessage(
+        - .WithMessagef(
+        - .WithStack(
+        - mailsetup.NotSentRetry(
+        - mailsetup.NotSentRefused(
+        - mailsetup.MaybeSent(
+        - mailsetup.ValidateMessage(
+      # The shared HTTP mail plumbing returns those same classified errors for every API adapter.
+      ignore-package-globs:
+        - github.com/bretperry/hussla/internal/adapters/mailhttp
     exhaustive:
       # Maps keyed by an enum too, not only switches. (A sum-type interface isn't covered: add
       # gochecksumtype if you use one; go.mdc.)
@@ -131,6 +152,10 @@ linters:
             - fmt
             # io: importseed reads its input through an io.Reader it is handed; the use-case opens no file itself.
             - io
+            # log/slog: use-cases log what happened (a send, a failure) through the *slog.Logger the composition root hands them; no output of their own.
+            - log/slog
+            # math/rand/v2: the outbox draws each gap's jitter; randomness, no I/O.
+            - math/rand/v2
             - strings
             - sync
             - time
