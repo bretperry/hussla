@@ -105,7 +105,7 @@ export interface paths {
         /** Creates the job at this id (company and title required) or patches it if it exists. */
         put: operations["upsertJob"];
         post?: never;
-        /** Owner only. Deletes the job. */
+        /** Owner only, with a passkey tap. Deletes the job. */
         delete: operations["deleteJob"];
         options?: never;
         head?: never;
@@ -206,7 +206,7 @@ export interface paths {
         get: operations["getFile"];
         put?: never;
         post?: never;
-        /** Owner only. Removes the file. */
+        /** Owner only, with a passkey tap. Removes the file. */
         delete: operations["deleteFile"];
         options?: never;
         head?: never;
@@ -355,7 +355,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Owner only. Deletes a saved answer; `ok` is false when there was none. */
+        /** Owner only, with a passkey tap. Deletes a saved answer; `ok` is false when there was none. */
         delete: operations["deleteAnswer"];
         options?: never;
         head?: never;
@@ -377,7 +377,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Owner only. Merges the named settings. */
+        /** Owner only, with a passkey tap. Merges the named settings. */
         patch: operations["patchSearchConfig"];
         trace?: never;
     };
@@ -425,7 +425,7 @@ export interface paths {
         /** Owner only. The agent keys (never the secret). */
         get: operations["listAgentKeys"];
         put?: never;
-        /** Owner only. Makes a key; the secret is in this response only. */
+        /** Owner only, with a passkey tap. Makes a key; the secret is in this response only. */
         post: operations["createAgentKey"];
         delete?: never;
         options?: never;
@@ -445,7 +445,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Owner only. Revokes a key; `ok` is false when it was already revoked or unknown. */
+        /** Owner only, with a passkey tap. Revokes a key; `ok` is false when it was already revoked or unknown. */
         delete: operations["revokeAgentKey"];
         options?: never;
         head?: never;
@@ -478,7 +478,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Owner only. Imports a backup or seed bundle; records merge by id, so importing twice changes nothing. */
+        /** Owner only, with a passkey tap. Imports a backup or seed bundle; records merge by id, so importing twice changes nothing. */
         post: operations["importBundle"];
         delete?: never;
         options?: never;
@@ -512,7 +512,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Owner only. Sends a test email to the owner's own address now (outside pacing). */
+        /** Owner only, with a passkey tap. Sends a test email to the owner's own address now (outside pacing). */
         post: operations["sendTestEmail"];
         delete?: never;
         options?: never;
@@ -567,7 +567,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Owner only. Queues a draft (or a failed email) to send, at the outbox's pace, if it is still the version the owner read. */
+        /** Owner only, with a passkey tap. Queues a draft (or a failed email) to send, at the outbox's pace, if it is still the version the owner read. */
         post: operations["approveEmail"];
         delete?: never;
         options?: never;
@@ -594,6 +594,159 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The setup screen's state. Anyone may ask; a setup code is printed to the server log when this address still needs one. */
+        get: operations["getSetupStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/setup/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Spends the setup code from the log. Before enrollment, the person on an untagged tailnet device (or a local session) becomes the owner; after it, only the owner may spend one (to add the first passkey on another address). Returns a step-up token for POST /api/passkeys/register/begin. After a few wrong codes a new one is printed. */
+        post: operations["claimSetup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/signin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Local listener only. Trades the one-time token `hussla open` printed for a session cookie, then redirects to the app. */
+        get: operations["signIn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/revoke-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Owner only, with a passkey tap. Ends every local session. */
+        post: operations["signOutEverywhere"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/passkeys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Owner only. The registered passkeys (never the credential). */
+        get: operations["listPasskeys"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/passkeys/register/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Owner only, with a passkey tap (or the step-up token from /api/setup/claim). Options for navigator.credentials.create, for this address. */
+        post: operations["beginPasskeyRegistration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/passkeys/register/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Owner only. Verifies the new passkey and stores it. */
+        post: operations["finishPasskeyRegistration"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stepup/begin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Owner only. Starts a passkey tap that will authorize one action (method and path). */
+        post: operations["beginStepUp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stepup/finish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Owner only. Verifies the tap and returns the one-use token for the action it was begun for. */
+        post: operations["finishStepUp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -604,7 +757,7 @@ export interface components {
              * @description A stable reason for the refusals a client acts on.
              * @enum {string}
              */
-            code?: "owner-field" | "changed-since-read" | "transition-not-allowed";
+            code?: "owner-field" | "changed-since-read" | "transition-not-allowed" | "setup-required" | "passkey-required";
             /** @description With code "owner-field": the fields the owner last wrote, which an agent may not change. */
             fields?: string[];
         };
@@ -636,7 +789,7 @@ export interface components {
             /** @enum {string} */
             kind: "user" | "agent";
             name: string;
-            /** @description The owner's Tailscale login (users only). */
+            /** @description The owner's Tailscale login (the owner on the tailnet only). */
             login?: string;
             appName: string;
         };
@@ -1235,6 +1388,66 @@ export interface components {
             ok: boolean;
             messageId: string;
         };
+        SetupStatus: {
+            /** @description An owner is recorded. */
+            enrolled: boolean;
+            /** @description Passkeys registered for this address. */
+            passkeys: number;
+            /** @description A setup code is waiting in the server log. */
+            codeInLog: boolean;
+            /** @enum {string} */
+            listener: "tailnet" | "local";
+            isOwner: boolean;
+        };
+        SetupClaim: {
+            /** @description As printed (XXXX-XXXX-XXXX); case and dashes don't matter. */
+            code: string;
+        };
+        SetupClaimed: {
+            /** @description The token for X-Hussla-Step-Up on `next`. */
+            stepUp: string;
+            /** @description The action it is good for: "POST /api/passkeys/register/begin". */
+            next: string;
+        };
+        Passkey: {
+            id: string;
+            name: string;
+            /** @description The address it works on (a passkey works on one address only). */
+            rpId: string;
+            createdAt: components["schemas"]["Timestamp"];
+            lastUsedAt: components["schemas"]["Timestamp"];
+        };
+        PasskeyChallenge: {
+            challengeId: string;
+            /** @description WebAuthn options ({"publicKey": ...}) for navigator.credentials, base64url-encoded binary fields. */
+            options: {
+                [key: string]: unknown;
+            };
+        };
+        PasskeyAnswer: {
+            challengeId: string;
+            /** @description Registration only: what to call the passkey ("Phone"). */
+            name?: string;
+            /** @description The PublicKeyCredential as JSON (PublicKeyCredential.toJSON()). */
+            credential: {
+                [key: string]: unknown;
+            };
+        };
+        PasskeyRegistered: {
+            id: string;
+            name: string;
+            rpId: string;
+        };
+        StepUpBegin: {
+            /** @example POST */
+            method: string;
+            /** @example /api/emails/e1/approve */
+            path: string;
+        };
+        StepUpToken: {
+            token: string;
+            expiresAt: components["schemas"]["Timestamp"];
+        };
     };
     responses: {
         /** @description The input is invalid; `error` says which field and why. */
@@ -1255,7 +1468,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Owner only, or a browser write without the X-Hussla header. */
+        /** @description Owner only; a non-owner tailnet user; a foreign Origin, or an owner write without one; no passkey tap (code "passkey-required"); or no owner enrolled yet (code "setup-required"). */
         Forbidden: {
             headers: {
                 [name: string]: unknown;
@@ -1302,6 +1515,8 @@ export interface components {
         };
     };
     parameters: {
+        /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+        StepUp: string;
         /** @description A job id, a slug like `acme-senior-software-engineer`. */
         JobId: string;
         CompanySlug: string;
@@ -1507,7 +1722,10 @@ export interface operations {
     deleteJob: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
             path: {
                 /** @description A job id, a slug like `acme-senior-software-engineer`. */
                 jobId: components["parameters"]["JobId"];
@@ -1715,7 +1933,10 @@ export interface operations {
     deleteFile: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
             path: {
                 fileId: string;
             };
@@ -1999,7 +2220,10 @@ export interface operations {
     deleteAnswer: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
             path: {
                 answerId: string;
             };
@@ -2073,7 +2297,10 @@ export interface operations {
     patchSearchConfig: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2163,7 +2390,10 @@ export interface operations {
     createAgentKey: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2189,7 +2419,10 @@ export interface operations {
     revokeAgentKey: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
             path: {
                 keyId: string;
             };
@@ -2234,7 +2467,10 @@ export interface operations {
     importBundle: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2282,7 +2518,10 @@ export interface operations {
     sendTestEmail: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -2364,7 +2603,10 @@ export interface operations {
     approveEmail: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
             path: {
                 emailId: components["parameters"]["EmailId"];
             };
@@ -2415,6 +2657,229 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    getSetupStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupStatus"];
+                };
+            };
+        };
+    };
+    claimSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupClaim"];
+            };
+        };
+        responses: {
+            /** @description Claimed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupClaimed"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    signIn: {
+        parameters: {
+            query: {
+                t: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed in; `Set-Cookie` carries the session. */
+            303: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    signOutEverywhere: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Done. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ok"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listPasskeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The passkeys. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Passkey"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    beginPasskeyRegistration: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The prompt. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyChallenge"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    finishPasskeyRegistration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyAnswer"];
+            };
+        };
+        responses: {
+            /** @description Stored. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyRegistered"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    beginStepUp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StepUpBegin"];
+            };
+        };
+        responses: {
+            /** @description Options for navigator.credentials.get. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasskeyChallenge"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    finishStepUp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasskeyAnswer"];
+            };
+        };
+        responses: {
+            /** @description The token, for X-Hussla-Step-Up. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepUpToken"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
         };
     };
 }

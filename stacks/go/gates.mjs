@@ -69,6 +69,11 @@ const layers = JSON.parse(readFileSync(layersFile, "utf8"));
 for (const role of ["domain", "app", "config", "adapters", "testsupport"]) {
   if (typeof layers[role] !== "string") fail(`stacks/go/gates.project.json has no '${role}' directory.`);
 }
+// Optional: `"callers"`, directories of outer layers that call use-cases (an HTTP API, an MCP
+// server) and so may import neither an adapter nor test support. Each gets both probes below.
+const callers = layers.callers ?? [];
+if (!Array.isArray(callers) || callers.some((dir) => typeof dir !== "string")) fail("stacks/go/gates.project.json 'callers' must be a list of directories.");
+const layerDirs = [...["domain", "app", "config", "adapters", "testsupport"].map((role) => layers[role]), ...callers];
 
 // Every .go file under a directory, as repo-relative paths.
 const goFiles = (dir) =>
@@ -104,7 +109,7 @@ const ruleGlobs = [...config.matchAll(/^\s*-\s*"(\*\*\/[^"]+)"/gm)].map((match) 
 
 // Every directory directly under internal/ must be covered by a rule, so a new layer can't start life unguarded.
 const internalDirs = existsSync(join(root, "internal")) ? readdirSync(join(root, "internal"), { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => `internal/${entry.name}`) : [];
-for (const dir of new Set([...internalDirs, ...Object.values(layers).filter((path) => existsSync(join(root, path)))])) {
+for (const dir of new Set([...internalDirs, ...layerDirs.filter((path) => existsSync(join(root, path)))])) {
   if (!ruleGlobs.some((pattern) => pattern.test(`${dir}/zz.go`))) {
     problems.push(`${dir} is covered by no depguard rule in .golangci.yml: add one (a misspelled glob and a new unguarded layer look the same).`);
   }
@@ -162,6 +167,13 @@ const probes = [
   probe(app.dir, "zz_gate_wrap.go", `package ${app.pkg}\n\nimport "${stubs.app.path}"\n\nfunc zzWrap() error { return zzgate.Fail() }\n\nvar _ = zzWrap\n`, "wrapcheck", "an error from another package is wrapped before it is returned"),
   probe(`${layers.adapters}/zzprobe`, "zz_gate.go", importing("zzprobe", stubs.testsupport.path), "depguard", "an adapter never imports test support"),
   probe(`${layers.testsupport}/zzprobe`, "zz_gate.go", importing("zzprobe", stubs.adapter.path), "depguard", "a fake never imports the real adapter"),
+  ...callers.flatMap((dir) => {
+    const site = probeSite(dir);
+    return [
+      probe(site.dir, "zz_gate_adapter.go", importing(site.pkg, stubs.adapter.path), "depguard", `${dir} calls use-cases, never an adapter`),
+      probe(site.dir, "zz_gate_testsupport.go", importing(site.pkg, stubs.testsupport.path), "depguard", `${dir} is production code and never imports test support`),
+    ];
+  }),
 ];
 
 // The scratch module: the project's go.mod, go.sum, lint config, and internal/, plus the probes and the stubs.

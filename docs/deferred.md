@@ -285,15 +285,21 @@ merged block the sync owns, like AGENTS.md's.
 `agent-overrides.json` replaces both, and `scripts/agent-overrides.mjs` still reads them beneath it. **Why deferred:** projects made before it may hold either file, and dropping them quietly would change who reviews and on which model. **Where:** `LEGACY` in `scripts/agent-overrides.mjs`, the legacy tests in `scripts/model-tiers.test.mjs` and `scripts/rival-review.test.mjs`. **If we take it:** fail loudly when either file exists, naming the move (`tiers` → `models`, keys → `dynamiteTest`), once every project on whippletree has moved.
 
 
-## Where uploaded file bytes live
+## Uploaded files and résumés aren't in the automatic backups
 
-`open` · recorded 2026-10-08 · from Phase 2 (`docs/plans/hussla-v1.md`)
+`open` · recorded 2026-10-08 · from Phase 3 (`docs/plans/hussla-v1.md`)
 
-Storage keeps only each attached file's record (`internal/app/files`: name, kind, mime, size, job). **Why deferred:** the bytes need an upload route, size limits and a place beside the database (`DATA_DIR/files/<id>`?) that the backups also cover; that is Phase 3's API work, and a backup of `hussla.db` alone does not contain them. **Where:** `internal/app/files/ports.go`, `internal/adapters/sqlite/files.go`. **If we take it:** add a `FileStore` port (put/open/delete by id), a disk adapter under the data directory, and include the folder in the install guides' "copy backups off the device".
+File bytes live in `<DATA_DIR>/files/<id>` and résumés in `<DATA_DIR>/resumes/`, beside the database; the daily `VACUUM INTO` backups cover `hussla.db` only. **Why deferred:** copying the whole data directory off the device is the install guides' job (Phase 6), and a file's bytes never change after upload. **Where:** `internal/adapters/filestore`, `internal/adapters/sqlite` backups. **If we take it:** say in the install guides to copy the whole data directory (not only `backups/`), or add the two folders to an export.
 
-## One process per data directory (the lock)
+## Passkey delete, rename, and recovery when every passkey is lost
 
-`open` · recorded 2026-10-08 · from Phase 2 (`docs/plans/hussla-v1.md`)
+`open` · recorded 2026-10-08 · from Phase 3 (`docs/plans/hussla-v1.md`)
 
-The plan's exclusive `flock` and `TestSecondProcessRefused` belong to Phase 3's lifecycle tests; the SQLite adapter alone does not stop a second Hussla opening the same file (SQLite itself keeps the data consistent, but two dispatchers could both send). **Where:** `cmd/hussla` (Phase 3), `internal/adapters/sqlite.Open`. **If we take it:** take the lock on `<DATA_DIR>/hussla.lock` before `Open`.
+Passkeys can be added (setup code for the first on each address, then a tap with an existing one) and listed, not removed or renamed. An owner who loses every passkey for an address can still read and edit there, but no owner-only action (approve, delete, settings, keys) works on it until a passkey is added, and adding one needs a tap or a setup code, which that address no longer gets. **Why deferred:** Phase 3 is the API's security core; managing passkeys is a Settings screen (Phase 5), and two registered devices (phone and laptop) cover a single loss. **Where:** `internal/app/auth/passkeys.go`, settings key `auth.passkeys`. **If we take it:** `DELETE /api/passkeys/{id}` behind a tap with a *different* passkey (refuse removing the last one), and `PATCH` for the name; add both to `api/openapi.yaml` and the auth matrix. For recovery, a `hussla reset-passkeys` command (access to the data directory is the proof, like `hussla open`) that sets the address's passkeys aside so the setup screen issues a code again.
+
+## A tagged-node install can be claimed by any untagged tailnet device holding the setup code
+
+`open` · recorded 2026-10-08 · from Phase 3 (`docs/plans/hussla-v1.md`)
+
+When the node is tagged (no owning user) or was first claimed from the local door, the first untagged tailnet user to type the setup code becomes the owner. The code is only in the server's log, so this needs log access. **Why deferred:** it is the plan's design (the code is the proof), and restricting it to one user would need an admin-provided user id. **Where:** `auth.Service.Claim`. **If we take it:** an optional `HUSSLA_OWNER_LOGIN` env var that `Claim` and `AdoptNodeOwner` must match.
 
