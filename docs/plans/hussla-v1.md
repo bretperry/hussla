@@ -84,9 +84,9 @@ mail must keep these true and test them.
 | 0 | Repo from template, stacks (Go, TypeScript, React, infra), placeholders, architecture | —; repo created by Bret | quick (low) | QA passed (#1) |
 | 1 | Go domain types, pure rules, knobs; API contract (OpenAPI) and generated UI types | 0 | deep (high) | QA passed (#2); stacked on #1 |
 | 2 | Storage ports, SQLite adapters, migrations, seed import | 1 | workhorse (high) | |
-| 3 | HTTP API, auth (embedded Tailscale, owner enrollment, local sign-in, passkey step-up, agent keys), use-cases | 2 | deep (xhigh) | |
+| 3 | HTTP API, auth (embedded Tailscale, owner enrollment, local sign-in, passkey step-up, agent keys), use-cases | 2 | deep (xhigh) | QA passed (#5); stacked on #3 |
 | 3b | MCP endpoint for agents, "Add an agent" setup snippet | 3, 5 | workhorse (high) | |
-| 4 | Mail port, provider catalog, adapters, secret store, outbox pacing | 2 | deep (high) | |
+| 4 | Mail port, provider catalog, adapters, secret store, outbox pacing | 2 | deep (high) | QA passed (#4); stacked on #3 |
 | 5 | React UI: jobs, job, companies, compare, company, outbox, answers, activity, settings | 1 | workhorse (medium) | |
 | 5b | Pitches: ten honed pitches, dashboard billboard, versions and side-by-side compare | 3b, 5 | workhorse (medium) | |
 | 6 | First-run wizard, Docker image, compose with Tailscale, binaries, install guides (NAS, laptop, cloud) | 3, 3b, 4, 5, 5b | workhorse (medium) | |
