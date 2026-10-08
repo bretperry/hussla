@@ -218,7 +218,7 @@ func (dispatcher *Dispatcher) queueHasMail(ctx context.Context) (bool, error) {
 			return nil
 		}
 		found = err == nil
-		return err //nolint:wrapcheck // wrapped once, below, with what was being read
+		return err // wrapped once, below, with what was being read
 	})
 	if err != nil {
 		return false, fmt.Errorf("read the outbox: %w", err)
@@ -243,7 +243,7 @@ func (dispatcher *Dispatcher) pacing(ctx context.Context, now time.Time, provide
 	err := dispatcher.dependencies.Store.View(ctx, func(tx store.Tx) error {
 		sent, err := tx.Emails().SentHistory(ctx, domain.StartOfLocalDay(now, rules.Location))
 		history.lastSentAt, history.sentToday = sent.LastSentAt, sent.SentSince
-		return err //nolint:wrapcheck // wrapped once, below, with what was being read
+		return err // wrapped once, below, with what was being read
 	})
 	if err != nil {
 		return domain.PacingDecision{}, fmt.Errorf("read send history: %w", err)
