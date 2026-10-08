@@ -620,7 +620,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Spends the setup code from the log. Before enrollment, the person on an untagged tailnet device (or a local session) becomes the owner; after it, only the owner may spend one (to add the first passkey on another address). Returns a step-up token for POST /api/passkeys/register/begin. After a few wrong codes a new one is printed. */
+        /** Checks the setup code from the log. Before enrollment, the person on an untagged tailnet device (or a local session) becomes the owner; after it, only the owner may use one (to add the first passkey on another address). Returns a step-up token for POST /api/passkeys/register/begin. The code stays good (across restarts too) until a passkey is stored, so a cancelled passkey prompt can claim again. After a few wrong codes that caller is refused for a while; the code doesn't change. */
         post: operations["claimSetup"];
         delete?: never;
         options?: never;

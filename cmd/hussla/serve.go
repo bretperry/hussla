@@ -220,7 +220,10 @@ func buildServices(dataDir string, storage *sqlite.Store, logger *slog.Logger, o
 		Auth: auth.New(auth.Options{
 			Store: storage, Ceremony: passkey.Ceremony{}, SignIn: signinfile.New(dataDir), OwnerLogin: ownerLogin,
 			AnnounceSetupCode: func(code string) {
-				logger.Warn("SETUP CODE: enter it on the setup screen to claim this install and add your passkey", "code", code)
+				logger.Warn("Setup code (valid until used): " + code + " (enter it on the setup screen to claim this install and add your passkey; it stays the same across restarts)")
+			},
+			RemindSetupCode: func(issuedAt time.Time) {
+				logger.Warn("Setup code: unchanged; use the last \"Setup code (valid until used)\" line in this log, printed " + issuedAt.UTC().Format(time.RFC3339))
 			},
 		}),
 		Tracker:     tracker.New(storage, nil),

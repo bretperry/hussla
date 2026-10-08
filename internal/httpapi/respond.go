@@ -76,7 +76,7 @@ func statusFor(err error) (int, errorBody) {
 	case errors.Is(err, auth.ErrStepUpRequired):
 		return http.StatusForbidden, errorBody{Error: auth.ErrStepUpRequired.Error(), Code: codePasskeyRequired}
 	case errors.Is(err, auth.ErrNotOwner), errors.Is(err, mailbox.ErrAgentMayNot),
-		errors.Is(err, auth.ErrPasskeyRejected), errors.Is(err, auth.ErrWrongSetupCode):
+		errors.Is(err, auth.ErrPasskeyRejected), errors.Is(err, auth.ErrWrongSetupCode), errors.Is(err, auth.ErrSetupCodeLocked):
 		return http.StatusForbidden, errorBody{Error: rootMessage(err)}
 	case errors.Is(err, auth.ErrChallengeUnknown):
 		return http.StatusBadRequest, errorBody{Error: auth.ErrChallengeUnknown.Error()}

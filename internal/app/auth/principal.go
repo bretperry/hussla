@@ -87,8 +87,10 @@ var (
 	ErrPasskeyRejected = errors.New("the passkey answer didn't verify")
 	// ErrChallengeUnknown: the passkey prompt expired, was used, or belongs to someone else (400).
 	ErrChallengeUnknown = errors.New("that passkey prompt expired: start again")
-	// ErrWrongSetupCode: the setup code is wrong (403); after a few tries a new one is printed.
+	// ErrWrongSetupCode: the setup code is wrong (403).
 	ErrWrongSetupCode = errors.New("that setup code is wrong")
+	// ErrSetupCodeLocked: this caller made too many wrong guesses and waits config.SetupCodeLockout (403).
+	ErrSetupCodeLocked = errors.New("too many wrong setup codes from this account: try again in a few minutes")
 	// ErrSetupClosed: no setup code is active (409): setup is done, or a new code is in the log.
 	ErrSetupClosed = errors.New("no setup code is active: check the log for a new one")
 	// ErrSignInRefused: the sign-in token is wrong, used or expired (401).

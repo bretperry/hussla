@@ -5,8 +5,9 @@
 //
 // What lives where: agent keys are rows (tokens repository, hash only); the owner record, passkeys
 // and sessions are JSON values in settings (one person's handful, read on each request through one
-// unit of work). Challenges, step-up tokens and the setup code live in memory: they are minutes
-// long, and a restart that forgets them only means one more tap.
+// unit of work). Challenges, step-up tokens and wrong setup-code guesses live in memory: they are
+// minutes long, and a restart that forgets them only means one more tap. The setup code's hash is
+// a settings value, so the code in the log stays good across a restart.
 
 package auth
 
@@ -42,6 +43,9 @@ type Options struct {
 	Now      func() time.Time // time.Now when nil
 	// AnnounceSetupCode prints a new setup code where the owner will find it (the log). Required.
 	AnnounceSetupCode func(code string)
+	// RemindSetupCode says, at a start that finds a code an earlier run announced, that the code
+	// printed then (at issuedAt) is still the live one. Only its hash is stored, so it can't be printed again.
+	RemindSetupCode func(issuedAt time.Time)
 	// OwnerLogin pins the owner to one tailnet login (HUSSLA_OWNER_LOGIN). When set, only that
 	// login can claim with the setup code or be adopted as the node's owner; "" allows anyone
 	// eligible. It never replaces an owner already recorded.
@@ -55,13 +59,15 @@ type Service struct {
 	signIn   SignInTokens
 	now      func() time.Time
 	announce func(code string)
+	remind   func(issuedAt time.Time)
 	pinned   string
 
-	mu         sync.Mutex
-	setup      setupCode
-	challenges map[string]challenge
-	stepUps    map[string]stepUp
-	usedSignIn map[string]time.Time
+	mu           sync.Mutex
+	setupHash    string // the live setup code's hash ("" when none), mirrored from settings
+	setupGuesses map[string]setupGuesses
+	challenges   map[string]challenge
+	stepUps      map[string]stepUp
+	usedSignIn   map[string]time.Time
 }
 
 // New builds the Service.
@@ -74,10 +80,15 @@ func New(options Options) *Service {
 	if announce == nil {
 		announce = func(string) {}
 	}
+	remind := options.RemindSetupCode
+	if remind == nil {
+		remind = func(time.Time) {}
+	}
 	return &Service{
-		store: options.Store, ceremony: options.Ceremony, signIn: options.SignIn, now: now, announce: announce,
-		pinned:     strings.TrimSpace(options.OwnerLogin),
-		challenges: map[string]challenge{}, stepUps: map[string]stepUp{}, usedSignIn: map[string]time.Time{},
+		store: options.Store, ceremony: options.Ceremony, signIn: options.SignIn, now: now, announce: announce, remind: remind,
+		pinned:       strings.TrimSpace(options.OwnerLogin),
+		setupGuesses: map[string]setupGuesses{},
+		challenges:   map[string]challenge{}, stepUps: map[string]stepUp{}, usedSignIn: map[string]time.Time{},
 	}
 }
 

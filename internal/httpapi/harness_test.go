@@ -60,6 +60,10 @@ type rig struct {
 	signIn    *fakeauth.SignInTokens
 	clock     *fakeauth.Clock
 	setupCode string
+	announced int         // setup codes printed so far
+	reminded  []time.Time // restarts that found a live code (its issue time)
+	ownerPin  string
+	deps      httpapi.Deps
 	tailnetUI http.Handler
 	localUI   http.Handler
 	key       *virtualauthn.Authenticator
@@ -77,10 +81,7 @@ func newRigPinned(t *testing.T, ownerLogin string) *rig {
 	r.tailnet.Add(ownerAddr, ownerPeer)
 	r.tailnet.Add(otherAddr, otherPeer)
 	r.tailnet.Add(taggedAddr, taggedPeer)
-	r.auth = auth.New(auth.Options{
-		Store: r.store, Ceremony: passkey.Ceremony{}, SignIn: r.signIn, Now: r.clock.Now,
-		AnnounceSetupCode: func(code string) { r.setupCode = code }, OwnerLogin: ownerLogin,
-	})
+	r.ownerPin = ownerLogin
 	dir := t.TempDir()
 	blobs, err := filestore.NewBlobs(filepath.Join(dir, "files"))
 	if err != nil {
@@ -94,17 +95,30 @@ func newRigPinned(t *testing.T, ownerLogin string) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deps := httpapi.Deps{
-		Auth:        r.auth,
+	r.deps = httpapi.Deps{
 		Tracker:     tracker.New(r.store, r.clock.Now),
 		Mail:        mailbox.New(mailbox.Options{Store: r.store, Location: location, Now: r.clock.Now}),
 		Attachments: attachments.New(r.store, blobs, resumes, config.UploadMaxBytes, r.clock.Now),
 		AgentsGuide: "# guide",
 	}
-	r.tailnetUI = httpapi.New(httpapi.Config{Listener: httpapi.ListenerTailnet, Hosts: []string{tailnetHost}, Peers: r.tailnet}, deps)
-	r.localUI = httpapi.New(httpapi.Config{Listener: httpapi.ListenerLocal, Hosts: []string{localHost, "127.0.0.1:8484"}}, deps)
+	return r.restart()
+}
+
+// restart is a new process over the same storage: a fresh auth use-case (nothing kept in memory)
+// and fresh handlers, then the startup setup-code step.
+func (r *rig) restart() *rig {
+	r.t.Helper()
+	r.auth = auth.New(auth.Options{
+		Store: r.store, Ceremony: passkey.Ceremony{}, SignIn: r.signIn, Now: r.clock.Now,
+		AnnounceSetupCode: func(code string) { r.setupCode = code; r.announced++ },
+		RemindSetupCode:   func(issuedAt time.Time) { r.reminded = append(r.reminded, issuedAt) },
+		OwnerLogin:        r.ownerPin,
+	})
+	r.deps.Auth = r.auth
+	r.tailnetUI = httpapi.New(httpapi.Config{Listener: httpapi.ListenerTailnet, Hosts: []string{tailnetHost}, Peers: r.tailnet}, r.deps)
+	r.localUI = httpapi.New(httpapi.Config{Listener: httpapi.ListenerLocal, Hosts: []string{localHost, "127.0.0.1:8484"}}, r.deps)
 	if err := r.auth.IssueSetupCode(context.Background()); err != nil {
-		t.Fatal(err)
+		r.t.Fatal(err)
 	}
 	return r
 }

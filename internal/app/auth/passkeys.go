@@ -178,13 +178,17 @@ func (s *Service) FinishRegistration(ctx context.Context, owner Principal, rp Re
 		if err := writeJSON(ctx, tx, settingPasskeys, append(list, stored)); err != nil {
 			return err
 		}
+		// A stored passkey is what spends the setup code: setup is done, no code stays live.
+		if err := writeJSON(ctx, tx, settingSetupCode, setupCodeRecord{}); err != nil {
+			return err
+		}
 		return appendEvent(ctx, tx, owner.Actor(), "Added a passkey", name+" ("+rp.ID+")", now)
 	})
 	if err != nil {
 		return StoredPasskey{}, fmt.Errorf("store passkey: %w", err)
 	}
 	s.mu.Lock()
-	s.setup = setupCode{} // setup is done: no code stays live
+	s.setupHash = ""
 	s.mu.Unlock()
 	return stored, nil
 }
@@ -296,7 +300,7 @@ func (s *Service) ConsumeStepUp(owner Principal, purpose, token string) error {
 
 // IsAuthError reports whether err is one of this package's refusals (for the HTTP layer's mapping).
 func IsAuthError(err error) bool {
-	for _, known := range []error{ErrUnauthorized, ErrNotOwner, ErrNotEnrolled, ErrStepUpRequired, ErrNoPasskey, ErrPasskeyRejected, ErrChallengeUnknown, ErrWrongSetupCode, ErrSetupClosed, ErrSignInRefused} {
+	for _, known := range []error{ErrUnauthorized, ErrNotOwner, ErrNotEnrolled, ErrStepUpRequired, ErrNoPasskey, ErrPasskeyRejected, ErrChallengeUnknown, ErrWrongSetupCode, ErrSetupCodeLocked, ErrSetupClosed, ErrSignInRefused} {
 		if errors.Is(err, known) {
 			return true
 		}

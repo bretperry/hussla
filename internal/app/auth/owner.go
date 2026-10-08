@@ -1,13 +1,17 @@
 // The owner: who it is, how a tailnet identity is matched to it, and how an install is claimed with the setup code.
 // In the app: the "enter setup code" screen; every tailnet request's identity check.
-// Used by: internal/httpapi (TailnetPrincipal, Claim, SetupStatus), cmd/hussla (AdoptNodeOwner, IssueSetupCode at startup).
+// Used by: internal/httpapi (TailnetPrincipal, Claim, SetupStatus), cmd/hussla (AdoptNodeOwner, PinRefuses, IssueSetupCode at startup).
 //
 // Fail closed: until an owner record exists nobody is the owner, and a tailnet identity is the
 // owner only when its user id equals the recorded one and its device is not tagged. The setup code
 // is needed to claim a tagged node (no owning user to adopt), and to register the first passkey on
 // each address (so an agent with the owner's tailnet identity, or on the owner's laptop, can't
-// register its own before the owner does). It is printed to the log only, guessed at most config.SetupCodeAttempts times, and
-// used once.
+// register its own before the owner does). It is printed to the log only, stored only as a hash (so
+// it stays the same across restarts until used), and spent by the first passkey stored, not by the
+// claim: a cancelled Face ID prompt can be retried with the same code. Each caller (one tailnet
+// user, or the local listener) gets config.SetupCodeAttempts wrong guesses, then waits
+// config.SetupCodeLockout; the code never changes on a wrong guess, so nobody else can make the
+// owner's code stale.
 
 package auth
 
@@ -28,9 +32,10 @@ import (
 
 // Settings keys this package owns. They never leave through the API: GET /api/config reads only the search config.
 const (
-	settingOwner    = "auth.owner"
-	settingPasskeys = "auth.passkeys"
-	settingSessions = "auth.sessions"
+	settingOwner     = "auth.owner"
+	settingPasskeys  = "auth.passkeys"
+	settingSessions  = "auth.sessions"
+	settingSetupCode = "auth.setupCode"
 )
 
 // ownerRecord is the claimed owner. TailnetUserID is empty for an install claimed from the local listener only.
@@ -125,6 +130,12 @@ func (s *Service) AdoptNodeOwner(ctx context.Context, nodeOwner TailnetPeer) (ad
 	return adopted, nil
 }
 
+// PinRefuses reports whether HUSSLA_OWNER_LOGIN keeps the untagged user who owns this node from
+// being adopted as the owner, and the pinned login (for the log line that names both).
+func (s *Service) PinRefuses(nodeOwner TailnetPeer) (pinned string, refuses bool) {
+	return s.pinned, !nodeOwner.Tagged && nodeOwner.UserID != "" && !s.allowedLogin(nodeOwner.Login)
+}
+
 func randomHandle() []byte {
 	handle := make([]byte, 32)
 	_, _ = rand.Read(handle)
@@ -147,10 +158,17 @@ func (s *Service) TailnetPrincipal(ctx context.Context, peer TailnetPeer) (Princ
 
 // ---- Setup code
 
-// setupCode is the one live code (empty when none). Guarded by Service.mu.
-type setupCode struct {
-	code     string
-	attempts int
+// setupCodeRecord is the live setup code as stored (settings auth.setupCode): its hash only, so
+// a leaked backup doesn't hold the code. An empty Hash means no code is live.
+type setupCodeRecord struct {
+	Hash     string    `json:"hash,omitempty"`
+	IssuedAt time.Time `json:"issuedAt,omitzero"`
+}
+
+// setupGuesses counts one caller's wrong setup codes. Guarded by Service.mu.
+type setupGuesses struct {
+	wrong       int
+	lockedUntil time.Time
 }
 
 // setupAlphabet is Crockford's base32: no I, L, O or U, so a code read off a log can't be misread.
@@ -195,22 +213,43 @@ func (s *Service) SetupNeeded(ctx context.Context) (bool, error) {
 }
 
 // IssueSetupCode makes and announces a setup code when setup is still needed and none is live.
+// A code stored by an earlier run is kept (and only reminded of), so the code in the log stays
+// good across restarts until a passkey is stored.
 func (s *Service) IssueSetupCode(ctx context.Context) error {
 	needed, err := s.SetupNeeded(ctx)
 	if err != nil || !needed {
 		return err
 	}
-	s.issueSetupCode()
-	return nil
+	return s.issueSetupCode(ctx)
 }
 
-func (s *Service) issueSetupCode() {
+func (s *Service) issueSetupCode(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.setup.code == "" {
-		s.setup = setupCode{code: newSetupCode()}
-		s.announce(s.setup.code)
+	if s.setupHash != "" {
+		return nil
 	}
+	var stored setupCodeRecord
+	err := s.store.View(ctx, func(tx store.Tx) error {
+		_, err := readJSON(ctx, tx, settingSetupCode, &stored)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("read setup code: %w", err)
+	}
+	if stored.Hash != "" {
+		s.setupHash = stored.Hash
+		s.remind(stored.IssuedAt)
+		return nil
+	}
+	code := newSetupCode()
+	record := setupCodeRecord{Hash: hashSecret(normalizeSetupCode(code)), IssuedAt: domain.NormalizeTime(s.now())}
+	if err := s.store.Atomically(ctx, func(tx store.Tx) error { return writeJSON(ctx, tx, settingSetupCode, record) }); err != nil {
+		return fmt.Errorf("store setup code: %w", err)
+	}
+	s.setupHash = record.Hash
+	s.announce(code)
+	return nil
 }
 
 // Status reports the setup state for a relying party. It issues a code when this address has no
@@ -227,23 +266,26 @@ func (s *Service) Status(ctx context.Context, rp RelyingParty) (SetupStatus, err
 	}
 	count := len(forRelyingParty(passkeys, rp.ID))
 	if !enrolled || count == 0 {
-		s.issueSetupCode()
+		if err := s.issueSetupCode(ctx); err != nil {
+			return SetupStatus{}, err
+		}
 	}
 	s.mu.Lock()
-	live := s.setup.code != ""
+	live := s.setupHash != ""
 	s.mu.Unlock()
 	return SetupStatus{Enrolled: enrolled, Passkeys: count, CodeLive: live}, nil
 }
 
-// Claim spends the setup code. Before enrollment a tailnet peer on an untagged device becomes the
+// Claim checks the setup code. Before enrollment a tailnet peer on an untagged device becomes the
 // owner (a local session caller does too, with no tailnet user). After enrollment only the owner
-// may spend it. Either way it returns a step-up token for registering a passkey, and the caller
-// as the owner.
+// may use it. Either way it returns a step-up token for registering a passkey, and the caller
+// as the owner. The code stays live until a passkey is stored (FinishRegistration), so a
+// cancelled passkey prompt can claim again with the same code.
 func (s *Service) Claim(ctx context.Context, caller Principal, typed string) (Principal, string, error) {
 	if caller.role == RoleAgent || caller.role == RoleNone {
 		return Principal{}, "", ErrNotOwner
 	}
-	// Refuse whoever could never claim before touching the code, so they can't burn or rotate it.
+	// Refuse whoever could never claim before touching the code, so they can't use up guesses.
 	if caller.role == RolePeer {
 		record, found, err := s.readOwner(ctx)
 		if err != nil {
@@ -253,7 +295,7 @@ func (s *Service) Claim(ctx context.Context, caller Principal, typed string) (Pr
 			return Principal{}, "", ErrNotOwner
 		}
 	}
-	if err := s.spendSetupCode(typed); err != nil {
+	if err := s.checkSetupCode(setupGuesser(caller), typed); err != nil {
 		return Principal{}, "", err
 	}
 	owner := caller
@@ -281,7 +323,7 @@ func (s *Service) Claim(ctx context.Context, caller Principal, typed string) (Pr
 			return Principal{}, "", fmt.Errorf("claim: %w", err)
 		}
 		if !claimed {
-			// Someone else is the owner: a peer can't spend the code to take over.
+			// Someone else is the owner: a peer can't use the code to take over.
 			return Principal{}, "", ErrNotOwner
 		}
 		var err2 error
@@ -296,23 +338,38 @@ func (s *Service) Claim(ctx context.Context, caller Principal, typed string) (Pr
 	return owner, s.grantStepUp(owner, PurposeRegisterPasskey), nil
 }
 
-// spendSetupCode checks a typed code against the live one, burning it on success and replacing it
-// after too many wrong tries.
-func (s *Service) spendSetupCode(typed string) error {
+// setupGuesser is whose wrong guesses a claim counts against: the tailnet user, or the local
+// listener as a whole (reaching it already takes the data directory).
+func setupGuesser(caller Principal) string {
+	if caller.peer.UserID != "" {
+		return "tailnet:" + caller.peer.UserID
+	}
+	return "local"
+}
+
+// checkSetupCode checks a typed code against the live one. It doesn't spend it (a stored passkey
+// does). A caller with config.SetupCodeAttempts wrong guesses is refused, right code or not, for
+// config.SetupCodeLockout; the code itself never changes.
+func (s *Service) checkSetupCode(guesser, typed string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.setup.code == "" {
+	if s.setupHash == "" {
 		return ErrSetupClosed
 	}
-	if sameSecret(normalizeSetupCode(typed), normalizeSetupCode(s.setup.code)) {
-		s.setup = setupCode{}
+	now := s.now()
+	guesses := s.setupGuesses[guesser]
+	if now.Before(guesses.lockedUntil) {
+		return ErrSetupCodeLocked
+	}
+	if sameSecret(hashSecret(normalizeSetupCode(typed)), s.setupHash) {
+		delete(s.setupGuesses, guesser)
 		return nil
 	}
-	s.setup.attempts++
-	if s.setup.attempts >= config.SetupCodeAttempts {
-		s.setup = setupCode{code: newSetupCode()}
-		s.announce(s.setup.code)
+	guesses.wrong++
+	if guesses.wrong >= config.SetupCodeAttempts {
+		guesses = setupGuesses{lockedUntil: now.Add(config.SetupCodeLockout)}
 	}
+	s.setupGuesses[guesser] = guesses
 	return ErrWrongSetupCode
 }
 

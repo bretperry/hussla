@@ -9,8 +9,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/bretperry/hussla/internal/app/store"
 	"github.com/bretperry/hussla/internal/config"
 	"github.com/bretperry/hussla/internal/httpapi"
 	"github.com/bretperry/hussla/internal/testsupport/virtualauthn"
@@ -89,25 +92,101 @@ func TestStepUpRefusesABadTap(t *testing.T) {
 
 func TestSetupCodeLimits(t *testing.T) {
 	r := newRig(t)
-	first := r.setupCode
-	for attempt := 1; attempt < config.SetupCodeAttempts; attempt++ {
-		r.must(http.StatusForbidden, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": "0000-0000-0000"}))
+	code := r.setupCode
+	wrong := ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": "0000-0000-0000"})
+	for attempt := 1; attempt <= config.SetupCodeAttempts; attempt++ {
+		r.must(http.StatusForbidden, wrong)
 	}
-	if r.setupCode != first {
-		t.Fatal("the code changed before the attempts ran out")
+	if r.setupCode != code || r.announced != 1 {
+		t.Fatal("wrong guesses changed the code")
 	}
-	r.must(http.StatusForbidden, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": "0000-0000-0000"}))
-	if r.setupCode == first {
-		t.Fatal("the code survived too many wrong tries")
-	}
-	r.must(http.StatusForbidden, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": first}))
+	// Out of tries: even the right code is refused from this account until the lockout passes.
+	r.must(http.StatusForbidden, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": code}))
+	r.clock.Advance(config.SetupCodeLockout - time.Second)
+	r.must(http.StatusForbidden, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": code}))
+	r.clock.Advance(time.Second)
 	// Typed loosely: lower case, no dashes.
-	claimed := r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": lowerNoDashes(r.setupCode)})).json(t)
+	claimed := r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": lowerNoDashes(code)})).json(t)
 	if claimed["next"] != "POST /api/passkeys/register/begin" {
 		t.Fatalf("claim: %v", claimed)
 	}
-	// Used once.
-	r.must(http.StatusConflict, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": r.setupCode}))
+	// Spent by the first stored passkey.
+	stepUp, _ := claimed["stepUp"].(string)
+	r.key = virtualauthn.New()
+	r.registerPasskey(r.key, stepUp, tailnetOrigin, "")
+	r.must(http.StatusConflict, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": code}))
+}
+
+// Another tailnet user's wrong guesses lock out only that user: the owner's code stays the same
+// and still works for the owner.
+func TestWrongGuessesLockOnlyTheGuesser(t *testing.T) {
+	r := newRig(t) // a tagged node: nobody adopted, so any untagged user may try the code
+	code := r.setupCode
+	guess := func(typed string) call {
+		return call{method: http.MethodPost, path: "/api/setup/claim", body: map[string]string{"code": typed}, from: otherAddr, origin: tailnetOrigin}
+	}
+	for attempt := 1; attempt <= config.SetupCodeAttempts+3; attempt++ {
+		r.must(http.StatusForbidden, guess("0000-0000-0000"))
+	}
+	r.must(http.StatusForbidden, guess(code)) // locked out, right code or not
+	if r.setupCode != code || r.announced != 1 {
+		t.Fatal("someone else's wrong guesses replaced the owner's code")
+	}
+	r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": code}))
+}
+
+// A cancelled Face ID prompt (register/begin with no finish) can be retried with the same code;
+// the code is spent only when a passkey is stored.
+func TestCancelledPasskeyPromptRetriesWithTheSameCode(t *testing.T) {
+	r := newRig(t)
+	if _, err := r.auth.AdoptNodeOwner(context.Background(), ownerPeer); err != nil {
+		t.Fatal(err)
+	}
+	claim := ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": r.setupCode})
+	claimed := r.must(http.StatusOK, claim).json(t)
+	stepUp, _ := claimed["stepUp"].(string)
+	begin := ownerWrite(http.MethodPost, "/api/passkeys/register/begin", nil)
+	begin.headers = map[string]string{httpapi.StepUpHeader: stepUp}
+	r.must(http.StatusOK, begin) // the browser shows Face ID; the owner cancels
+	r.must(http.StatusForbidden, begin)
+
+	claimed = r.must(http.StatusOK, claim).json(t)
+	stepUp, _ = claimed["stepUp"].(string)
+	r.key = virtualauthn.New()
+	r.registerPasskey(r.key, stepUp, tailnetOrigin, "")
+	r.must(http.StatusConflict, claim)
+	if r.announced != 1 {
+		t.Fatalf("%d codes printed, want 1", r.announced)
+	}
+}
+
+// A restart keeps the code printed before it (only its hash is stored) and says so, instead of
+// printing a new one that makes the older log line wrong.
+func TestSetupCodeSurvivesARestart(t *testing.T) {
+	r := newRig(t)
+	code := r.setupCode
+	r.clock.Advance(time.Hour)
+	r.restart()
+	if r.announced != 1 || r.setupCode != code {
+		t.Fatalf("a restart printed a new code (%d printed)", r.announced)
+	}
+	if len(r.reminded) != 1 || !r.reminded[0].Equal(r.clock.Now().Add(-time.Hour)) {
+		t.Fatalf("reminders: %v", r.reminded)
+	}
+	var settings map[string]string
+	if err := r.store.View(context.Background(), func(tx store.Tx) error {
+		var err error
+		settings, err = tx.Settings().All(context.Background())
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range settings {
+		if strings.Contains(value, code) || strings.Contains(value, lowerNoDashes(code)) || strings.Contains(strings.ToUpper(value), strings.ReplaceAll(code, "-", "")) {
+			t.Fatalf("setting %s holds the code itself", key)
+		}
+	}
+	r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": code}))
 }
 
 // With the owner pinned, another tailnet user holding the right code is refused without spending
