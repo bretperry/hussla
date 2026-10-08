@@ -4,5 +4,5 @@
   "config": "internal/config",
   "adapters": "internal/adapters",
   "testsupport": "internal/testsupport",
-  "callers": ["internal/httpapi"]
+  "callers": ["internal/httpapi", "internal/mcpapi"]
 }

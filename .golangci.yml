@@ -200,6 +200,27 @@ linters:
               desc: "WebAuthn lives in internal/adapters/passkey behind auth.Ceremony"
             - pkg: database/sql
               desc: "storage is a use-case's business, behind store.Store"
+        # mcpapi: the MCP endpoint, a sibling of httpapi. Same rule: use-cases (internal/app) and domain
+        # types only, so a tool can't reach storage, the tailnet or the passkey library, and an agent's
+        # tool call runs the very rules an HTTP call does. It also has no import for a tailnet identity.
+        mcpapi:
+          list-mode: lax
+          files:
+            - "**/internal/mcpapi/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/bretperry/hussla/internal/adapters
+              desc: "the MCP layer calls use-cases (internal/app), never an adapter"
+            - pkg: github.com/bretperry/hussla/internal/httpapi
+              desc: "MCP and HTTP are siblings: share through internal/app, not by importing each other"
+            - pkg: github.com/bretperry/hussla/internal/testsupport
+              desc: "production code never imports test support"
+            - pkg: tailscale.com
+              desc: "tsnet lives in internal/adapters/tailnet; /mcp has no tailnet identity"
+            - pkg: github.com/go-webauthn
+              desc: "WebAuthn lives in internal/adapters/passkey behind auth.Ceremony"
+            - pkg: database/sql
+              desc: "storage is a use-case's business, behind store.Store"
         # adapters: I/O lives here. They may use the inner layers, never test support.
         adapters:
           list-mode: lax
