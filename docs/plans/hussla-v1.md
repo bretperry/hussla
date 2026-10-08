@@ -254,20 +254,44 @@ lists them) in the brand the owner picked (below), plus: company page (quick tak
 stat tiles, money, facts, anecdotes, news, reviews, contacts with call and email links, editable
 follow-up drafts per job and a new-email composer, sent/queued history), companies table with
 sorting and a 2–4 company side-by-side compare. Works at 390px.
-**Brand (picked 2026-10-08): "The Gazette", a designed newspaper.**
-- Colors: paper `#FBFAF7`, ink `#121212`, one red accent `#C8102E`, hairlines `#D9D5CC`,
-  secondary text `#555`. Red is a pop (the masthead period, kickers, the interview count), never a fill.
-- Type: Bodoni Moda (masthead 900, headlines 700–900, the pitch in italic), Libre Franklin
-  (body and buttons), IBM Plex Mono (dates, counts, small-caps kickers with letter-spacing).
-  Self-host the font files; no Google Fonts call from the app (CSP).
-- Front page: a dateline row with the nav; the masthead "Hussla" with a red period between a
-  6px top rule and a hairline, with a motto on the left and counts on the right; the pitch billboard
-  ("Pitch of the hour": the title, the pitch as a large italic quote, `n / 10`, a Next button,
-  900ms fade; Phase 5b fills it); then three columns: the lead story (the top job), latest
-  news, and desk notes (follow-ups awaiting signature as a black card, overnight agent work, the
-  calendar).
-- Buttons: black solid primary, 1px black outline secondary, square corners.
-- These are tokens in `src/shared/ui/`, not literals in features.
+**Brand (picked 2026-10-08): "The Gazette", a designed newspaper; front page is mockup 8c.**
+The mockup is board "8c" on the owner's design canvas (private; the build follows this spec, not
+the canvas, and the repo carries no copy because the mockup shows the owner's own pitches).
+- **Colors:** paper `#FBFAF7`, ink `#121212`, hairlines `#D9D5CC`, secondary text `#555`, and one red
+  accent `#C8102E`. Red is used only for urgent or live items (kickers, the awaiting-signature ear) and for
+  the nameplate's period, never as a fill. Review & sign is the only solid black button on the page.
+- **Type:** Bodoni Moda for the nameplate (112), headlines (lead 56; news and pitch 24–32), the
+  pitch quote in italic, and body text (18/28). Libre Franklin for UI text and buttons (13–16).
+  IBM Plex Mono for kickers, dates and counts (10–11, caps, tracked). Headlines use `text-wrap:
+  balance`, body uses `pretty`, and quotes are curly. Self-host the font files (CSP: no
+  Google Fonts call).
+- **Grid:** at 1280, 64px margins and 12 columns of 74px with 24px gutters. Hairline column rules
+  sit centered in the gutter. Spacing scale is 4/8/16/24/32 only. The same relationship always
+  gets the same gap: rule → kicker 8, kicker → headline 8, headline → body 16, body →
+  buttons 16, section → section 24. Every section opens with a 2px rule, then a mono kicker.
+- **Masthead:** a dateline row (issue number and date, the motto centered, nav on the right). Below it,
+  a left ear ("Awaiting your signature": count, a 44px Review & sign button, the companies), the
+  nameplate "Hussla." centered, and a right ear (overnight agent counts: applied, reviews,
+  profiles, plus "Read the agent wire →"). Then an 8px black rule over a 1px hairline under the title,
+  with no rule above it.
+- **Body, 8 + 4 columns:**
+  - **Lead story (left 8):** kicker, headline, and one body column (about 56 characters a
+    line) with an outlined Open/Prep pair. Beside it sits an "<Company> at a glance" fact box
+    (valuation, revenue, cash flow, next event) drawn from that company's money fields.
+  - **Pitch of the hour (left 8, below the lead):** kicker with `n / 10`; the pitch title and a
+    44px Next pitch button on one row; the quote in large italic across the 8 columns; a byline.
+    Its box is sized to the longest pitch the config allows, so rotation never reflows the
+    page (900ms fade, none under reduced motion). Phase 5b fills it.
+  - **Rail (right 4):** latest news (headline, one-line context, date), then "On the board" (the top
+    jobs with status tags and an "All N jobs →" link). The rail's second rule sits on the same
+    line as the pitch rule.
+  - **Bottom:** both columns end on the same line.
+- **Phone (390):** the masthead, then the awaiting-signature ear first, the lead, the pitch, news, then the board.
+- **States:** Phase 5 designs and builds these.
+  - **Day one:** no jobs and no pitches.
+  - **No lead story:** the fact box is hidden.
+  - **Nothing to sign:** the ear says so, with no button.
+- **Tokens:** these live in `src/shared/ui/`, not as literals in features.
 **Applies:** `react.mdc`; architecture "Client state".
 **Files:** `src/features/{jobs,companies,outbox,answers,activity,settings}/`, `src/shared/ui/*`,
 `src/shared/api.ts` (typed client over the generated `api-types.ts`), `index.html`, `vite.config.ts`;
@@ -280,6 +304,7 @@ inferred-address warning, placeholder warning), the compare table sort, and the 
 **Done when:**
 - Component tests green → verify: `pnpm test src/features`
 - Screens work on desktop and phone → verify: Playwright screenshots at 1280px and 390px attached to the PR, no horizontal scroll, no console errors
+- Front page matches the 8c spec → verify: a DOM check in the Playwright test that the lead and rail columns end within 4px of each other and that every section's left edge sits on a grid column, plus a stylist pass (finishing passes) on the 1280 screenshot noted in the PR
 
 ## Phase 5b — Pitches
 
