@@ -39,6 +39,7 @@ import (
 	"github.com/bretperry/hussla/internal/app/tracker"
 	"github.com/bretperry/hussla/internal/config"
 	"github.com/bretperry/hussla/internal/httpapi"
+	"github.com/bretperry/hussla/internal/mcpapi"
 )
 
 // appVersion is recorded with each migration; the release build sets it with -ldflags.
@@ -120,7 +121,9 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 			return fmt.Errorf("local listener: %w", err)
 		}
 		port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
-		handler := httpapi.New(httpapi.Config{Listener: httpapi.ListenerLocal, Hosts: []string{"localhost:" + port, "127.0.0.1:" + port}}, services)
+		hosts := []string{"localhost:" + port, "127.0.0.1:" + port}
+		handler := withMCP(httpapi.New(httpapi.Config{Listener: httpapi.ListenerLocal, Hosts: hosts}, services),
+			mcpapi.New(mcpapi.Config{Hosts: hosts}, mcpDeps(services)))
 		start("local", newServer(handler), listener)
 		if err := os.WriteFile(filepath.Join(dataDir, localAddressFile), []byte("localhost:"+port), 0o600); err != nil {
 			return fmt.Errorf("record local address: %w", err)
@@ -142,7 +145,9 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 			if err := services.Auth.IssueSetupCode(ctx); err != nil {
 				logger.Error("setup code", "error", err)
 			}
-			handler := httpapi.New(httpapi.Config{Listener: httpapi.ListenerTailnet, Hosts: []string{node.Domain()}, Peers: node}, services)
+			hosts := []string{node.Domain()}
+			handler := withMCP(httpapi.New(httpapi.Config{Listener: httpapi.ListenerTailnet, Hosts: hosts, Peers: node}, services),
+				mcpapi.New(mcpapi.Config{Hosts: hosts, Secure: true}, mcpDeps(services)))
 			tailnetMutex.Lock()
 			defer tailnetMutex.Unlock()
 			if ctx.Err() != nil { // stopping already: don't start a server nobody will shut down
@@ -182,6 +187,21 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 	_ = os.Remove(filepath.Join(dataDir, localAddressFile))
 	logger.Info("stopped")
 	return nil
+}
+
+// mcpDeps are the use-cases the MCP tools call: the very instances the HTTP API calls.
+func mcpDeps(services httpapi.Deps) mcpapi.Deps {
+	return mcpapi.Deps{Auth: services.Auth, Tracker: services.Tracker, Mail: services.Mail}
+}
+
+// withMCP serves config.MCPPath from the MCP handler and everything else from the HTTP API. The
+// MCP handler does its own Host, Origin and agent-key checks: it never sees the API's cookie or
+// tailnet identity, and the API's identity step never runs for /mcp.
+func withMCP(api, mcp http.Handler) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle(config.MCPPath, mcp)
+	mux.Handle("/", api)
+	return mux
 }
 
 func newServer(handler http.Handler) *http.Server {

@@ -351,3 +351,21 @@ The pitch slot (Phase 5b) and the Settings "Add an agent" snippet (Phase 3b) are
 `open` · recorded 2026-10-08 · from Phase 5 (`docs/plans/hussla-v1.md`)
 
 Activity is reachable by link only; Pitches has no page. Tests stub `fetch` and spy on `api` instead of using MSW. **Why deferred:** out of Phase 5's scope. **Where:** `src/config/ui.ts` (`NAV_ITEMS`). **If we take it:** add the nav items with Phase 5b; adopt MSW only if the stubs get unwieldy.
+
+## "Add an agent" in Settings: the snippet UI
+
+`open` · recorded 2026-10-08 · from Phase 3b (`docs/plans/hussla-v1.md`)
+
+The server side of Phase 3b is built (`/mcp`, `docs/agents-api.md`); Settings → "Add an agent" (name it, get a key, copy a ready snippet) is not. **Why deferred:** Phase 5 is building the React UI in parallel and Settings is its page; the key endpoints (`POST /api/tokens`, with a passkey tap) already exist. **Where:** `src/features/settings/`, a small component that takes the key `POST /api/tokens` returns once. **If we take it:** after Phase 5 lands, add four copy buttons that fill `<origin>` from `window.location.origin` (`https://<name>.ts.net`, or `http://localhost:<port>` on the laptop listener) and `<key>` from the one-time response (never stored, never logged):
+- Claude Code: `claude mcp add --transport http hussla <origin>/mcp --header "Authorization: Bearer <key>"` (add `--scope user` to make it available in every project).
+- Cursor and other clients with a JSON file (`~/.cursor/mcp.json`): `{"mcpServers":{"hussla":{"url":"<origin>/mcp","headers":{"Authorization":"Bearer <key>"}}}}`.
+- Claude Desktop (its config file runs local commands, so it needs the `mcp-remote` shim; **unverified**, check in the Human check): `{"mcpServers":{"hussla":{"command":"npx","args":["-y","mcp-remote","<origin>/mcp","--header","Authorization:${HUSSLA_AUTH}"],"env":{"HUSSLA_AUTH":"Bearer <key>"}}}}`.
+- Plain-API prompt for any other agent: `You work on my job search. Hussla is at <origin>. Send Authorization: Bearer <key> on every request. Read <origin>/api/docs first and follow its rules.`
+Then run the Human check `hussla-p3b-claude-code` from the plan and drop the "(unverified)" note once Claude Desktop is tried.
+
+## MCP tools for the HTTP-only agent routes
+
+`open` · recorded 2026-10-08 · from Phase 3b
+
+Agents can call these over HTTP but not as MCP tools: file upload and download, the activity feed and job-less events, `PUT` a job, `PATCH` an answer, edit or cancel an email, résumé list, export. `internal/mcpapi`'s route test names each with a reason. **Why deferred:** not in the Phase 3b tool list; file bytes don't fit a tool call; edit and cancel of drafts weren't asked for. **Where:** `notAsTools` in `internal/mcpapi/door_test.go`, `catalog()` in `internal/mcpapi/tools.go`. **If we take it:** add the tool, move its route from `notAsTools` to the catalog, list it in `docs/agents-api.md`. Rate limiting per key is also absent (the spec says servers should); add it beside the tools if an agent ever loops.
+

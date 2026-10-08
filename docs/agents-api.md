@@ -157,10 +157,70 @@ Company emails not tied to a job: `POST /api/companies/:slug/emails {to, subject
 - `GET /api/config`, `GET /api/resumes` (files at `/resumes/<name>.pdf`), `GET /api/stats`
 - `GET /api/events?limit=200`, `GET /api/export` (full JSON backup)
 - `GET /api/files/:id`
+- MCP: `POST /mcp` (see above)
 
 Agent keys can't approve or send email, delete anything, change settings, import, or manage keys:
 those are the owner's, on the site, each confirmed with a passkey. A route that refuses an agent
 answers `403`.
+
+## MCP (Claude Code, Claude Desktop, Cursor)
+
+The same tracker, as tools. `https://hussla.<tailnet>.ts.net/mcp` (or `http://localhost:<port>/mcp` on the
+laptop listener) speaks MCP over Streamable HTTP: `POST` only, one JSON answer per request, no
+sessions. Both protocol eras work: clients that open with `initialize` (2025-03-26 to 2025-11-25) and
+the stateless 2026-07-28 revision (`server/discover`, version and `_meta` on every request).
+
+- **Auth: the same agent key**, as `Authorization: Bearer <key>` on every request, never in the URL.
+  A missing or wrong key is `401`. A session cookie or tailnet identity does nothing here: only a key
+  gets in, and a key is always that agent (`agent:<name>` in the activity log), even from the owner's
+  own computer. Don't send an `Origin` header (a foreign one is `403`); `GET` and `DELETE` are `405`.
+- **Same rules as the HTTP API**, because each tool calls the same use-case: agent patches can't
+  change or clear a field the owner last wrote (the tool says which), `null` clears only what an agent
+  wrote, and every change shows in the activity log.
+- **There is no tool to approve, send, cancel or edit email, delete anything, change settings, import,
+  export or manage keys**; those are the owner's, on the site, with a passkey. `approve` is refused by
+  name if you send it.
+- A mistake you can fix (a bad field, "not found", "the owner last wrote it") comes back as a normal
+  result with `isError: true` and one sentence. Results are JSON in one text block, shaped like the
+  HTTP API's (lists are wrapped: `{"jobs": [...]}`, `{"emails": [...]}`).
+
+Connect Claude Code (run on a computer that's on the owner's tailnet):
+
+```bash
+claude mcp add --transport http hussla https://hussla.<tailnet>.ts.net/mcp \
+  --header "Authorization: Bearer $JT_KEY"
+```
+
+Cursor and other clients that read a JSON file (`~/.cursor/mcp.json`):
+
+```json
+{ "mcpServers": { "hussla": {
+  "url": "https://hussla.<tailnet>.ts.net/mcp",
+  "headers": { "Authorization": "Bearer <agent key>" } } } }
+```
+
+| Tool | Does | HTTP route |
+|---|---|---|
+| `find_jobs` | list jobs by `status` / `q` (at most 100, with `total`, `truncated`) | `GET /api/jobs` |
+| `get_job` | one job with company page, timeline, files, emails | `GET /api/jobs/:id` |
+| `create_job` | add a job (`company`, `title`, optional `id`, any job field) | `POST /api/jobs` |
+| `update_job` | patch a job (`id`, changed fields, optional `note`) | `PATCH /api/jobs/:id` |
+| `add_job_event` | timeline line (`jobId`, `action`, `detail`) | `POST /api/jobs/:id/events` |
+| `add_contact` | one contact on a job (`jobId`, `name`, `email`, `emailStatus`, ...) | `POST /api/jobs/:id/contacts` |
+| `list_companies` | every company with its summary | `GET /api/companies` |
+| `get_company` | one company page in full | `GET /api/companies/:slug` |
+| `upsert_company_profile` | create (needs `name`) or patch a company | `PATCH /api/companies/:slug` |
+| `add_company_news` | one news item (`slug`, `headline`, `date`, `url`, ...) | `POST /api/companies/:slug/news` |
+| `add_company_review` | one review source (`slug`, `source`, `rating`, ...) | `POST /api/companies/:slug/reviews` |
+| `draft_job_email` | a draft for the owner to approve (`jobId`, `to`, `subject`, `body`) | `POST /api/jobs/:id/emails` |
+| `draft_company_email` | a draft not tied to a job (`slug`, optional `jobId`) | `POST /api/companies/:slug/emails` |
+| `list_outbox` | emails newest first (`status`, `jobId`, `company`) | `GET /api/emails` |
+| `list_answers` | saved form answers | `GET /api/answers` |
+| `ask_for_answer` | record a form question that has no answer yet | `POST /api/answers` |
+| `get_search_config` | the owner's search settings (`paused`: only read) | `GET /api/config` |
+
+Files (upload and download), the activity feed, résumés, the export and the rest of the HTTP routes
+stay HTTP-only; the rules above apply to them the same way.
 
 ## Errors
 
