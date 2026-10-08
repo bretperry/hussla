@@ -7,7 +7,8 @@ person's NAS and is reached only through their tailnet; agents act for that pers
 
 ## Decision
 
-No tenant id. The signed-in owner is the Tailscale Serve login in `ALLOWED_USERS`; agents are
+No tenant id. The owner is the Tailscale user who owns the Hussla node (embedded Tailscale reads
+it from the connection), or whoever claims a tagged node with the one-time setup code; agents are
 named, revocable keys. Repositories take no `userId`.
 
 ## Consequences

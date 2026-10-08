@@ -15,7 +15,7 @@ You stay in charge: nothing is emailed until you approve that exact message.
 
 ## Install
 
-Status: in development; the install guide (`docs/install.md`) lands with the build plan's setup
+Status: in development; the install guides (`docs/install/`) lands with the build plan's setup
 phase (`docs/plans/hussla-v1.md`).
 
 ## For developers
