@@ -35,7 +35,7 @@ A pack whose tool is missing either fails right away, naming what to install, or
 - **TypeScript / React:** nothing beyond Node and pnpm. `pnpm install` brings the compiler, oxlint, Vitest, knip, and dependency-cruiser.
 <!-- [/stack:typescript] -->
 <!-- [stack:go] -->
-- **Go:** Go 1.25 or newer (`go.mod`'s `go` line is the floor; an older Go downloads the right toolchain itself). `golangci-lint` v2 on PATH; CI pins v2.5.0, so match it. `gopls` only if you use Claude Code's `gopls-lsp` plugin.
+- **Go:** Go 1.27 or newer (`go.mod`'s `go` line is the floor; an older Go downloads the right toolchain itself). `golangci-lint` v2 on PATH; CI pins v2.14.0, so match it. `gopls` only if you use Claude Code's `gopls-lsp` plugin.
 <!-- [/stack:go] -->
 <!-- [stack:infra] -->
 - **Infra (Terraform, Docker):** `bash stacks/infra/install-tools.sh` installs pinned, checksum-verified `terraform`, `tflint`, and `hadolint` into `~/.local/bin` (set `INFRA_TOOLS_DIR` to change it). Put that directory on PATH. Docker itself is only needed to build images. A missing tool prints `SKIPPED` locally and fails under `CI=true`.

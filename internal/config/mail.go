@@ -1,6 +1,6 @@
 // Outbox pacing knobs: how fast, how often, and when approved email may leave.
 // In the app: the outbox dispatcher checks domain.CanSendNow with these before every send.
-// Used by: internal/domain (DefaultPacingRules, Email.MarkSendFailed), the outbox use-case (Phase 4), GET /api/mail.
+// Used by: internal/domain (DefaultPacingRules, Email.MarkSendFailed), internal/app/outbox, the mail adapters (timeouts), GET /api/mail.
 // Uses: time/tzdata (embedded zone data, so the zone loads anywhere).
 //
 // Why pace at all: a burst of near-identical follow-ups reads as a bot to a recruiter, and
@@ -42,3 +42,20 @@ const MailMaxAttempts = 3
 
 // MailErrorMaxLength caps the stored delivery error, so a server's essay can't fill the outbox row.
 const MailErrorMaxLength = 500
+
+// MailPollInterval is the longest the dispatcher waits before looking at the queue and the clock
+// again. Go's timers stop while a laptop sleeps, so a long wait could overshoot by the whole
+// sleep; rechecking at least this often keeps the send window honest after a wake.
+const MailPollInterval = time.Minute
+
+// MailRetryDelay is how long the dispatcher waits after a send the provider definitely refused
+// (nothing went out) before trying again, so a down server isn't hammered.
+const MailRetryDelay = 5 * time.Minute
+
+// MailConnectTimeout bounds connecting, the TLS handshake and each SMTP command before the message
+// is handed over; a timeout here means nothing was sent, so the send is retried.
+const MailConnectTimeout = 30 * time.Second
+
+// MailDeliveryTimeout bounds handing over the message and waiting for the provider's answer. A
+// timeout here may mean it went out, so the email is marked "may have been sent", never retried.
+const MailDeliveryTimeout = 2 * time.Minute
