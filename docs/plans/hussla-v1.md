@@ -89,7 +89,7 @@ mail must keep these true and test them.
 | 4 | Mail port, provider catalog, adapters, secret store, outbox pacing | 2 | deep (high) | QA passed (#4); stacked on #3 |
 | 5 | React UI: jobs, job, companies, compare, company, outbox, answers, activity, settings | 1 | workhorse (medium) | |
 | 5b | Pitches: ten honed pitches, dashboard billboard, versions and side-by-side compare | 3b, 5 | workhorse (medium) | |
-| 6 | First-run wizard, Docker image, compose with Tailscale, binaries, install guides (NAS, laptop, cloud) | 3, 3b, 4, 5, 5b | workhorse (medium) | |
+| 6 | First-run wizard, prebuilt image, no-key no-terminal NAS install, binaries, install guides (NAS, laptop, cloud) | 3, 3b, 4, 5, 5b | workhorse (medium) | |
 | 7 | Install on the NAS and accept on phone | 6; NAS model, Tailscale account | — (human) | |
 
 ## Phase 0 — Repo setup
@@ -345,12 +345,22 @@ hover, skips the fade under reduced motion; compare view shows the diff and timi
 then the wizard (your name and email; pick an email provider from the catalog with its steps
 and a link to its app-password page; paste the password; send a test; optionally import a seed
 file; make the first agent key). Docker image (one static binary on a distroless base, non-root,
-healthcheck) with Tailscale embedded, so `docker-compose.yml` is one service whose only required
-value is `TS_AUTHKEY`, `restart: unless-stopped`, and a named volume (a distroless non-root image
-can't write a Synology bind mount owned by another uid). Plain binaries for macOS, Windows and
+healthcheck) with Tailscale embedded, so `docker-compose.yml` is one service with no required
+value, `restart: unless-stopped`, and a named volume (a distroless non-root image
+can't write a Synology bind mount owned by another uid, and Synology won't create a missing bind
+folder at all). `TS_AUTHKEY` is optional: without it, the first start prints tsnet's Tailscale
+sign-in link in the log, so there is no key to make, copy once, or paste. The image is prebuilt for
+amd64 and arm64 and published to GitHub's registry; the compose file uses `image:`, never `build:`
+(a small NAS must not build). The NAS path needs no terminal: Container Manager → Project → Create,
+paste the compose file, Done, then open the log and click the sign-in link. Once on the tailnet, the
+first page shows the `https://…ts.net` address and a QR code for the phone. Plain binaries for macOS, Windows and
 Linux (amd64, arm64). Install guides for a non-technical reader: NAS (Synology Container Manager),
 laptop or desktop (Docker Desktop, or the binary plus `hussla open`), and a rented cloud server
 (firewall closed; reachable only over Tailscale); each says to copy backups off the device.
+Guides follow what tripped up the first real NAS install (2026-10-08): one linear path with no
+"if you already did step N" branches; no placeholders to edit inside commands (prompt instead);
+any terminal step is one line (never `ssh` and a command pasted as two lines); every guide ends
+with a check that it is running and what to paste back if not.
 **Files:** `src/features/setup/`, `internal/app/setup/`, `Dockerfile` (multi-stage: Node builds the
 UI, Go builds a static binary, final stage distroless non-root), `docker-compose.yml`,
 `docs/install/{nas,laptop,cloud}.md`, README install link, release build script for the binaries.
@@ -359,6 +369,11 @@ a fresh container serves only the setup-code screen, and a wrong code is refused
 **Done when:**
 - Fresh container needs the setup code, then finishes the wizard → verify: Playwright run against `docker run`
 - Image lint clean → verify: `pnpm infra:docker`
+- A fresh Synology (DSM 7.2, Container Manager) installs with no terminal and no auth key, from
+  Project → Create to the job board on a phone, in under 5 minutes → verify: Human check `hussla-p6-nas`
+
+**Human checks**
+- `hussla-p6-nas` · Mac · 10 min · none — Install on a fresh Synology with no terminal. Container Manager → Project → Create, paste the compose file, click the Tailscale link in the log; the job board opens on your phone within 5 minutes, with no auth key and no folders made by hand.
 
 ## Phase 7 — Install and accept
 
