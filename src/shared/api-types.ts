@@ -567,7 +567,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Owner only. Queues a draft (or a failed email) to send, at the outbox's pace. */
+        /** Owner only. Queues a draft (or a failed email) to send, at the outbox's pace, if it is still the version the owner read. */
         post: operations["approveEmail"];
         delete?: never;
         options?: never;
@@ -600,6 +600,13 @@ export interface components {
     schemas: {
         Error: {
             error: string;
+            /**
+             * @description A stable reason for the refusals a client acts on.
+             * @enum {string}
+             */
+            code?: "owner-field" | "changed-since-read" | "transition-not-allowed";
+            /** @description With code "owner-field": the fields the owner last wrote, which an agent may not change. */
+            fields?: string[];
         };
         Ok: {
             ok: boolean;
@@ -608,9 +615,15 @@ export interface components {
             /** Format: int64 */
             id: number;
         };
+        /** @enum {string} */
+        Writer: "agent" | "owner";
+        /** @description Who last wrote each field, by API name ("notes", "followup.body", an extra key). A field not listed counts as agent-written. */
+        Writers: {
+            [key: string]: components["schemas"]["Writer"];
+        };
         /**
          * Format: date-time
-         * @description UTC RFC 3339, or null when not set.
+         * @description UTC, fixed width in responses ("2026-10-08T14:03:00.000Z"); any RFC 3339 time in requests; null when not set.
          */
         Timestamp: string | null;
         ApiIndex: {
@@ -677,6 +690,7 @@ export interface components {
         };
         /** @description A job and everything known about it. Unlisted fields an agent stored come back as extra properties. */
         Job: {
+            writers: components["schemas"]["Writers"];
             id: string;
             companySlug: string;
             /** Format: date-time */
@@ -960,6 +974,7 @@ export interface components {
         };
         /** @description One employer's profile. Unlisted fields an agent stored come back as extra properties. */
         Company: {
+            writers: components["schemas"]["Writers"];
             slug: string;
             name: string;
             /** Format: date-time */
@@ -1063,6 +1078,7 @@ export interface components {
             jobContacts: components["schemas"]["CompanyContact"][];
         };
         Answer: {
+            writers: components["schemas"]["Writers"];
             id: string;
             question: string;
             /** @description Empty while the owner hasn't answered. */
@@ -1167,6 +1183,12 @@ export interface components {
             /** @description The last delivery error. */
             error: string | null;
             attempts: number;
+            /** @description Bumped by every content edit; approve names the version the owner read. */
+            version: number;
+        };
+        EmailApprove: {
+            /** @description The version the owner was shown; a mismatch is 409 "changed-since-read". */
+            version: number;
         };
         /** @description Addresses as a list, or one string split on commas, semicolons and spaces. Bare addresses only ("Name <a@b.c>" is refused). */
         AddressList: string[] | string;
@@ -1251,7 +1273,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description The record exists, or is in a state that doesn't allow this. */
+        /** @description The record exists, is in a state that doesn't allow this, changed since the caller read it, or an agent tried to change owner-written fields (see `code` and `fields`). */
         Conflict: {
             headers: {
                 [name: string]: unknown;
@@ -1479,6 +1501,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
         };
     };
     deleteJob: {
@@ -1535,6 +1558,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     logJobEvent: {
@@ -1595,6 +1619,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     uploadJobFile: {
@@ -1783,6 +1808,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
         };
     };
     addCompanyNews: {
@@ -1812,6 +1838,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     saveCompanyReview: {
@@ -1840,6 +1867,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
         };
     };
     draftCompanyEmail: {
@@ -1965,6 +1993,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
         };
     };
     deleteAnswer: {
@@ -2017,6 +2046,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
         };
     };
     getSearchConfig: {
@@ -2340,7 +2370,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailApprove"];
+            };
+        };
         responses: {
             /** @description The approved email. */
             200: {

@@ -5,13 +5,16 @@
 #
 # Shapes follow the prototype's API so agents keep working unchanged. Conventions:
 # - Text fields are always strings ("" when empty); numbers and timestamps that may be unknown are null.
-# - Timestamps are UTC RFC 3339 strings. Loose dates an agent copies from a source ("2026-08") are plain strings.
+# - Timestamps in responses are fixed-width UTC, `2026-10-08T14:03:00.000Z` (they sort as text);
+#   requests accept any RFC 3339 time. Loose dates an agent copies from a source ("2026-08") are plain strings.
 # - PATCH bodies name only what they change; null clears a field; lists and objects replace whole,
 #   except a job's `followup`, which merges key by key. Unlisted top-level fields on a job or company
 #   are kept as-is (additionalProperties), the prototype's behavior.
 # - Auth: an agent sends `Authorization: Bearer <agent key>`; the owner is signed in by Tailscale Serve
 #   identity headers (not modeled here). Browser writes also carry `X-Hussla: 1` (CSRF guard).
 #   Routes marked "Owner only" refuse agent keys with 403.
+# - Agent writes can't clear or overwrite a field the owner last wrote (409, code "owner-field",
+#   naming the fields); `writers` on a record says who last wrote each field.
 
 openapi: 3.1.0
 info:
@@ -164,6 +167,7 @@ paths:
               schema: { $ref: "#/components/schemas/Job" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "404": { $ref: "#/components/responses/NotFound" }
     put:
       tags: [jobs]
@@ -182,6 +186,7 @@ paths:
               schema: { $ref: "#/components/schemas/Job" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
     delete:
       tags: [jobs]
       operationId: deleteJob
@@ -238,6 +243,7 @@ paths:
               schema: { $ref: "#/components/schemas/Job" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /api/jobs/{jobId}/files:
@@ -374,6 +380,7 @@ paths:
               schema: { $ref: "#/components/schemas/Company" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/companies/{slug}/news:
     parameters:
@@ -395,6 +402,7 @@ paths:
               schema: { $ref: "#/components/schemas/Company" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
         "404": { $ref: "#/components/responses/NotFound" }
 
   /api/companies/{slug}/reviews:
@@ -417,6 +425,7 @@ paths:
               schema: { $ref: "#/components/schemas/Company" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/companies/{slug}/emails:
     parameters:
@@ -507,6 +516,7 @@ paths:
               schema: { $ref: "#/components/schemas/Answer" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/answers/{answerId}:
     parameters:
@@ -531,6 +541,7 @@ paths:
               schema: { $ref: "#/components/schemas/Answer" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
     delete:
       tags: [answers]
       operationId: deleteAnswer
@@ -773,7 +784,12 @@ paths:
     post:
       tags: [mail]
       operationId: approveEmail
-      summary: Owner only. Queues a draft (or a failed email) to send, at the outbox's pace.
+      summary: Owner only. Queues a draft (or a failed email) to send, at the outbox's pace, if it is still the version the owner read.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailApprove" }
       responses:
         "200":
           description: The approved email.
@@ -855,7 +871,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Conflict:
-      description: The record exists, or is in a state that doesn't allow this.
+      description: 'The record exists, is in a state that doesn''t allow this, changed since the caller read it, or an agent tried to change owner-written fields (see `code` and `fields`).'
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -877,6 +893,14 @@ components:
       required: [error]
       properties:
         error: { type: string }
+        code:
+          type: string
+          description: "A stable reason for the refusals a client acts on."
+          enum: [owner-field, changed-since-read, transition-not-allowed]
+        fields:
+          type: array
+          items: { type: string }
+          description: 'With code "owner-field": the fields the owner last wrote, which an agent may not change.'
     Ok:
       type: object
       required: [ok]
@@ -887,8 +911,17 @@ components:
       required: [id]
       properties:
         id: { type: integer, format: int64 }
+    Writer:
+      type: string
+      enum: [agent, owner]
+    Writers:
+      type: object
+      description: 'Who last wrote each field, by API name ("notes", "followup.body", an extra key). A field not listed counts as agent-written.'
+      propertyNames: { type: string }
+      additionalProperties: { $ref: "#/components/schemas/Writer" }
+      readOnly: true
     Timestamp:
-      description: UTC RFC 3339, or null when not set.
+      description: 'UTC, fixed width in responses ("2026-10-08T14:03:00.000Z"); any RFC 3339 time in requests; null when not set.'
       type: [string, "null"]
       format: date-time
     ApiIndex:
@@ -1006,7 +1039,9 @@ components:
         - roleNotes
         - sources
         - notes
+        - writers
       properties:
+        writers: { $ref: "#/components/schemas/Writers" }
         id: { type: string }
         companySlug: { type: string }
         createdAt: { type: string, format: date-time }
@@ -1341,7 +1376,9 @@ components:
         - notes
         - profileFetchedAt
         - reviewsFetchedAt
+        - writers
       properties:
+        writers: { $ref: "#/components/schemas/Writers" }
         slug: { type: string }
         name: { type: string }
         updatedAt: { type: string, format: date-time }
@@ -1475,8 +1512,9 @@ components:
     # ---------- answers and settings
     Answer:
       type: object
-      required: [id, question, answer, jobIds, createdAt, answeredAt]
+      required: [id, question, answer, jobIds, createdAt, answeredAt, writers]
       properties:
+        writers: { $ref: "#/components/schemas/Writers" }
         id: { type: string }
         question: { type: string }
         answer: { type: string, description: Empty while the owner hasn't answered. }
@@ -1575,7 +1613,7 @@ components:
       enum: [draft, approved, sending, sent, failed, canceled]
     Email:
       type: object
-      required: [id, jobId, companySlug, to, cc, subject, body, kind, status, createdBy, createdAt, approvedBy, approvedAt, sentAt, messageId, error, attempts]
+      required: [id, jobId, companySlug, to, cc, subject, body, kind, status, createdBy, createdAt, approvedBy, approvedAt, sentAt, messageId, error, attempts, version]
       properties:
         id: { type: string }
         jobId: { type: [string, "null"] }
@@ -1594,6 +1632,12 @@ components:
         messageId: { type: [string, "null"] }
         error: { type: [string, "null"], description: The last delivery error. }
         attempts: { type: integer }
+        version: { type: integer, minimum: 1, description: Bumped by every content edit; approve names the version the owner read. }
+    EmailApprove:
+      type: object
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 1, description: 'The version the owner was shown; a mismatch is 409 "changed-since-read".' }
     AddressList:
       description: 'Addresses as a list, or one string split on commas, semicolons and spaces. Bare addresses only ("Name <a@b.c>" is refused).'
       oneOf:

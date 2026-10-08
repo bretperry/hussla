@@ -81,3 +81,13 @@ func hasInnerDot(text string) bool {
 	}
 	return false
 }
+
+// ValidateHeaderText refuses CR, LF and NUL in any text that becomes a mail header (a subject, a
+// sender's display name): a line break would start a new header, and NUL ends a C string early in
+// some mail servers. Every adapter checks again before writing (security model).
+func ValidateHeaderText(field, text string) error {
+	if strings.ContainsAny(text, "\r\n\x00") {
+		return invalid(field, "can't contain a line break or a NUL character")
+	}
+	return nil
+}

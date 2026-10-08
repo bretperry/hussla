@@ -23,6 +23,13 @@ func (validationError *ValidationError) Error() string {
 // (approving a sent email, editing one that is sending).
 var ErrTransitionNotAllowed = errors.New("transition not allowed")
 
+// ErrOwnerField is the sentinel behind OwnerFieldsError: an agent tried to change what the owner wrote (HTTP 409).
+var ErrOwnerField = errors.New("owner-written field")
+
+// ErrChangedSinceRead is the sentinel behind StaleVersionError: the record changed after the
+// owner looked at it, so the action they took on what they saw is refused (HTTP 409).
+var ErrChangedSinceRead = errors.New("changed since you read it")
+
 // invalid builds a ValidationError; a short form for the many field checks.
 func invalid(field, problem string) error {
 	return &ValidationError{Field: field, Problem: problem}

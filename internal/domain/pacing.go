@@ -77,7 +77,8 @@ type PacingDecision struct {
 func (decision PacingDecision) Allowed() bool { return decision.Verdict == PacingSendNow }
 
 // CanSendNow decides whether one more email may be sent at `now`. lastSentAt is the most recent
-// send (zero for never); sentToday is how many were sent since StartOfLocalDay(now).
+// send (zero for never; one after `now` counts as now); sentToday is how many were sent since
+// StartOfLocalDay(now), counted from the sent rows, never from memory.
 func CanSendNow(now, lastSentAt time.Time, sentToday int, rules PacingRules) PacingDecision {
 	if err := rules.Validate(); err != nil {
 		return PacingDecision{Verdict: PacingRulesInvalid}
@@ -89,6 +90,12 @@ func CanSendNow(now, lastSentAt time.Time, sentToday int, rules PacingRules) Pac
 		return PacingDecision{Verdict: PacingDailyLimitReached, NotBefore: rules.windowStartOnDay(now, 1)}
 	}
 	if !lastSentAt.IsZero() {
+		// A send stamped after `now` means the clock jumped back: it counts as just now. Nothing
+		// goes out until the clock passes it plus the gap, and NotBefore stays one gap ahead
+		// instead of pointing hours into a future the clock may never reach on schedule.
+		if lastSentAt.After(now) {
+			lastSentAt = now
+		}
 		earliest := lastSentAt.Add(rules.MinGap + rules.Jitter)
 		if now.Before(earliest) {
 			if !rules.inWindow(earliest) {

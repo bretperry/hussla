@@ -85,3 +85,22 @@ func TestAcceptedAddressesAreHeaderSafe(t *testing.T) {
 		}
 	})
 }
+
+func TestHeaderTextRefusesLineBreaksAndNul(t *testing.T) {
+	for _, text := range []string{"Hi\r\nBcc: x@evil.example", "Hi\nthere", "Hi\rthere", "Hi\x00there"} {
+		if domain.ValidateHeaderText("fromName", text) == nil {
+			t.Errorf("ValidateHeaderText(%q) passed", text)
+		}
+		if _, err := domain.NewEmail("e", domain.EmailDraft{To: []string{"a@example.com"}, Subject: text, Body: "Hi", Kind: domain.EmailKindNote}, createdAt); err == nil {
+			t.Errorf("subject %q was accepted", text)
+		}
+	}
+	if err := domain.ValidateHeaderText("fromName", "Jane Doe – Staff Engineer"); err != nil {
+		t.Errorf("a plain display name was refused: %v", err)
+	}
+	for _, address := range []string{"jane\x00@example.com", "jane@example.com\x00", "jane@exam\rple.com", "jane@example.com\n"} {
+		if domain.IsPlainAddress(address) {
+			t.Errorf("IsPlainAddress(%q) = true", address)
+		}
+	}
+}

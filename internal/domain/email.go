@@ -13,6 +13,7 @@
 package domain
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -107,6 +108,7 @@ type Email struct {
 	MessageID   string // the provider's id for the sent message
 	Error       string // the last delivery error, cut to config.MailErrorMaxLength
 	Attempts    int
+	Version     int // starts at 1; every content edit bumps it, and an approval names the one it saw
 }
 
 // EmailDraft is what a new email starts from.
@@ -128,7 +130,7 @@ func NewEmail(id string, draft EmailDraft, now time.Time) (Email, error) {
 	}
 	email := Email{
 		ID: id, JobID: draft.JobID, CompanySlug: draft.CompanySlug,
-		Kind: draft.Kind, Status: EmailStatusDraft, CreatedBy: draft.CreatedBy, CreatedAt: now.UTC(),
+		Kind: draft.Kind, Status: EmailStatusDraft, Version: 1, CreatedBy: draft.CreatedBy, CreatedAt: NormalizeTime(now),
 	}
 	if err := draft.Kind.Validate(); err != nil {
 		return Email{}, err
@@ -149,9 +151,9 @@ type EmailEdit struct {
 	Body    Field[string]
 }
 
-// Edit changes a draft, approved or failed email's content. When the content actually differs
-// and the email isn't a draft, it goes back to draft and loses its approval; an edit that changes
-// nothing (a retried save) keeps the approval.
+// Edit changes a draft, approved or failed email's content. A real change bumps Version, and an
+// approved or failed email goes back to draft and loses its approval; an edit that changes
+// nothing (a retried save) keeps both.
 func (email Email) Edit(edit EmailEdit) (Email, error) {
 	if email.Status != EmailStatusDraft && !CanTransition(email.Status, EmailStatusDraft) {
 		return Email{}, transitionError(email.Status, "edit")
@@ -169,6 +171,7 @@ func (email Email) Edit(edit EmailEdit) (Email, error) {
 	}
 	next := email
 	next.To, next.Cc, next.Subject, next.Body = content.to, content.cc, content.subject, content.body
+	next.Version++
 	if next.Status != EmailStatusDraft {
 		next.Status = EmailStatusDraft
 		next.ApprovedBy, next.ApprovedAt = "", time.Time{}
@@ -176,8 +179,11 @@ func (email Email) Edit(edit EmailEdit) (Email, error) {
 	return next, nil
 }
 
-// Approve queues a draft (or a failed email, for another try) for sending, as approved by `approver`.
-func (email Email) Approve(approver string, now time.Time) (Email, error) {
+// Approve queues a draft (or a failed email, for another try) as approved by `approver`, but only
+// if `seenVersion` is the version the owner was shown: if an agent edited it since, the approval
+// is refused with StaleVersionError ("changed since you read it"). Storage repeats the check as a
+// compare-and-swap on the row, so a race between read and write fails the same way.
+func (email Email) Approve(approver string, seenVersion int, now time.Time) (Email, error) {
 	if strings.TrimSpace(approver) == "" {
 		return Email{}, invalid("approvedBy", "is required")
 	}
@@ -185,10 +191,25 @@ func (email Email) Approve(approver string, now time.Time) (Email, error) {
 	if err != nil {
 		return Email{}, err
 	}
-	next.ApprovedBy, next.ApprovedAt = approver, now.UTC()
+	if seenVersion != email.Version {
+		return Email{}, &StaleVersionError{Seen: seenVersion, Current: email.Version}
+	}
+	next.ApprovedBy, next.ApprovedAt = approver, NormalizeTime(now)
 	next.Attempts, next.Error = 0, ""
 	return next, nil
 }
+
+// StaleVersionError refuses an action taken on an out-of-date view of a record; it unwraps to ErrChangedSinceRead.
+type StaleVersionError struct {
+	Seen    int
+	Current int
+}
+
+func (staleVersionError *StaleVersionError) Error() string {
+	return fmt.Sprintf("changed since you read it (you saw version %d, it is now %d): review it again", staleVersionError.Seen, staleVersionError.Current)
+}
+
+func (staleVersionError *StaleVersionError) Unwrap() error { return ErrChangedSinceRead }
 
 // Cancel withdraws an email that hasn't started sending.
 func (email Email) Cancel() (Email, error) { return email.moveTo(EmailStatusCanceled) }
@@ -209,7 +230,7 @@ func (email Email) MarkSent(messageID string, sentAt time.Time) (Email, error) {
 	if err != nil {
 		return Email{}, err
 	}
-	next.MessageID, next.SentAt, next.Error = messageID, sentAt.UTC(), ""
+	next.MessageID, next.SentAt, next.Error = messageID, NormalizeTime(sentAt), ""
 	return next, nil
 }
 
@@ -284,8 +305,8 @@ type emailContent struct {
 // MaxSubjectLength caps a subject line; mail servers fold longer ones and recruiters never read them.
 const MaxSubjectLength = 300
 
-// validEmailContent checks the recipients and text an email will carry. A subject with a line
-// break is refused outright: in a mail header it would start a new header (injection).
+// validEmailContent checks the recipients and text an email will carry. A subject with CR, LF or
+// NUL is refused outright: in a mail header a line break would start a new header (injection).
 func validEmailContent(to, cc []string, subject, body string) (emailContent, error) {
 	toList, err := ValidateAddresses("to", to)
 	if err != nil {
@@ -301,8 +322,8 @@ func validEmailContent(to, cc []string, subject, body string) (emailContent, err
 	if strings.TrimSpace(subject) == "" {
 		return emailContent{}, invalid("subject", "is required")
 	}
-	if strings.ContainsAny(subject, "\r\n") {
-		return emailContent{}, invalid("subject", "must be one line")
+	if err := ValidateHeaderText("subject", subject); err != nil {
+		return emailContent{}, err
 	}
 	if len(subject) > MaxSubjectLength {
 		return emailContent{}, invalid("subject", "is too long")

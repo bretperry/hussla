@@ -12,6 +12,12 @@ import (
 
 func floatPointer(value float64) *float64 { return &value }
 
+// applyCompany runs ApplyCompanyPatch at patchedAt and returns the company after it.
+func applyCompany(company domain.Company, patch domain.CompanyPatch, writer domain.Writer) (domain.Company, error) {
+	result, err := domain.ApplyCompanyPatch(company, patch, writer, patchedAt)
+	return result.Record, err
+}
+
 func TestNewCompanySlugAndName(t *testing.T) {
 	company, err := domain.NewCompany("  Example Labs, Inc. ", createdAt)
 	if err != nil || company.Slug != "example-labs-inc" || company.Name != "Example Labs, Inc." {
@@ -27,11 +33,11 @@ func TestApplyCompanyPatchReplacesTopLevelAndKeepsTheRest(t *testing.T) {
 	company.Profile = domain.Profile{Website: "https://example.com", HQ: "Somewhere"}
 	company.Facts = []string{"Founded by two engineers"}
 	company.Notes = "Owner's own note"
-	next, err := domain.ApplyCompanyPatch(company, domain.CompanyPatch{
+	next, err := applyCompany(company, domain.CompanyPatch{
 		Profile:   domain.Set(domain.Profile{Website: "https://example.org"}),
 		QuickTake: domain.Set("A small, steady company."),
 		Facts:     domain.Clear[[]string](),
-	}, patchedAt)
+	}, domain.WriterAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,11 +50,11 @@ func TestApplyCompanyPatchReplacesTopLevelAndKeepsTheRest(t *testing.T) {
 	if !next.UpdatedAt.Equal(patchedAt) {
 		t.Errorf("updatedAt = %v", next.UpdatedAt)
 	}
-	renamed, err := domain.ApplyCompanyPatch(company, domain.CompanyPatch{Name: domain.Set("Example Labs Holdings")}, patchedAt)
+	renamed, err := applyCompany(company, domain.CompanyPatch{Name: domain.Set("Example Labs Holdings")}, domain.WriterAgent)
 	if err != nil || renamed.Slug != company.Slug {
 		t.Errorf("renaming moved the slug to %q (%v); links must keep working", renamed.Slug, err)
 	}
-	if _, err := domain.ApplyCompanyPatch(company, domain.CompanyPatch{Name: domain.Clear[string]()}, patchedAt); err == nil {
+	if _, err := applyCompany(company, domain.CompanyPatch{Name: domain.Clear[string]()}, domain.WriterAgent); err == nil {
 		t.Error("clearing the name: want an error")
 	}
 }

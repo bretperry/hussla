@@ -188,7 +188,8 @@ type Job struct {
 	Sources              []string
 	Notes                string // Bret's own; agents don't overwrite (enforced in the HTTP layer)
 
-	Extras Extras
+	Extras  Extras
+	Writers FieldWriters // who last wrote each field; see writer.go
 }
 
 // JobPatch names the job fields one write speaks for. The zero JobPatch changes nothing.
@@ -235,7 +236,7 @@ type JobPatch struct {
 // jobFieldNames is every job key the API knows by name, read-only ones and the PATCH-only
 // "note" included, so none of them can be stored again as an extra.
 var jobFieldNames = map[string]bool{
-	"id": true, "companySlug": true, "createdAt": true, "updatedAt": true, "note": true,
+	"id": true, "companySlug": true, "createdAt": true, "updatedAt": true, "note": true, "writers": true,
 	"company": true, "title": true, "status": true, "statusNote": true, "score": true, "url": true,
 	"location": true, "workType": true, "salaryMin": true, "salaryMax": true, "payText": true,
 	"compensation": true, "source": true, "resume": true, "resumeSent": true, "foundAt": true,
@@ -278,9 +279,9 @@ func IsValidRecordID(id string) bool {
 	return true
 }
 
-// NewJob creates a job from its first write. Company and title are required; status defaults to
-// review. Moving straight to applied stamps AppliedAt, the same as a later move would.
-func NewJob(id string, patch JobPatch, now time.Time) (Job, error) {
+// NewJob creates a job from its first write, by `writer`. Company and title are required; status
+// defaults to review. Moving straight to applied stamps AppliedAt, the same as a later move would.
+func NewJob(id string, patch JobPatch, writer Writer, now time.Time) (Job, error) {
 	if !IsValidRecordID(id) {
 		return Job{}, invalid("id", "must be 1-120 lowercase letters, digits and hyphens")
 	}
@@ -294,21 +295,29 @@ func NewJob(id string, patch JobPatch, now time.Time) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
-	now = now.UTC()
+	now = NormalizeTime(now)
 	draft := Job{ID: id, CreatedAt: now, Status: defaultStatus}
-	job, _, err := applyJobPatch(draft, patch, now, true)
-	return job, err
+	result, err := applyJobPatch(draft, patch, writer, now, true)
+	return result.Record, err
 }
 
-// ApplyJobPatch writes a patch onto a stored job and says whether the status moved. A move into
-// applied stamps AppliedAt with `now` unless the job already has one or the patch names appliedAt.
-func ApplyJobPatch(current Job, patch JobPatch, now time.Time) (Job, JobStatusChange, error) {
-	return applyJobPatch(current, patch, now.UTC(), false)
+// JobPatchResult is the job after a patch, the job before it, the changed field names (for the
+// activity log and restore), and the status move.
+type JobPatchResult struct {
+	PatchResult[Job]
+	StatusChange JobStatusChange
 }
 
-func applyJobPatch(current Job, patch JobPatch, now time.Time, creating bool) (Job, JobStatusChange, error) {
+// ApplyJobPatch writes `writer`'s patch onto a stored job. An agent patch that would change a
+// field the owner last wrote is refused whole (OwnerFieldsError). A move into applied stamps
+// AppliedAt with `now` unless the job already has one or the patch names appliedAt.
+func ApplyJobPatch(current Job, patch JobPatch, writer Writer, now time.Time) (JobPatchResult, error) {
+	return applyJobPatch(current, patch, writer, NormalizeTime(now), false)
+}
+
+func applyJobPatch(current Job, patch JobPatch, writer Writer, now time.Time, creating bool) (JobPatchResult, error) {
 	if err := validateJobPatch(current, patch); err != nil {
-		return Job{}, JobStatusChange{}, err
+		return JobPatchResult{}, err
 	}
 	next := current
 	next.Company = trimmed(patch.Company).Apply(current.Company)
@@ -347,9 +356,6 @@ func applyJobPatch(current Job, patch JobPatch, now time.Time, creating bool) (J
 	next.Extras = applyExtras(current.Extras, patch.Extras)
 
 	next.CompanySlug = Slugify(next.Company)
-	if creating || !patch.isEmpty() {
-		next.UpdatedAt = now
-	}
 
 	change := JobStatusChange{From: current.Status, To: next.Status, Changed: !creating && current.Status != next.Status}
 	movedIntoApplied := next.Status == JobStatusApplied && (creating || current.Status != JobStatusApplied)
@@ -357,7 +363,71 @@ func applyJobPatch(current Job, patch JobPatch, now time.Time, creating bool) (J
 	if movedIntoApplied && patch.AppliedAt.IsAbsent() && next.AppliedAt.IsZero() {
 		next.AppliedAt = now
 	}
-	return next, change, nil
+
+	changed := append(changedFields(jobFieldTable, current, next), changedFollowupKeys(current.Followup, next.Followup)...)
+	changed = append(changed, changedExtras(current.Extras, next.Extras)...)
+	writers, changed, err := settleWriters(current.Writers, changed, writer)
+	if err != nil {
+		return JobPatchResult{}, err
+	}
+	next.Writers = writers
+	if creating || len(changed) > 0 {
+		next.UpdatedAt = now
+	}
+	return JobPatchResult{PatchResult: PatchResult[Job]{Record: next, Before: current, Changed: changed}, StatusChange: change}, nil
+}
+
+// jobFieldTable compares each patchable job field by its API name. Followup and extras are
+// compared key by key elsewhere, because their writers are tracked per key.
+var jobFieldTable = []fieldComparison[Job]{
+	{"company", func(a, b Job) bool { return a.Company == b.Company }},
+	{"title", func(a, b Job) bool { return a.Title == b.Title }},
+	{"status", func(a, b Job) bool { return a.Status == b.Status }},
+	{"statusNote", func(a, b Job) bool { return a.StatusNote == b.StatusNote }},
+	{"score", func(a, b Job) bool { return sameIntPointer(a.Score, b.Score) }},
+	{"url", func(a, b Job) bool { return a.URL == b.URL }},
+	{"location", func(a, b Job) bool { return a.Location == b.Location }},
+	{"workType", func(a, b Job) bool { return a.WorkType == b.WorkType }},
+	{"salaryMin", func(a, b Job) bool { return sameIntPointer(a.SalaryMin, b.SalaryMin) }},
+	{"salaryMax", func(a, b Job) bool { return sameIntPointer(a.SalaryMax, b.SalaryMax) }},
+	{"payText", func(a, b Job) bool { return a.PayText == b.PayText }},
+	{"compensation", func(a, b Job) bool { return a.Compensation == b.Compensation }},
+	{"source", func(a, b Job) bool { return a.Source == b.Source }},
+	{"resume", func(a, b Job) bool { return a.Resume == b.Resume }},
+	{"resumeSent", func(a, b Job) bool { return a.ResumeSent == b.ResumeSent }},
+	{"foundAt", func(a, b Job) bool { return a.FoundAt.Equal(b.FoundAt) }},
+	{"appliedAt", func(a, b Job) bool { return a.AppliedAt.Equal(b.AppliedAt) }},
+	{"nextAction", func(a, b Job) bool { return a.NextAction == b.NextAction }},
+	{"nextActionDue", func(a, b Job) bool { return a.NextActionDue == b.NextActionDue }},
+	{"headsUp", func(a, b Job) bool { return a.HeadsUp == b.HeadsUp }},
+	{"description", func(a, b Job) bool { return a.Description == b.Description }},
+	{"descriptionFetchedAt", func(a, b Job) bool { return a.DescriptionFetchedAt.Equal(b.DescriptionFetchedAt) }},
+	{"postingStatus", func(a, b Job) bool { return a.PostingStatus == b.PostingStatus }},
+	{"whyScore", func(a, b Job) bool { return a.WhyScore == b.WhyScore }},
+	{"reasons", func(a, b Job) bool { return sameList(a.Reasons, b.Reasons) }},
+	{"scamFlags", func(a, b Job) bool { return sameList(a.ScamFlags, b.ScamFlags) }},
+	{"contacts", func(a, b Job) bool { return sameList(a.Contacts, b.Contacts) }},
+	{"bestChannel", func(a, b Job) bool { return a.BestChannel == b.BestChannel }},
+	{"companyNotes", func(a, b Job) bool { return a.CompanyNotes == b.CompanyNotes }},
+	{"roleNotes", func(a, b Job) bool { return a.RoleNotes == b.RoleNotes }},
+	{"sources", func(a, b Job) bool { return sameList(a.Sources, b.Sources) }},
+	{"notes", func(a, b Job) bool { return a.Notes == b.Notes }},
+}
+
+// followupFieldTable compares each follow-up key; the names are "followup.<key>".
+var followupFieldTable = []fieldComparison[Followup]{
+	{"followup.to", func(a, b Followup) bool { return a.To == b.To }},
+	{"followup.subject", func(a, b Followup) bool { return a.Subject == b.Subject }},
+	{"followup.body", func(a, b Followup) bool { return a.Body == b.Body }},
+	{"followup.linkedin", func(a, b Followup) bool { return a.LinkedIn == b.LinkedIn }},
+	{"followup.callNotes", func(a, b Followup) bool { return a.CallNotes == b.CallNotes }},
+	{"followup.emailSentAt", func(a, b Followup) bool { return a.EmailSentAt.Equal(b.EmailSentAt) }},
+	{"followup.linkedinSentAt", func(a, b Followup) bool { return a.LinkedInSentAt.Equal(b.LinkedInSentAt) }},
+	{"followup.callMadeAt", func(a, b Followup) bool { return a.CallMadeAt.Equal(b.CallMadeAt) }},
+}
+
+func changedFollowupKeys(before, after Followup) []string {
+	return changedFields(followupFieldTable, before, after)
 }
 
 // applyFollowup merges a set follow-up key by key, empties a cleared one, and leaves an absent one.
@@ -403,27 +473,6 @@ func validateJobPatch(current Job, patch JobPatch) error {
 		}
 	}
 	return validateExtrasPatch(current.Extras, patch.Extras, jobFieldNames)
-}
-
-// isEmpty is true when the patch names no field at all.
-func (patch JobPatch) isEmpty() bool {
-	named := []bool{
-		patch.Company.IsAbsent(), patch.Title.IsAbsent(), patch.Status.IsAbsent(), patch.StatusNote.IsAbsent(),
-		patch.Score.IsAbsent(), patch.URL.IsAbsent(), patch.Location.IsAbsent(), patch.WorkType.IsAbsent(),
-		patch.SalaryMin.IsAbsent(), patch.SalaryMax.IsAbsent(), patch.PayText.IsAbsent(), patch.Compensation.IsAbsent(),
-		patch.Source.IsAbsent(), patch.Resume.IsAbsent(), patch.ResumeSent.IsAbsent(), patch.FoundAt.IsAbsent(),
-		patch.AppliedAt.IsAbsent(), patch.NextAction.IsAbsent(), patch.NextActionDue.IsAbsent(), patch.HeadsUp.IsAbsent(),
-		patch.Description.IsAbsent(), patch.DescriptionFetchedAt.IsAbsent(), patch.PostingStatus.IsAbsent(),
-		patch.WhyScore.IsAbsent(), patch.Reasons.IsAbsent(), patch.ScamFlags.IsAbsent(), patch.Contacts.IsAbsent(),
-		patch.BestChannel.IsAbsent(), patch.Followup.IsAbsent(), patch.CompanyNotes.IsAbsent(), patch.RoleNotes.IsAbsent(),
-		patch.Sources.IsAbsent(), patch.Notes.IsAbsent(), len(patch.Extras) == 0,
-	}
-	for _, absent := range named {
-		if !absent {
-			return false
-		}
-	}
-	return true
 }
 
 // copyInt detaches a stored number from the patch that supplied it, so a caller who keeps

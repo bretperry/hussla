@@ -88,7 +88,7 @@ func TestEmailHappyPath(t *testing.T) {
 	if email.Status != domain.EmailStatusDraft {
 		t.Fatalf("new email is %v, want draft", email.Status)
 	}
-	approved, err := email.Approve("Owner", patchedAt)
+	approved, err := email.Approve("Owner", email.Version, patchedAt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestEmailHappyPath(t *testing.T) {
 }
 
 func TestEditingAnApprovedEmailReturnsItToDraft(t *testing.T) {
-	approved, err := newTestEmail(t).Approve("Owner", patchedAt)
+	approved, err := newTestEmail(t).Approve("Owner", 1, patchedAt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,8 +135,28 @@ func TestEditingAnApprovedEmailReturnsItToDraft(t *testing.T) {
 	}
 }
 
+func TestApproveRefusesAVersionTheOwnerDidNotSee(t *testing.T) {
+	draft := newTestEmail(t)
+	seen := draft.Version
+	edited, err := draft.Edit(domain.EmailEdit{Body: domain.Set("An agent's late change")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if edited.Version != seen+1 {
+		t.Fatalf("version after an edit = %d, want %d", edited.Version, seen+1)
+	}
+	_, err = edited.Approve("Owner", seen, patchedAt)
+	var stale *domain.StaleVersionError
+	if !errors.As(err, &stale) || !errors.Is(err, domain.ErrChangedSinceRead) || stale.Current != seen+1 {
+		t.Fatalf("approving what the owner saw before the edit: err = %v, want StaleVersionError", err)
+	}
+	if _, err := edited.Approve("Owner", edited.Version, patchedAt); err != nil {
+		t.Fatalf("approving the current version: %v", err)
+	}
+}
+
 func TestFailedSendRetriesThenFails(t *testing.T) {
-	email, err := newTestEmail(t).Approve("Owner", patchedAt)
+	email, err := newTestEmail(t).Approve("Owner", 1, patchedAt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,14 +178,14 @@ func TestFailedSendRetriesThenFails(t *testing.T) {
 	if email.Error != "535 auth failed" {
 		t.Errorf("error = %q", email.Error)
 	}
-	again, err := email.Approve("Owner", patchedAt)
+	again, err := email.Approve("Owner", email.Version, patchedAt)
 	if err != nil || again.Attempts != 0 || again.Error != "" {
 		t.Fatalf("re-approving a failed email: %+v, %v; want attempts and error reset", again, err)
 	}
 }
 
 func TestUncertainSendNeedsNewApproval(t *testing.T) {
-	email, _ := newTestEmail(t).Approve("Owner", patchedAt)
+	email, _ := newTestEmail(t).Approve("Owner", 1, patchedAt)
 	sending, _ := email.StartSending()
 	uncertain, err := sending.MarkSendUncertain()
 	if err != nil || uncertain.Status != domain.EmailStatusFailed || uncertain.Error != domain.UncertainSendError {
@@ -180,7 +200,7 @@ func TestUncertainSendNeedsNewApproval(t *testing.T) {
 }
 
 func TestDeliveryErrorIsCut(t *testing.T) {
-	email, _ := newTestEmail(t).Approve("Owner", patchedAt)
+	email, _ := newTestEmail(t).Approve("Owner", 1, patchedAt)
 	sending, _ := email.StartSending()
 	long := make([]byte, config.MailErrorMaxLength*2)
 	for index := range long {
@@ -199,7 +219,8 @@ type emailOperation struct {
 }
 
 var emailOperations = []emailOperation{
-	{"approve", func(e domain.Email) (domain.Email, error) { return e.Approve("Owner", patchedAt) }},
+	{"approve", func(e domain.Email) (domain.Email, error) { return e.Approve("Owner", e.Version, patchedAt) }},
+	{"approveStale", func(e domain.Email) (domain.Email, error) { return e.Approve("Owner", e.Version-1, patchedAt) }},
 	{"cancel", domain.Email.Cancel},
 	{"startSending", domain.Email.StartSending},
 	{"markSent", func(e domain.Email) (domain.Email, error) { return e.MarkSent("id", patchedAt) }},
@@ -224,8 +245,11 @@ func TestNoOperationMakesAnUndeclaredMove(t *testing.T) {
 		steps := rapid.SliceOfN(rapid.SampledFrom(emailOperations), 1, 30).Draw(t, "operations")
 		for _, step := range steps {
 			next, err := step.run(email)
+			if step.name == "approveStale" && err == nil {
+				t.Fatalf("approved with a stale version from %v", email.Status)
+			}
 			if err != nil {
-				if !errors.Is(err, domain.ErrTransitionNotAllowed) {
+				if !errors.Is(err, domain.ErrTransitionNotAllowed) && !errors.Is(err, domain.ErrChangedSinceRead) {
 					t.Fatalf("%s from %v: unexpected error %v", step.name, email.Status, err)
 				}
 				continue
@@ -235,6 +259,10 @@ func TestNoOperationMakesAnUndeclaredMove(t *testing.T) {
 			}
 			if (email.Status == domain.EmailStatusSent || email.Status == domain.EmailStatusCanceled) && fmt.Sprint(next) != fmt.Sprint(email) {
 				t.Fatalf("%s changed a %v email", step.name, email.Status)
+			}
+			contentChanged := next.Body != email.Body || next.Subject != email.Subject
+			if contentChanged != (next.Version != email.Version) {
+				t.Fatalf("%s: content changed %v but version %d → %d", step.name, contentChanged, email.Version, next.Version)
 			}
 			if next.Status == domain.EmailStatusApproved && next.ApprovedBy == "" {
 				t.Fatalf("%s left an approved email with no approver", step.name)

@@ -1,6 +1,7 @@
 // Outbox pacing knobs: how fast, how often, and when approved email may leave.
 // In the app: the outbox dispatcher checks domain.CanSendNow with these before every send.
 // Used by: internal/domain (DefaultPacingRules, Email.MarkSendFailed), the outbox use-case (Phase 4), GET /api/mail.
+// Uses: time/tzdata (embedded zone data, so the zone loads anywhere).
 //
 // Why pace at all: a burst of near-identical follow-ups reads as a bot to a recruiter, and
 // providers throttle or flag accounts that send in bursts. These are defaults; the setup
@@ -8,7 +9,13 @@
 
 package config
 
-import "time"
+import (
+	"time"
+
+	// The zone database, built in: MailTimeZone must load on a distroless image or a Windows
+	// laptop, where the system has none. Adds about 450 KB to the binary.
+	_ "time/tzdata"
+)
 
 // MailMinGap is the shortest time between two sends.
 const MailMinGap = 4 * time.Minute

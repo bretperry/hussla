@@ -60,7 +60,7 @@ func UpsertReview(reviews []Review, review Review, now time.Time) ([]Review, err
 	}
 	review.Source = strings.TrimSpace(review.Source)
 	if review.FetchedAt.IsZero() {
-		review.FetchedAt = now.UTC()
+		review.FetchedAt = NormalizeTime(now)
 	}
 	updated := append([]Review(nil), reviews...)
 	for index := range updated {

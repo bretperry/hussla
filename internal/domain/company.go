@@ -148,7 +148,8 @@ type Company struct {
 	ProfileFetchedAt time.Time
 	ReviewsFetchedAt time.Time
 
-	Extras Extras
+	Extras  Extras
+	Writers FieldWriters // who last wrote each field; see writer.go
 }
 
 // CompanyPatch names the company fields one write speaks for. The zero CompanyPatch changes nothing.
@@ -172,7 +173,7 @@ type CompanyPatch struct {
 
 // companyFieldNames is every company key the API knows by name (read-only ones included), so none can be an extra.
 var companyFieldNames = map[string]bool{
-	"slug": true, "name": true, "updatedAt": true, "quickTake": true, "profile": true,
+	"slug": true, "name": true, "updatedAt": true, "writers": true, "quickTake": true, "profile": true,
 	"financials": true, "facts": true, "anecdotes": true, "news": true, "reviews": true,
 	"interview": true, "sources": true, "notes": true, "profileFetchedAt": true, "reviewsFetchedAt": true,
 }
@@ -187,31 +188,33 @@ func NewCompany(name string, now time.Time) (Company, error) {
 	if slug == "" {
 		return Company{}, invalid("name", "needs at least one letter or digit")
 	}
-	return Company{Slug: slug, Name: name, UpdatedAt: now.UTC()}, nil
+	return Company{Slug: slug, Name: name, UpdatedAt: NormalizeTime(now)}, nil
 }
 
-// ApplyCompanyPatch writes a patch onto a stored company. The slug never changes, even when the name does,
-// so links and jobs keep pointing at the same page.
-func ApplyCompanyPatch(current Company, patch CompanyPatch, now time.Time) (Company, error) {
+// ApplyCompanyPatch writes `writer`'s patch onto a stored company. An agent patch that would change
+// a field the owner last wrote is refused whole (OwnerFieldsError). The slug never changes, even
+// when the name does, so links and jobs keep pointing at the same page.
+func ApplyCompanyPatch(current Company, patch CompanyPatch, writer Writer, now time.Time) (PatchResult[Company], error) {
+	fail := func(err error) (PatchResult[Company], error) { return PatchResult[Company]{}, err }
 	if patch.Name.IsCleared() || (patch.Name.IsSet() && strings.TrimSpace(patch.Name.Value()) == "") {
-		return Company{}, invalid("name", "can't be empty")
+		return fail(invalid("name", "can't be empty"))
 	}
 	if patch.Reviews.IsSet() {
 		for _, review := range patch.Reviews.Value() {
 			if err := review.Validate(); err != nil {
-				return Company{}, invalid("reviews", err.Error())
+				return fail(invalid("reviews", err.Error()))
 			}
 		}
 	}
 	if patch.News.IsSet() {
 		for _, item := range patch.News.Value() {
 			if strings.TrimSpace(item.Headline) == "" {
-				return Company{}, invalid("news", "every item needs a headline")
+				return fail(invalid("news", "every item needs a headline"))
 			}
 		}
 	}
 	if err := validateExtrasPatch(current.Extras, patch.Extras, companyFieldNames); err != nil {
-		return Company{}, err
+		return fail(err)
 	}
 	next := current
 	next.Name = trimmed(patch.Name).Apply(current.Name)
@@ -228,8 +231,63 @@ func ApplyCompanyPatch(current Company, patch CompanyPatch, now time.Time) (Comp
 	next.ProfileFetchedAt = patch.ProfileFetchedAt.Apply(current.ProfileFetchedAt)
 	next.ReviewsFetchedAt = patch.ReviewsFetchedAt.Apply(current.ReviewsFetchedAt)
 	next.Extras = applyExtras(current.Extras, patch.Extras)
-	next.UpdatedAt = now.UTC()
-	return next, nil
+	changed := append(changedFields(companyFieldTable, current, next), changedExtras(current.Extras, next.Extras)...)
+	writers, changed, err := settleWriters(current.Writers, changed, writer)
+	if err != nil {
+		return fail(err)
+	}
+	next.Writers = writers
+	if len(changed) > 0 {
+		next.UpdatedAt = NormalizeTime(now)
+	}
+	return PatchResult[Company]{Record: next, Before: current, Changed: changed}, nil
+}
+
+// companyFieldTable compares each patchable company field by its API name.
+var companyFieldTable = []fieldComparison[Company]{
+	{"name", func(a, b Company) bool { return a.Name == b.Name }},
+	{"quickTake", func(a, b Company) bool { return a.QuickTake == b.QuickTake }},
+	{"profile", func(a, b Company) bool { return sameProfile(a.Profile, b.Profile) }},
+	{"financials", func(a, b Company) bool { return sameFinancials(a.Financials, b.Financials) }},
+	{"facts", func(a, b Company) bool { return sameList(a.Facts, b.Facts) }},
+	{"anecdotes", func(a, b Company) bool { return sameList(a.Anecdotes, b.Anecdotes) }},
+	{"news", func(a, b Company) bool { return sameList(a.News, b.News) }},
+	{"reviews", func(a, b Company) bool { return sameListFunc(a.Reviews, b.Reviews, sameReview) }},
+	{"interview", func(a, b Company) bool { return a.Interview == b.Interview }},
+	{"sources", func(a, b Company) bool { return sameList(a.Sources, b.Sources) }},
+	{"notes", func(a, b Company) bool { return a.Notes == b.Notes }},
+	{"profileFetchedAt", func(a, b Company) bool { return a.ProfileFetchedAt.Equal(b.ProfileFetchedAt) }},
+	{"reviewsFetchedAt", func(a, b Company) bool { return a.ReviewsFetchedAt.Equal(b.ReviewsFetchedAt) }},
+}
+
+func sameProfile(a, b Profile) bool {
+	founded := sameIntPointer(a.Founded, b.Founded)
+	a.Founded, b.Founded = nil, nil
+	return founded && a == b
+}
+
+func sameFinancials(a, b Financials) bool {
+	return a.TotalFunding == b.TotalFunding && sameInt64Pointer(a.TotalFundingUSD, b.TotalFundingUSD) &&
+		sameFundingRound(a.LastRound, b.LastRound) &&
+		a.Valuation == b.Valuation && sameInt64Pointer(a.ValuationUSD, b.ValuationUSD) &&
+		a.Revenue == b.Revenue && sameInt64Pointer(a.RevenueUSD, b.RevenueUSD) &&
+		a.Growth == b.Growth && a.Profitability == b.Profitability && a.MarketCap == b.MarketCap &&
+		a.StockNote == b.StockNote && sameList(a.Investors, b.Investors) && sameList(a.Layoffs, b.Layoffs) &&
+		a.HealthSignal == b.HealthSignal && a.HealthNote == b.HealthNote
+}
+
+func sameFundingRound(a, b *FundingRound) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Type == b.Type && a.Amount == b.Amount && sameInt64Pointer(a.AmountUSD, b.AmountUSD) &&
+		a.Date == b.Date && sameList(a.LeadInvestors, b.LeadInvestors)
+}
+
+func sameReview(a, b Review) bool {
+	return a.Source == b.Source && sameFloatPointer(a.Rating, b.Rating) && a.RatingScale == b.RatingScale &&
+		sameIntPointer(a.ReviewCount, b.ReviewCount) && a.Summary == b.Summary && sameList(a.Pros, b.Pros) &&
+		sameList(a.Cons, b.Cons) && a.URL == b.URL && a.FetchedAt.Equal(b.FetchedAt)
 }
 
 // UpsertNews adds one headline without resending the list: an item with the same URL is replaced,

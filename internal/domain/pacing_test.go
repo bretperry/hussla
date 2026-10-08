@@ -45,6 +45,7 @@ func TestCanSendNowAtKnownMoments(t *testing.T) {
 		{"inside the gap", at(10, 7, 12, 3), at(10, 7, 12, 0), 1, 0, domain.PacingTooSoon, at(10, 7, 12, 4)},
 		{"gap plus jitter", at(10, 7, 12, 5), at(10, 7, 12, 0), 1, 2 * time.Minute, domain.PacingTooSoon, at(10, 7, 12, 6)},
 		{"exactly the gap", at(10, 7, 12, 4), at(10, 7, 12, 0), 1, 0, domain.PacingSendNow, time.Time{}},
+		{"last send in the future counts as now", at(10, 7, 12, 0), at(10, 7, 15, 0), 1, 0, domain.PacingTooSoon, at(10, 7, 12, 4)},
 		{"gap ends after the window", at(10, 7, 17, 58), at(10, 7, 17, 57), 1, 0, domain.PacingTooSoon, at(10, 8, 8, 0)},
 		// US DST starts 2026-03-08 at 02:00 and ends 2026-11-01 at 02:00; the window is local hours either way.
 		{"DST start day, 8am local", at(3, 8, 8, 0), time.Time{}, 0, 0, domain.PacingSendNow, time.Time{}},
@@ -158,6 +159,58 @@ func TestPacingNeverBreaksItsRules(t *testing.T) {
 				if gap := send.at.Sub(previous.at); gap < rules.MinGap+previous.jitter {
 					t.Fatalf("sends %v apart, inside the gap %v + jitter %v", gap, rules.MinGap, previous.jitter)
 				}
+			}
+		}
+	})
+}
+
+// Property: with the clock jumping backwards and forwards between asks (sleep, NTP, a wrong RTC),
+// no send lands within gap + jitter of the latest send on record, no local day goes over the cap,
+// and a refusal's NotBefore is later than now and, when only the gap is in the way, at most one
+// gap + jitter ahead (a send stamped in the future counts as now).
+func TestPacingSurvivesClockJumps(t *testing.T) {
+	location := newYork(t)
+	rapid.Check(t, func(t *rapid.T) {
+		rules := domain.DefaultPacingRules(location)
+		rules.WindowStartHour, rules.WindowEndHour = 0, 24 // jumps, not the window, are under test
+		rules.DailyLimit = rapid.IntRange(1, 30).Draw(t, "dailyLimit")
+		now := time.Date(2026, 10, 7, 12, 0, 0, 0, location)
+		var sends []simulatedSend
+		for range rapid.IntRange(1, 300).Draw(t, "asks") {
+			now = now.Add(time.Duration(rapid.IntRange(-180, 120).Draw(t, "stepMinutes")) * time.Minute)
+			latest := simulatedSend{}
+			for _, send := range sends {
+				if send.at.After(latest.at) {
+					latest = send
+				}
+			}
+			rules.Jitter = latest.jitter
+			sentToday := 0
+			for _, send := range sends {
+				if !send.at.Before(domain.StartOfLocalDay(now, location)) {
+					sentToday++
+				}
+			}
+			decision := domain.CanSendNow(now, latest.at, sentToday, rules)
+			if !decision.Allowed() {
+				if !decision.NotBefore.After(now) {
+					t.Fatalf("refused at %v but NotBefore %v isn't later", now, decision.NotBefore)
+				}
+				if decision.Verdict == domain.PacingTooSoon && decision.NotBefore.After(now.Add(rules.MinGap+rules.Jitter)) {
+					t.Fatalf("NotBefore %v is more than one gap after %v", decision.NotBefore, now)
+				}
+				continue
+			}
+			if !latest.at.IsZero() && now.Before(latest.at.Add(rules.MinGap+latest.jitter)) {
+				t.Fatalf("sent at %v, inside the gap after the latest send %v", now, latest.at)
+			}
+			sends = append(sends, simulatedSend{at: now, jitter: time.Duration(rapid.IntRange(0, 180).Draw(t, "jitterSeconds")) * time.Second})
+		}
+		perDay := map[time.Time]int{}
+		for _, send := range sends {
+			day := domain.StartOfLocalDay(send.at, location)
+			if perDay[day]++; perDay[day] > rules.DailyLimit {
+				t.Fatalf("%d sends on %v, over the cap of %d", perDay[day], day, rules.DailyLimit)
 			}
 		}
 	})

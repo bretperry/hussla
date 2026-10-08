@@ -53,7 +53,7 @@ func NewEvent(jobID, actor, action, detail string, at time.Time) (Event, error) 
 	}
 	return Event{
 		JobID:  jobID,
-		At:     at.UTC(),
+		At:     NormalizeTime(at),
 		Actor:  actor,
 		Action: truncateUTF8(action, MaxEventActionLength),
 		Detail: truncateUTF8(detail, MaxEventDetailLength),

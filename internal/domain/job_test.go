@@ -21,6 +21,12 @@ var (
 
 func intPointer(value int) *int { return &value }
 
+// applyJob runs ApplyJobPatch at patchedAt and unpacks the job and status move.
+func applyJob(job domain.Job, patch domain.JobPatch, writer domain.Writer) (domain.Job, domain.JobStatusChange, error) {
+	result, err := domain.ApplyJobPatch(job, patch, writer, patchedAt)
+	return result.Record, result.StatusChange, err
+}
+
 func newTestJob(t *testing.T) domain.Job {
 	t.Helper()
 	job, err := domain.NewJob("example-co-staff-engineer", domain.JobPatch{
@@ -32,7 +38,7 @@ func newTestJob(t *testing.T) domain.Job {
 			To:      domain.Set("recruiter@example.com"),
 			Subject: domain.Set("Staff Engineer: following up"),
 		}),
-	}, createdAt)
+	}, domain.WriterAgent, createdAt)
 	if err != nil {
 		t.Fatalf("NewJob: %v", err)
 	}
@@ -72,7 +78,7 @@ func TestNewJobRefusesMissingBasics(t *testing.T) {
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			_, err := domain.NewJob(testCase.id, testCase.patch, createdAt)
+			_, err := domain.NewJob(testCase.id, testCase.patch, domain.WriterAgent, createdAt)
 			var validationError *domain.ValidationError
 			if !errors.As(err, &validationError) || validationError.Field != testCase.field {
 				t.Fatalf("err = %v, want a ValidationError on %q", err, testCase.field)
@@ -84,7 +90,7 @@ func TestNewJobRefusesMissingBasics(t *testing.T) {
 func TestNewJobStraightToAppliedStampsAppliedAt(t *testing.T) {
 	job, err := domain.NewJob("a-b", domain.JobPatch{
 		Company: domain.Set("A"), Title: domain.Set("B"), Status: domain.Set(domain.JobStatusApplied),
-	}, createdAt)
+	}, domain.WriterAgent, createdAt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +120,7 @@ func TestApplyJobPatchStatusAndAppliedAt(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			job := newTestJob(t)
 			job.Status, job.AppliedAt = testCase.from, testCase.existing
-			next, change, err := domain.ApplyJobPatch(job, testCase.patch, patchedAt)
+			next, change, err := applyJob(job, testCase.patch, domain.WriterAgent)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -130,9 +136,9 @@ func TestApplyJobPatchStatusAndAppliedAt(t *testing.T) {
 
 func TestApplyJobPatchFollowupMergesByKey(t *testing.T) {
 	job := newTestJob(t)
-	next, _, err := domain.ApplyJobPatch(job, domain.JobPatch{
+	next, _, err := applyJob(job, domain.JobPatch{
 		Followup: domain.Set(domain.FollowupPatch{EmailSentAt: domain.Set(patchedAt), Subject: domain.Clear[string]()}),
-	}, patchedAt)
+	}, domain.WriterAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +146,7 @@ func TestApplyJobPatchFollowupMergesByKey(t *testing.T) {
 	if !reflect.DeepEqual(next.Followup, want) {
 		t.Fatalf("followup = %+v, want %+v", next.Followup, want)
 	}
-	cleared, _, err := domain.ApplyJobPatch(next, domain.JobPatch{Followup: domain.Clear[domain.FollowupPatch]()}, patchedAt)
+	cleared, _, err := applyJob(next, domain.JobPatch{Followup: domain.Clear[domain.FollowupPatch]()}, domain.WriterAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,11 +157,11 @@ func TestApplyJobPatchFollowupMergesByKey(t *testing.T) {
 
 func TestApplyJobPatchListsReplaceWholeAndNullClears(t *testing.T) {
 	job := newTestJob(t)
-	next, _, err := domain.ApplyJobPatch(job, domain.JobPatch{
+	next, _, err := applyJob(job, domain.JobPatch{
 		Reasons: domain.Set([]string{"Remote"}),
 		Score:   domain.Clear[*int](),
 		Extras:  domain.ExtrasPatch{"statusNote2": domain.Set(domain.RawJSON(`{"a":1}`))},
-	}, patchedAt)
+	}, domain.WriterAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +174,7 @@ func TestApplyJobPatchListsReplaceWholeAndNullClears(t *testing.T) {
 	if next.Extras["statusNote2"] != `{"a":1}` {
 		t.Errorf("extras = %v", next.Extras)
 	}
-	again, _, err := domain.ApplyJobPatch(next, domain.JobPatch{Extras: domain.ExtrasPatch{"statusNote2": domain.Clear[domain.RawJSON]()}}, patchedAt)
+	again, _, err := applyJob(next, domain.JobPatch{Extras: domain.ExtrasPatch{"statusNote2": domain.Clear[domain.RawJSON]()}}, domain.WriterAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +190,7 @@ func TestApplyJobPatchRefusesClearingRequiredFields(t *testing.T) {
 		"title":   {Title: domain.Set("")},
 		"status":  {Status: domain.Clear[domain.JobStatus]()},
 	} {
-		if _, _, err := domain.ApplyJobPatch(job, patch, patchedAt); err == nil {
+		if _, _, err := applyJob(job, patch, domain.WriterAgent); err == nil {
 			t.Errorf("clearing %s: want an error", name)
 		}
 	}
@@ -192,7 +198,7 @@ func TestApplyJobPatchRefusesClearingRequiredFields(t *testing.T) {
 
 func TestEmptyPatchChangesNothing(t *testing.T) {
 	job := newTestJob(t)
-	next, change, err := domain.ApplyJobPatch(job, domain.JobPatch{}, patchedAt)
+	next, change, err := applyJob(job, domain.JobPatch{}, domain.WriterAgent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,14 +317,14 @@ func TestPatchNeverTouchesUnnamedFields(t *testing.T) {
 		if extraKey != "" {
 			patch.Extras = domain.ExtrasPatch{extraKey: domain.Set(domain.RawJSON(`"x"`))}
 		}
-		next, change, err := domain.ApplyJobPatch(job, patch, patchedAt)
+		next, change, err := applyJob(job, patch, domain.WriterAgent)
 		if err != nil {
 			t.Fatalf("ApplyJobPatch: %v", err)
 		}
 		before, after := reflect.ValueOf(job), reflect.ValueOf(next)
 		for index := range before.NumField() {
 			name := before.Type().Field(index).Name
-			if named[name] || name == "UpdatedAt" || name == "CompanySlug" {
+			if named[name] || name == "UpdatedAt" || name == "CompanySlug" || name == "Writers" {
 				continue
 			}
 			if name == "AppliedAt" && change.Changed && next.Status == domain.JobStatusApplied && job.AppliedAt.IsZero() {
@@ -353,11 +359,11 @@ func TestPatchIsIdempotent(t *testing.T) {
 				field.fill(t, &patch, false)
 			}
 		}
-		once, _, err := domain.ApplyJobPatch(job, patch, patchedAt)
+		once, _, err := applyJob(job, patch, domain.WriterAgent)
 		if err != nil {
 			t.Fatal(err)
 		}
-		twice, change, err := domain.ApplyJobPatch(once, patch, patchedAt)
+		twice, change, err := applyJob(once, patch, domain.WriterAgent)
 		if err != nil {
 			t.Fatal(err)
 		}
