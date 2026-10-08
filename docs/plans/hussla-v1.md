@@ -81,8 +81,8 @@ mail must keep these true and test them.
 
 | Phase | What | After | Model | State |
 |---|---|---|---|---|
-| 0 | Repo from template, stacks (Go, TypeScript, React, infra), placeholders, architecture | —; repo created by Bret | quick (low) | running |
-| 1 | Go domain types, pure rules, knobs; API contract (OpenAPI) and generated UI types | 0 | deep (high) | |
+| 0 | Repo from template, stacks (Go, TypeScript, React, infra), placeholders, architecture | —; repo created by Bret | quick (low) | QA passed (#1) |
+| 1 | Go domain types, pure rules, knobs; API contract (OpenAPI) and generated UI types | 0 | deep (high) | QA passed (#2); stacked on #1 |
 | 2 | Storage ports, SQLite adapters, migrations, seed import | 1 | workhorse (high) | |
 | 3 | HTTP API, auth (embedded Tailscale, owner enrollment, local sign-in, passkey step-up, agent keys), use-cases | 2 | deep (xhigh) | |
 | 3b | MCP endpoint for agents, "Add an agent" setup snippet | 3, 5 | workhorse (high) | |
