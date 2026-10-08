@@ -42,6 +42,10 @@ type Options struct {
 	Now      func() time.Time // time.Now when nil
 	// AnnounceSetupCode prints a new setup code where the owner will find it (the log). Required.
 	AnnounceSetupCode func(code string)
+	// OwnerLogin pins the owner to one tailnet login (HUSSLA_OWNER_LOGIN). When set, only that
+	// login can claim with the setup code or be adopted as the node's owner; "" allows anyone
+	// eligible. It never replaces an owner already recorded.
+	OwnerLogin string
 }
 
 // Service is the auth use-case. It is safe for concurrent use.
@@ -51,6 +55,7 @@ type Service struct {
 	signIn   SignInTokens
 	now      func() time.Time
 	announce func(code string)
+	pinned   string
 
 	mu         sync.Mutex
 	setup      setupCode
@@ -71,8 +76,15 @@ func New(options Options) *Service {
 	}
 	return &Service{
 		store: options.Store, ceremony: options.Ceremony, signIn: options.SignIn, now: now, announce: announce,
+		pinned:     strings.TrimSpace(options.OwnerLogin),
 		challenges: map[string]challenge{}, stepUps: map[string]stepUp{}, usedSignIn: map[string]time.Time{},
 	}
+}
+
+// allowedLogin reports whether a tailnet login may become the owner under the pin.
+// Tailnet logins are email-like, so case is ignored.
+func (s *Service) allowedLogin(login string) bool {
+	return s.pinned == "" || strings.EqualFold(strings.TrimSpace(login), s.pinned)
 }
 
 // randomSecret is 32 random bytes as unpadded base64url (256 bits: no guessing, no rate limit needed).

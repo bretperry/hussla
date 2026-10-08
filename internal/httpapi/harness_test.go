@@ -65,7 +65,10 @@ type rig struct {
 	key       *virtualauthn.Authenticator
 }
 
-func newRig(t *testing.T) *rig {
+func newRig(t *testing.T) *rig { return newRigPinned(t, "") }
+
+// newRigPinned is newRig with the owner pinned to one tailnet login (HUSSLA_OWNER_LOGIN).
+func newRigPinned(t *testing.T, ownerLogin string) *rig {
 	t.Helper()
 	r := &rig{
 		t: t, store: fakes.New(), tailnet: fakeauth.NewTailnet(), signIn: &fakeauth.SignInTokens{},
@@ -76,7 +79,7 @@ func newRig(t *testing.T) *rig {
 	r.tailnet.Add(taggedAddr, taggedPeer)
 	r.auth = auth.New(auth.Options{
 		Store: r.store, Ceremony: passkey.Ceremony{}, SignIn: r.signIn, Now: r.clock.Now,
-		AnnounceSetupCode: func(code string) { r.setupCode = code },
+		AnnounceSetupCode: func(code string) { r.setupCode = code }, OwnerLogin: ownerLogin,
 	})
 	dir := t.TempDir()
 	blobs, err := filestore.NewBlobs(filepath.Join(dir, "files"))

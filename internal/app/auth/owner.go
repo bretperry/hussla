@@ -103,7 +103,7 @@ func (s *Service) Enrolled(ctx context.Context) (bool, error) {
 // is recorded yet. A recorded owner is never replaced (a node re-authenticated by someone else
 // doesn't hand them the data); adopted is false then.
 func (s *Service) AdoptNodeOwner(ctx context.Context, nodeOwner TailnetPeer) (adopted bool, err error) {
-	if nodeOwner.Tagged || nodeOwner.UserID == "" {
+	if nodeOwner.Tagged || nodeOwner.UserID == "" || !s.allowedLogin(nodeOwner.Login) {
 		return false, nil
 	}
 	err = s.store.Atomically(ctx, func(tx store.Tx) error {
@@ -249,7 +249,7 @@ func (s *Service) Claim(ctx context.Context, caller Principal, typed string) (Pr
 		if err != nil {
 			return Principal{}, "", err
 		}
-		if caller.peer.Tagged || caller.peer.UserID == "" || (found && record.TailnetUserID != "") {
+		if caller.peer.Tagged || caller.peer.UserID == "" || !s.allowedLogin(caller.peer.Login) || (found && record.TailnetUserID != "") {
 			return Principal{}, "", ErrNotOwner
 		}
 	}

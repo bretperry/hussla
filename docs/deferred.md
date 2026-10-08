@@ -296,10 +296,3 @@ File bytes live in `<DATA_DIR>/files/<id>` and résumés in `<DATA_DIR>/resumes/
 `open` · recorded 2026-10-08 · from Phase 3 (`docs/plans/hussla-v1.md`)
 
 Passkeys can be added (setup code for the first on each address, then a tap with an existing one) and listed, not removed or renamed. An owner who loses every passkey for an address can still read and edit there, but no owner-only action (approve, delete, settings, keys) works on it until a passkey is added, and adding one needs a tap or a setup code, which that address no longer gets. **Why deferred:** Phase 3 is the API's security core; managing passkeys is a Settings screen (Phase 5), and two registered devices (phone and laptop) cover a single loss. **Where:** `internal/app/auth/passkeys.go`, settings key `auth.passkeys`. **If we take it:** `DELETE /api/passkeys/{id}` behind a tap with a *different* passkey (refuse removing the last one), and `PATCH` for the name; add both to `api/openapi.yaml` and the auth matrix. For recovery, a `hussla reset-passkeys` command (access to the data directory is the proof, like `hussla open`) that sets the address's passkeys aside so the setup screen issues a code again.
-
-## A tagged-node install can be claimed by any untagged tailnet device holding the setup code
-
-`open` · recorded 2026-10-08 · from Phase 3 (`docs/plans/hussla-v1.md`)
-
-When the node is tagged (no owning user) or was first claimed from the local door, the first untagged tailnet user to type the setup code becomes the owner. The code is only in the server's log, so this needs log access. **Why deferred:** it is the plan's design (the code is the proof), and restricting it to one user would need an admin-provided user id. **Where:** `auth.Service.Claim`. **If we take it:** an optional `HUSSLA_OWNER_LOGIN` env var that `Claim` and `AdoptNodeOwner` must match.
-

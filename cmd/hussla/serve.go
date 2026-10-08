@@ -49,15 +49,16 @@ const localAddressFile = "local-address"
 
 // settings is the environment, read once.
 type settings struct {
-	dataDir   string
-	hostname  string
-	authKey   string
-	tailnet   bool
-	localPort string // "" for none
+	dataDir    string
+	hostname   string
+	authKey    string
+	tailnet    bool
+	localPort  string // "" for none
+	ownerLogin string // pins the owner's tailnet login; "" for anyone eligible
 }
 
 func settingsFrom(getenv func(string) string) settings {
-	result := settings{dataDir: getenv("DATA_DIR"), hostname: getenv("HUSSLA_HOSTNAME"), authKey: getenv("TS_AUTHKEY"), tailnet: getenv("HUSSLA_TAILNET") != "off", localPort: getenv("HUSSLA_LOCAL_PORT")}
+	result := settings{dataDir: getenv("DATA_DIR"), hostname: getenv("HUSSLA_HOSTNAME"), authKey: getenv("TS_AUTHKEY"), tailnet: getenv("HUSSLA_TAILNET") != "off", localPort: getenv("HUSSLA_LOCAL_PORT"), ownerLogin: getenv("HUSSLA_OWNER_LOGIN")}
 	if result.dataDir == "" {
 		result.dataDir = "data"
 	}
@@ -92,7 +93,7 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 	}
 	defer func() { _ = storage.Close() }()
 
-	services, err := buildServices(dataDir, storage, logger)
+	services, err := buildServices(dataDir, storage, logger, env.ownerLogin)
 	if err != nil {
 		return err
 	}
@@ -198,7 +199,7 @@ func newServer(handler http.Handler) *http.Server {
 	return &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 }
 
-func buildServices(dataDir string, storage *sqlite.Store, logger *slog.Logger) (httpapi.Deps, error) {
+func buildServices(dataDir string, storage *sqlite.Store, logger *slog.Logger, ownerLogin string) (httpapi.Deps, error) {
 	blobs, err := filestore.NewBlobs(filepath.Join(dataDir, "files"))
 	if err != nil {
 		return httpapi.Deps{}, fmt.Errorf("files: %w", err)
@@ -217,7 +218,7 @@ func buildServices(dataDir string, storage *sqlite.Store, logger *slog.Logger) (
 	}
 	return httpapi.Deps{
 		Auth: auth.New(auth.Options{
-			Store: storage, Ceremony: passkey.Ceremony{}, SignIn: signinfile.New(dataDir),
+			Store: storage, Ceremony: passkey.Ceremony{}, SignIn: signinfile.New(dataDir), OwnerLogin: ownerLogin,
 			AnnounceSetupCode: func(code string) {
 				logger.Warn("SETUP CODE: enter it on the setup screen to claim this install and add your passkey", "code", code)
 			},

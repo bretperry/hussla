@@ -9,6 +9,7 @@
 //   HUSSLA_HOSTNAME     the node's tailnet name (default hussla → https://hussla.<tailnet>.ts.net)
 //   HUSSLA_TAILNET      "off" to run without Tailscale (laptop, local listener only)
 //   HUSSLA_LOCAL_PORT   the local listener's port on 127.0.0.1 (default 8484; "off" for none; 0 picks one)
+//   HUSSLA_OWNER_LOGIN  your tailnet login (you@example.com); only it can claim the install
 
 package main
 

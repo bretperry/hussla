@@ -6,6 +6,7 @@
 package httpapi_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -107,6 +108,24 @@ func TestSetupCodeLimits(t *testing.T) {
 	}
 	// Used once.
 	r.must(http.StatusConflict, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": r.setupCode}))
+}
+
+// With the owner pinned, another tailnet user holding the right code is refused without spending
+// it, and is never adopted as the node's owner; the pinned login (any case) still claims.
+func TestPinnedOwnerLogin(t *testing.T) {
+	r := newRigPinned(t, "Owner@Example.com")
+	if adopted, err := r.auth.AdoptNodeOwner(context.Background(), otherPeer); err != nil || adopted {
+		t.Fatalf("adopted an unpinned node owner: %v %v", adopted, err)
+	}
+	code := r.setupCode
+	r.must(http.StatusForbidden, call{method: http.MethodPost, path: "/api/setup/claim", body: map[string]string{"code": code}, from: otherAddr, origin: tailnetOrigin})
+	if r.setupCode != code {
+		t.Fatal("a refused login rotated the code")
+	}
+	claimed := r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": code})).json(t)
+	if claimed["next"] != "POST /api/passkeys/register/begin" {
+		t.Fatalf("claim: %v", claimed)
+	}
 }
 
 func lowerNoDashes(code string) string {
