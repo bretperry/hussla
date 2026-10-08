@@ -16,13 +16,6 @@ target/
 build/
 # Android Studio writes the machine's SDK path here (sdk.dir); it is per machine, never committed.
 local.properties
-# [stack:python]
-.venv/
-__pycache__/
-.ruff_cache/
-.hypothesis/
-.pytest_cache/
-# [/stack:python]
 # Terraform state, plans, real variable values, and crash logs hold secrets. Not fenced with the
 # infra pack on purpose: `stack:remove infra` must never make one committable. Only
 # *.tfvars.example is committed (it doesn't match *.tfvars); so is .terraform.lock.hcl, which

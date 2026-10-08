@@ -44,18 +44,6 @@ Not in `harness.json`, so merged by hand: `.claude/settings.json` (its hooks blo
 <!-- [stack:go] -->
 - Go: `.golangci.yml`.
 <!-- [/stack:go] -->
-<!-- [stack:swift] -->
-- Swift: `swift-layers.json`.
-<!-- [/stack:swift] -->
-<!-- [stack:kotlin] -->
-- Kotlin: `build.gradle.kts` → `LAYERS`, and `config/detekt/detekt.yml`.
-<!-- [/stack:kotlin] -->
-<!-- [stack:cpp] -->
-- C++: `CMakeLists.txt` (your targets), `cpp-layers.json` (your layer rows, `tidyOff`), and `.clang-tidy`.
-<!-- [/stack:cpp] -->
-<!-- [stack:sql-migrations] -->
-- SQL migrations: `.squawk.toml` (skipped rules, `assume_in_transaction`, applied history in `excluded_paths`).
-<!-- [/stack:sql-migrations] -->
 
 After any rule change run `pnpm rules:sync`; `pnpm rules:check` fails when the generated copies drift.
 

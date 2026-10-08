@@ -1,4 +1,4 @@
-module example.com/app
+module github.com/bretperry/hussla
 
 go 1.25.0
 

@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
-  View ids for views built in code (no layout XML), so tests can find them.
-  In the app: MainActivity sets R.id.status on its text.
-  Used by: MainActivity.kt, MainActivityTest.kt.
--->
-<resources>
-    <item name="status" type="id" />
-</resources>

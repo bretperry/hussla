@@ -1,7 +1,0 @@
-# clang-tidy for the tests: the root config, minus what GoogleTest's macros set off.
-# Function complexity counts every EXPECT_* and ASSERT_* as a branch, so a plain test reads as complex.
-# Every check in stacks/cpp/sources.mjs REQUIRED_TIDY_CHECKS must stay on here too, and anything else turned
-# off here must be listed in cpp-layers.json "tidyOff" for this directory (pnpm cpp:lint checks both).
-InheritParentConfig: true
-Checks: >
-  -readability-function-cognitive-complexity

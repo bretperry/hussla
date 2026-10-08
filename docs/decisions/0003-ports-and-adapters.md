@@ -31,24 +31,9 @@
 <!-- [stack:typescript] -->
   TypeScript pack: a dependency-cruiser config, recorded in 0001.
 <!-- [/stack:typescript] -->
-<!-- [stack:rust] -->
-  Rust pack: crates in a line (`domain` → `app` → `adapters`) so cargo rejects an inward dependency as a cycle, plus a layer map in `Cargo.toml` checked by `stacks/rust/boundaries.mjs` for what a cycle can't say (domain takes no packages; a typo'd row fails).
-<!-- [/stack:rust] -->
-<!-- [stack:python] -->
-  Python pack: an import-linter `layers` contract plus ruff's banned-import list, both in `pyproject.toml`.
-<!-- [/stack:python] -->
 <!-- [stack:go] -->
   Go pack: `depguard` rules in `.golangci.yml`; a gate script plants a violation per layer so a misspelled path can't pass silently (`go.mdc`).
 <!-- [/stack:go] -->
-<!-- [stack:swift] -->
-  Swift pack: SwiftPM targets as layers, plus `swift-layers.json` read by a source-level import check (SwiftPM lets a target import an undeclared module another target built first), with a gate script that plants a violation per rule (`swift.mdc`).
-<!-- [/stack:swift] -->
-<!-- [stack:kotlin] -->
-  Kotlin pack: Gradle modules per layer, a `LAYERS` map checked on every build, and a detekt import rule for the JDK's I/O; a gate script plants a violation of each so a stale path can't pass silently (`kotlin.mdc`).
-<!-- [/stack:kotlin] -->
-<!-- [stack:cpp] -->
-  C++ pack: CMake targets per layer, with `cpp-layers.json` checked against the build as evaluated (File API links, the compiler's include record, each layer's undefined symbols); a gate script plants a violation of each so a stale path can't pass silently (`cpp.mdc`).
-<!-- [/stack:cpp] -->
 
 ## Consequences
 

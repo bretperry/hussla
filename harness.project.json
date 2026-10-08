@@ -1,0 +1,28 @@
+{
+  "base": "",
+  "skip": {
+    "src/domain/note.ts": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "src/domain/note.test.ts": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "src/config/sync.ts": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "src/server/ports/note-sync.ts": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "src/server/services/note-sync.ts": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "src/server/services/note-sync.chaos.test.ts": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "src/test/chaos/": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "internal/domain/note.go": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "internal/domain/note_test.go": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "internal/domain/errors.go": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "internal/domain/outcome.go": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "internal/domain/outcome_test.go": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "internal/config/sync.go": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "internal/app/notesync/": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
+    "internal/testsupport/chaos/": "Template demo (note-sync); Hussla has its own domain. Don't bring it back."
+  },
+  "removedStacks": [
+    "cpp",
+    "kotlin",
+    "python",
+    "rust",
+    "sql-migrations",
+    "swift"
+  ]
+}

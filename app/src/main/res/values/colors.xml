@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
-  The app's colours, named by what they paint.
-  In the app: the launcher icon's background (mipmap-anydpi/ic_launcher.xml).
--->
-<resources>
-    <color name="ic_launcher_background">#3F51B5</color>
-</resources>

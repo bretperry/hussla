@@ -1,3 +1,0 @@
-# Defaults except line width: the repo's code and why-comments run to 120 columns, and rustfmt's 100 splits them awkwardly.
-# Stable options only, so no nightly toolchain is needed. Part of the rust stack pack.
-max_width = 120

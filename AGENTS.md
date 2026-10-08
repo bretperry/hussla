@@ -1,6 +1,6 @@
-# {{PROJECT_NAME}} — agent guide
+# Hussla — agent guide
 
-{{ONE_LINE_PITCH}}
+A self-hosted job-search tracker on Bret's NAS: a page per job and per company, agents update it over an API, and follow-ups go out through a pluggable email provider only after Bret approves them.
 
 ## Communication style
 
@@ -40,31 +40,12 @@ tests, generated-file drift), then each stack pack's — and is what pre-push ru
 <!-- [stack:typescript] -->
 TypeScript pack, singly: `pnpm typecheck`, `pnpm lint`, `pnpm boundaries`, `pnpm test`, `pnpm knip`.
 <!-- [/stack:typescript] -->
-<!-- [stack:rust] -->
-Rust pack, singly: `pnpm rust:fmt`, `pnpm rust:lint`, `pnpm rust:boundaries`, `pnpm rust:test`, `pnpm rust:deny`, `pnpm rust:advisories` (needs network; not in `check`).
-Needs `cargo install cargo-nextest cargo-deny --locked` once.
-<!-- [/stack:rust] -->
-<!-- [stack:python] -->
-Python pack, singly: `pnpm py:lint`, `pnpm py:types`, `pnpm py:boundaries`, `pnpm py:test`, `pnpm py:tooling` (stdlib only, no install), `pnpm py:selftest`. Needs `uv` and `python3` 3.11+.
-<!-- [/stack:python] -->
 <!-- [stack:go] -->
 Go pack, singly: `pnpm go:lint` (lint, vet, boundaries), `pnpm go:gates`, `pnpm go:test`, `pnpm go:tidy`.
 <!-- [/stack:go] -->
 <!-- [stack:infra] -->
 Infra pack, singly: `pnpm infra:fmt`, `pnpm infra:validate`, `pnpm infra:lint`, `pnpm infra:docker`; tools: `bash stacks/infra/install-tools.sh`.
 <!-- [/stack:infra] -->
-<!-- [stack:swift] -->
-Swift pack, singly: `pnpm swift:boundaries` (no swift needed), `pnpm swift:lint`, `pnpm swift:gates`, `pnpm swift:test`.
-<!-- [/stack:swift] -->
-<!-- [stack:kotlin] -->
-Kotlin pack, singly: `pnpm kotlin:check` (`./gradlew check`: compile, detekt, ktfmt, Android lint, layer map, tests), `pnpm kotlin:gates`, `pnpm kotlin:device` (instrumented tests on an emulator or device; takes a lock, exits 75 if held); `./gradlew ktfmtFormat` fixes formatting. Needs a JDK 21 and an Android SDK (`bash stacks/kotlin/android-sdk.sh`).
-<!-- [/stack:kotlin] -->
-<!-- [stack:sql-migrations] -->
-SQL migrations pack, singly: `pnpm migrations:lint` (squawk plus the atomic-file check on every migration).
-<!-- [/stack:sql-migrations] -->
-<!-- [stack:cpp] -->
-C++ pack, singly: `pnpm cpp:build` (asan + tsan trees, layers as built), `pnpm cpp:lint` (source rules, clang-format, clang-tidy), `pnpm cpp:test` (GoogleTest under the sanitizers), `pnpm cpp:gates`; tools: clang 18, cmake, ninja (`bash stacks/cpp/install-tools.sh` on Linux).
-<!-- [/stack:cpp] -->
 Harness sync with whippletree: `pnpm harness:status` / `harness:pull` / `harness:push`; `pnpm harness:eject` takes it out of a release (`docs/guide/keeping-in-step.md`).
 Stack packs: `pnpm stack:list` / `stack:remove <name>`.
 
@@ -84,33 +65,15 @@ When you touch matching files (Cursor and Claude load these; any other tool, rea
 <!-- [stack:typescript] -->
 - `typescript.mdc` / `testing-ts.mdc` — TypeScript and its test tooling (TypeScript pack)
 <!-- [/stack:typescript] -->
-<!-- [stack:rust] -->
-- `rust.mdc` / `testing-rust.mdc` — Rust and its test tooling (Rust pack)
-<!-- [/stack:rust] -->
-<!-- [stack:python] -->
-- `python.mdc` / `testing-python.mdc` — Python (app and stdlib-only tooling profiles) and its test tooling (Python pack)
-<!-- [/stack:python] -->
 <!-- [stack:go] -->
 - `go.mdc` / `testing-go.mdc` — Go and its test tooling (Go pack)
 <!-- [/stack:go] -->
-<!-- [stack:swift] -->
-- `swift.mdc` / `testing-swift.mdc` — Swift and its test tooling (Swift pack)
-<!-- [/stack:swift] -->
-<!-- [stack:kotlin] -->
-- `kotlin.mdc` / `testing-kotlin.mdc` — Kotlin and its test tooling (Kotlin pack)
-<!-- [/stack:kotlin] -->
-<!-- [stack:cpp] -->
-- `cpp.mdc` / `testing-cpp.mdc` — C++ and its test tooling (C++ pack)
-<!-- [/stack:cpp] -->
 <!-- [stack:react] -->
 - `react.mdc` — React conventions for `*.tsx` (React pack)
 <!-- [/stack:react] -->
 <!-- [stack:infra] -->
 - `infra.mdc` — Terraform layout, humans apply, OIDC deploys, Dockerfiles, staging teardown, infra checks (infra pack)
 <!-- [/stack:infra] -->
-<!-- [stack:sql-migrations] -->
-- `migrations.mdc` — SQL migrations in any language: atomic files, live-table locks, backfills, who applies them (`pnpm migrations:lint`; SQL migrations pack)
-<!-- [/stack:sql-migrations] -->
 - `docs.mdc` / `docs-scripts.mdc` / `docs-infra.mdc` — file-header and why-comment standard; line-by-line narration for scripts; non-TS examples
 - `plans.mdc` — `docs/plans/` shape: phase table with After + Model near the top so a fresh session can start a phase from the file alone
 - `branch-protection.mdc` — pre-push hook, agent hooks, rulesets, required check names (when you touch `.github/` or hooks)
@@ -134,7 +97,7 @@ in `harness.json` are shared with every project: put this project's additions in
 
 ## Stack
 
-{{STACK}} <!-- e.g. Next.js · React · TypeScript · Tailwind · Prisma/Postgres -->
+Go 1.25 server (`net/http`, pure-Go SQLite) · React 19 + TypeScript + Vite + Tailwind UI · Docker + Tailscale sidecar
 
 Stack packs (`stacks/<name>/pack.json`, `pnpm stack:list`) own each stack's rules, configs, checks,
 and CI steps; `pnpm stack:remove <name>` takes one out whole (`docs/decisions/0002-stack-packs.md`).
@@ -292,33 +255,26 @@ different spelling). Tell the user what you need and why.
      bullet dense and end it with the doc that holds the "why". The bullets below are the
      standing philosophy every project starts with. -->
 
+- **Two halves.** The server is Go (`cmd/hussla`, `internal/`); the UI is a React SPA in TypeScript (`src/`), built by Vite and served as static files by the Go binary. They meet only at the JSON API; UI types are generated from the API contract, never hand-copied (`docs/decisions/0008-go-server.md`).
+- **One owner per install.** Hussla runs for one person on their own machine or NAS; there is no tenant id. The owner is the Tailscale user who owns the node, identified from the connection by embedded Tailscale (`tsnet` `WhoIs`), never from headers; owner-only actions also need a passkey tap; agents are named, revocable API keys and a key is never upgraded to owner (security model in `docs/plans/hussla-v1.md`). Repositories therefore take no `userId` (`docs/decisions/0007-single-owner.md`).
+- **Server layers.** `internal/domain` pure rules; `internal/app/<use-case>` use-cases with their ports; `internal/adapters/<name>` I/O; `internal/httpapi` routing, auth and input parsing, calling use-cases only; `cmd/hussla` is the composition root.
+- **Storage.** SQLite in the data volume (`DATA_DIR`) through a pure-Go driver (no cgo, so one static binary for any NAS chip), forward-only SQL migrations embedded in the binary. Uploaded files and the encrypted secret store live beside it.
+- **Mail.** One `MailSender` port; one adapter per provider kind (SMTP, Resend, Postmark, SendGrid, Mailgun). Providers are a catalog in `internal/config`. Nothing is sent without the owner's approval; the outbox dispatcher paces sends with knobs in `internal/config`.
+- **Time.** Store UTC as fixed-width `2006-01-02T15:04:05.000Z` strings (they sort as text); convert to the owner's time zone only for display and the send window.
+- **Product name** lives in `internal/config/product.go`; the UI reads it from `GET /api/me`.
+
 - **Layering.** Pure domain logic lives in the domain layer — free of framework, I/O, and feature imports (each pack's path is in `docs/ports-and-adapters.md`). Feature modules own UI + validation schemas. Server I/O lives in services behind ports; the API layer validates input, then calls a use-case port, never a service or the ORM directly. Enforced by each language pack's boundary check, not memory (`docs/decisions/0003-ports-and-adapters.md`); the map, and the fix for each rule, is `docs/ports-and-adapters.md`. Why: ports and a composition root keep native clients and a second datastore possible without a rewrite.
 <!-- [stack:typescript] -->
   TypeScript pack: the check is `.dependency-cruiser.cjs` (`pnpm boundaries`; `docs/decisions/0001-ports-and-adapters-enforced-by-dependency-cruiser.md`).
 <!-- [/stack:typescript] -->
-<!-- [stack:rust] -->
-  Rust pack: the layers are crates (`domain` → `app` → `adapters`, so cargo refuses an inward dependency), and `pnpm rust:boundaries` checks `[workspace.metadata.layers]` in `Cargo.toml`.
-<!-- [/stack:rust] -->
-<!-- [stack:python] -->
-  Python pack: one import-linter `layers` contract in `pyproject.toml` (`pnpm py:boundaries`; rules in `python.mdc`).
-<!-- [/stack:python] -->
 <!-- [stack:go] -->
   Go pack: the check is the `depguard` rules in `.golangci.yml` (`pnpm go:lint`), proved by planted violations in `pnpm go:gates`.
 <!-- [/stack:go] -->
-<!-- [stack:swift] -->
-  Swift pack: layers are SwiftPM targets; the check is `swift-layers.json` read by `pnpm swift:boundaries`, proved by planted violations in `pnpm swift:gates`.
-<!-- [/stack:swift] -->
-<!-- [stack:kotlin] -->
-  Kotlin pack: the layers are Gradle modules, checked by `LAYERS` in `build.gradle.kts` on every build (`pnpm kotlin:check`), proved by planted violations in `pnpm kotlin:gates`.
-<!-- [/stack:kotlin] -->
-<!-- [stack:cpp] -->
-  C++ pack: the layers are CMake targets (`domain` ← `usecases` ← `adapters`), so linking is the gate; `cpp-layers.json` is checked against the configured build (File API), the compiler's include record, and each layer's undefined symbols (`pnpm cpp:build`), proved by planted violations in `pnpm cpp:gates`.
-<!-- [/stack:cpp] -->
 - **Storage behind ports.** Repositories take the tenant (`userId`) first and take no raw `where`; tenant scoping is structural, not remembered. ORM ↔ domain mapping lives in the adapter, so a use-case never sees a row. A write and whatever it implies go in one unit of work.
 - **Writes are patches, not replacements.** A write names what it speaks for and leaves the rest alone, so a client cannot delete what it never rendered. Retries must be no-ops.
 - **Product rename:** customer-facing copy only, from one product-config file in the config layer (display name, description, tagline). None ships with the template: create it with the first customer-facing copy and name it here. Leave slugs, package names, Docker, and infra. Do **not** rename files or folders.
 - **Knobs:** we love named constants for anything the product retunes (timing, limits, scoring, visual tokens, page catalogs). Prefer the config layer (each pack's path is in `docs/ports-and-adapters.md`); a named constant next to the domain is fine. UI + server that share a bound import the same export. Keep a knob even if one caller inlines the rule. CI/infra knobs live in `scripts/lib/`, not the config layer — they are not product and must not ship in the build.
-- **UI primitives** (once there is a UI) live in one shared folder; name it here. Compose, don't add a UI library.
+- **UI primitives** live in `src/shared/ui/`. Compose, don't add a UI library.
 - **Client state:** only minimal UI state in the client store. Server data is fetched, not mirrored.
 
 ### Do not
@@ -326,7 +282,9 @@ different spelling). Tell the user what you need and why.
 - Add UI libraries, heavyweight client frameworks, or animation libraries without asking
 - Put domain logic only in UI components
 - Rename files or folders, Docker volumes, or other non-customer-facing identifiers as part of a product name change
-<!-- Add project do-nots here. -->
+- Send email without an owner approval on that exact message, or let an agent key approve one
+- Return or log a stored secret (mail passwords, API keys, agent keys) from any API or log line
+- Trust a Tailscale identity header from any connection, loopback included (identity comes from `tsnet` `WhoIs`)
 
 ## Branching & shipping
 
