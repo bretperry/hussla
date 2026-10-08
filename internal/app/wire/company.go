@@ -231,7 +231,7 @@ func (decoder *Decoder) parseFinancials(raw json.RawMessage) (domain.Financials,
 	signal, err := domain.ParseHealthSignal(encoded.HealthSignal)
 	if err != nil {
 		if !decoder.Lenient {
-			return domain.Financials{}, err //nolint:wrapcheck // the ValidationError passes through untouched: Decoder.problem reads its Problem text
+			return domain.Financials{}, err
 		}
 		// Stored and seeded data: keep the money picture, drop only the health spelling that isn't one of ours.
 		_ = decoder.problem("financials.healthSignal", err)

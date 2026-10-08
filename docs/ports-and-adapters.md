@@ -13,7 +13,7 @@ hold only the React UI (`docs/decisions/0008-go-server.md`).
 TypeScript pack: the rules live in `.dependency-cruiser.cjs` (`docs/decisions/0001-ports-and-adapters-enforced-by-dependency-cruiser.md`).
 <!-- [/stack:typescript] -->
 <!-- [stack:go] -->
-Go pack: the rules are `depguard` entries in `.golangci.yml`, one per layer (`internal/domain`, `internal/config`, `internal/app`). A `files` glob that matches no path passes silently, so `pnpm go:gates` fails an `internal/` directory no rule covers and plants a violation in each layer on a scratch copy, failing unless depguard reports it. Fixing a finding: move the import behind a port in `internal/app/<use-case>/ports.go` and wire the adapter in the composition root.
+Go pack: the rules are `depguard` entries in `.golangci.yml`, one per layer (`internal/domain`, `internal/config`, `internal/app`, `internal/httpapi`, `internal/adapters`, `internal/testsupport`). In Hussla: `internal/app/<use-case>` holds each use-case and its ports (`auth`, `tracker`, `mailbox`, `attachments`, and the repositories behind `store.Store`); `internal/adapters/<name>` implements them (`sqlite`, `tailnet`, `passkey`, `filestore`, `signinfile`, `datadir`); `internal/httpapi` parses requests and calls use-cases only; `cmd/hussla` is the composition root. A `files` glob that matches no path passes silently, so `pnpm go:gates` fails an `internal/` directory no rule covers and plants a violation in each layer on a scratch copy (each `callers` directory in `stacks/go/gates.project.json`, such as `internal/httpapi`, gets an adapter and a test-support import), failing unless depguard reports it. Fixing a finding: move the import behind a port in `internal/app/<use-case>/ports.go` and wire the adapter in the composition root.
 <!-- [/stack:go] -->
 
 <!-- Per project: say what future justifies ports here (a native client, a second datastore,
@@ -106,8 +106,9 @@ Keep the hole the size of the imports it excuses:
 
 - **A message bus or event sourcing for the activity log.** One owner and a handful of agents
   write a few hundred rows a day; an `events` table written in the same transaction is enough.
-- **Abstracting Tailscale identity.** It is two request headers trusted from loopback; a port for
-  it would hide the one security check that matters behind indirection.
+- **A second identity provider behind `auth.PeerIdentifier`.** The port exists so tests use a fake
+  tailnet (no real one in CI); the only adapter is embedded Tailscale's `WhoIs`. No header-based
+  identity (Tailscale Serve, a reverse proxy) will ever implement it (`docs/decisions/0011-connection-identity-and-passkey-step-up.md`).
 - **An effect system (Effect-TS) in the domain.** It makes every domain signature an Effect, which
   puts a framework in the layer this whole file exists to keep framework-free. Expected failures
   are plain `Result` values (each language pack ships its own).

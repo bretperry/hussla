@@ -113,7 +113,7 @@ func parseMoment(raw json.RawMessage) (time.Time, error) {
 	if date, dateErr := time.Parse(time.DateOnly, text); dateErr == nil {
 		return domain.NormalizeTime(date), nil
 	}
-	return domain.ParseTimestamp(text) //nolint:wrapcheck // the ValidationError passes through untouched: Decoder.problem reads its Problem text
+	return domain.ParseTimestamp(text)
 }
 
 func textField(decoder *Decoder, object Object, key string) (domain.Field[string], error) {

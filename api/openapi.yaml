@@ -10,9 +10,17 @@
 # - PATCH bodies name only what they change; null clears a field; lists and objects replace whole,
 #   except a job's `followup`, which merges key by key. Unlisted top-level fields on a job or company
 #   are kept as-is (additionalProperties), the prototype's behavior.
-# - Auth: an agent sends `Authorization: Bearer <agent key>`; the owner is signed in by Tailscale Serve
-#   identity headers (not modeled here). Browser writes also carry `X-Hussla: 1` (CSRF guard).
-#   Routes marked "Owner only" refuse agent keys with 403.
+# - Auth: an agent sends `Authorization: Bearer <agent key>`, and a key is always that agent (a bad
+#   key is 401, never a fall-back to the connection's identity). The owner is identified by the
+#   connection, never a header: on the tailnet by embedded Tailscale (WhoIs), on the local listener
+#   by the `hussla_session` cookie that `hussla open` starts. Only the server's own host name is
+#   answered (421 otherwise); a foreign `Origin` is refused, and an owner write must carry the
+#   server's own `Origin` (browsers send it; scripts use an agent key).
+#   Routes marked "Owner only" refuse agent keys with 403. Those marked "with a passkey tap" also
+#   need `X-Hussla-Step-Up`: a one-use token from /api/stepup/begin + finish for exactly that
+#   method and path (403, code "passkey-required", without one).
+# - Until an owner is enrolled, only /healthz, /api/setup and /api/setup/claim answer (403, code
+#   "setup-required").
 # - Agent writes can't clear or overwrite a field the owner last wrote (409, code "owner-field",
 #   naming the fields); `writers` on a record says who last wrote each field.
 
@@ -27,7 +35,7 @@ servers:
 
 security:
   - agentKey: []
-  - tailscaleIdentity: []
+  - localSession: []
 
 tags:
   - name: meta
@@ -39,6 +47,7 @@ tags:
   - name: settings
   - name: keys
   - name: mail
+  - name: setup
 
 paths:
   /healthz:
@@ -190,7 +199,9 @@ paths:
     delete:
       tags: [jobs]
       operationId: deleteJob
-      summary: Owner only. Deletes the job.
+      summary: Owner only, with a passkey tap. Deletes the job.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
       responses:
         "200":
           description: Deleted.
@@ -322,7 +333,9 @@ paths:
     delete:
       tags: [files]
       operationId: deleteFile
-      summary: Owner only. Removes the file.
+      summary: Owner only, with a passkey tap. Removes the file.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
       responses:
         "200":
           description: Removed.
@@ -545,7 +558,9 @@ paths:
     delete:
       tags: [answers]
       operationId: deleteAnswer
-      summary: Owner only. Deletes a saved answer; `ok` is false when there was none.
+      summary: Owner only, with a passkey tap. Deletes a saved answer; `ok` is false when there was none.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
       responses:
         "200":
           description: Done.
@@ -570,7 +585,9 @@ paths:
     patch:
       tags: [settings]
       operationId: patchSearchConfig
-      summary: Owner only. Merges the named settings.
+      summary: Owner only, with a passkey tap. Merges the named settings.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
       requestBody:
         required: true
         content:
@@ -631,7 +648,9 @@ paths:
     post:
       tags: [keys]
       operationId: createAgentKey
-      summary: Owner only. Makes a key; the secret is in this response only.
+      summary: Owner only, with a passkey tap. Makes a key; the secret is in this response only.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
       requestBody:
         required: true
         content:
@@ -655,7 +674,9 @@ paths:
     delete:
       tags: [keys]
       operationId: revokeAgentKey
-      summary: Owner only. Revokes a key; `ok` is false when it was already revoked or unknown.
+      summary: Owner only, with a passkey tap. Revokes a key; `ok` is false when it was already revoked or unknown.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
       responses:
         "200":
           description: Done.
@@ -682,7 +703,9 @@ paths:
     post:
       tags: [settings]
       operationId: importBundle
-      summary: Owner only. Imports a backup or seed bundle; records merge by id, so importing twice changes nothing.
+      summary: Owner only, with a passkey tap. Imports a backup or seed bundle; records merge by id, so importing twice changes nothing.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
       requestBody:
         required: true
         content:
@@ -715,7 +738,9 @@ paths:
     post:
       tags: [mail]
       operationId: sendTestEmail
-      summary: Owner only. Sends a test email to the owner's own address now (outside pacing).
+      summary: Owner only, with a passkey tap. Sends a test email to the owner's own address now (outside pacing).
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
       responses:
         "200":
           description: Sent.
@@ -784,7 +809,9 @@ paths:
     post:
       tags: [mail]
       operationId: approveEmail
-      summary: Owner only. Queues a draft (or a failed email) to send, at the outbox's pace, if it is still the version the owner read.
+      summary: Owner only, with a passkey tap. Queues a draft (or a failed email) to send, at the outbox's pace, if it is still the version the owner read.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
       requestBody:
         required: true
         content:
@@ -819,19 +846,196 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /api/setup:
+    get:
+      tags: [setup]
+      operationId: getSetupStatus
+      summary: The setup screen's state. Anyone may ask; a setup code is printed to the server log when this address still needs one.
+      security: []
+      responses:
+        "200":
+          description: The state.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SetupStatus" }
+
+  /api/setup/claim:
+    post:
+      tags: [setup]
+      operationId: claimSetup
+      summary: >-
+        Checks the setup code from the log. Before enrollment, the person on an untagged tailnet
+        device (or a local session) becomes the owner; after it, only the owner may use one (to add
+        the first passkey on another address). Returns a step-up token for POST /api/passkeys/register/begin.
+        The code stays good (across restarts too) until a passkey is stored, so a cancelled passkey
+        prompt can claim again. After a few wrong codes that caller is refused for a while; the code
+        doesn't change.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetupClaim" }
+      responses:
+        "200":
+          description: Claimed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SetupClaimed" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /signin:
+    get:
+      tags: [setup]
+      operationId: signIn
+      summary: Local listener only. Trades the one-time token `hussla open` printed for a session cookie, then redirects to the app.
+      security: []
+      parameters:
+        - name: t
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "303":
+          description: Signed in; `Set-Cookie` carries the session.
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/sessions/revoke-all:
+    post:
+      tags: [setup]
+      operationId: signOutEverywhere
+      summary: Owner only, with a passkey tap. Ends every local session.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
+      responses:
+        "200":
+          description: Done.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/passkeys:
+    get:
+      tags: [setup]
+      operationId: listPasskeys
+      summary: Owner only. The registered passkeys (never the credential).
+      responses:
+        "200":
+          description: The passkeys.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Passkey" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/passkeys/register/begin:
+    post:
+      tags: [setup]
+      operationId: beginPasskeyRegistration
+      summary: >-
+        Owner only, with a passkey tap (or the step-up token from /api/setup/claim). Options for
+        navigator.credentials.create, for this address.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
+      responses:
+        "200":
+          description: The prompt.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeyChallenge" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/passkeys/register/finish:
+    post:
+      tags: [setup]
+      operationId: finishPasskeyRegistration
+      summary: Owner only. Verifies the new passkey and stores it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasskeyAnswer" }
+      responses:
+        "201":
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeyRegistered" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/stepup/begin:
+    post:
+      tags: [setup]
+      operationId: beginStepUp
+      summary: Owner only. Starts a passkey tap that will authorize one action (method and path).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/StepUpBegin" }
+      responses:
+        "200":
+          description: Options for navigator.credentials.get.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PasskeyChallenge" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/stepup/finish:
+    post:
+      tags: [setup]
+      operationId: finishStepUp
+      summary: Owner only. Verifies the tap and returns the one-use token for the action it was begun for.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PasskeyAnswer" }
+      responses:
+        "200":
+          description: The token, for X-Hussla-Step-Up.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StepUpToken" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
 components:
   securitySchemes:
     agentKey:
       type: http
       scheme: bearer
       description: An agent key made on the Settings page. Shows in the activity log as `agent:<name>`.
-    tailscaleIdentity:
+    localSession:
       type: apiKey
-      in: header
-      name: Tailscale-User-Login
-      description: Set by Tailscale Serve on loopback only; the server ignores it from anywhere else.
+      in: cookie
+      name: hussla_session
+      description: >-
+        The owner's session on the local listener (http://localhost), started by the one-time link
+        `hussla open` prints. On the tailnet the owner needs no credential: embedded Tailscale names
+        the connection's user (not modeled by OpenAPI). No header ever names the owner.
 
   parameters:
+    StepUp:
+      name: X-Hussla-Step-Up
+      in: header
+      required: true
+      description: A one-use token from POST /api/stepup/finish, granted for exactly this method and path.
+      schema: { type: string }
     JobId:
       name: jobId
       in: path
@@ -861,7 +1065,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Forbidden:
-      description: Owner only, or a browser write without the X-Hussla header.
+      description: 'Owner only; a non-owner tailnet user; a foreign Origin, or an owner write without one; no passkey tap (code "passkey-required"); or no owner enrolled yet (code "setup-required").'
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -896,7 +1100,7 @@ components:
         code:
           type: string
           description: "A stable reason for the refusals a client acts on."
-          enum: [owner-field, changed-since-read, transition-not-allowed]
+          enum: [owner-field, changed-since-read, transition-not-allowed, setup-required, passkey-required]
         fields:
           type: array
           items: { type: string }
@@ -942,7 +1146,7 @@ components:
       properties:
         kind: { type: string, enum: [user, agent] }
         name: { type: string }
-        login: { type: string, description: The owner's Tailscale login (users only). }
+        login: { type: string, description: "The owner's Tailscale login (the owner on the tailnet only)." }
         appName: { type: string }
 
     # ---------- jobs
@@ -1690,3 +1894,72 @@ components:
       properties:
         ok: { type: boolean }
         messageId: { type: string }
+
+    # ---------- setup and passkeys
+    SetupStatus:
+      type: object
+      required: [enrolled, passkeys, codeInLog, listener, isOwner]
+      properties:
+        enrolled: { type: boolean, description: An owner is recorded. }
+        passkeys: { type: integer, description: Passkeys registered for this address. }
+        codeInLog: { type: boolean, description: A setup code is waiting in the server log. }
+        listener: { type: string, enum: [tailnet, local] }
+        isOwner: { type: boolean }
+    SetupClaim:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, description: 'As printed (XXXX-XXXX-XXXX); case and dashes don''t matter.' }
+    SetupClaimed:
+      type: object
+      required: [stepUp, next]
+      properties:
+        stepUp: { type: string, description: The token for X-Hussla-Step-Up on `next`. }
+        next: { type: string, description: 'The action it is good for: "POST /api/passkeys/register/begin".' }
+    Passkey:
+      type: object
+      required: [id, name, rpId, createdAt, lastUsedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        rpId: { type: string, description: The address it works on (a passkey works on one address only). }
+        createdAt: { $ref: "#/components/schemas/Timestamp" }
+        lastUsedAt: { $ref: "#/components/schemas/Timestamp" }
+    PasskeyChallenge:
+      type: object
+      required: [challengeId, options]
+      properties:
+        challengeId: { type: string }
+        options:
+          type: object
+          description: 'WebAuthn options ({"publicKey": ...}) for navigator.credentials, base64url-encoded binary fields.'
+          additionalProperties: true
+    PasskeyAnswer:
+      type: object
+      required: [challengeId, credential]
+      properties:
+        challengeId: { type: string }
+        name: { type: string, description: 'Registration only: what to call the passkey ("Phone").' }
+        credential:
+          type: object
+          description: The PublicKeyCredential as JSON (PublicKeyCredential.toJSON()).
+          additionalProperties: true
+    PasskeyRegistered:
+      type: object
+      required: [id, name, rpId]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        rpId: { type: string }
+    StepUpBegin:
+      type: object
+      required: [method, path]
+      properties:
+        method: { type: string, examples: [POST] }
+        path: { type: string, examples: [/api/emails/e1/approve] }
+    StepUpToken:
+      type: object
+      required: [token, expiresAt]
+      properties:
+        token: { type: string }
+        expiresAt: { $ref: "#/components/schemas/Timestamp" }

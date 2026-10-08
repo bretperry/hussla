@@ -250,7 +250,7 @@ func (service *Service) loadSettings(ctx context.Context) (Settings, bool, error
 	err := service.store.View(ctx, func(tx store.Tx) error {
 		value, err := tx.Settings().Get(ctx, SettingsKey)
 		stored = value
-		return err //nolint:wrapcheck // the caller tells storeerr.ErrNotFound apart and wraps the rest
+		return err // the caller tells storeerr.ErrNotFound apart and wraps the rest
 	})
 	if errors.Is(err, storeerr.ErrNotFound) {
 		return Settings{}, false, nil
@@ -310,7 +310,7 @@ func validateSettings(current Settings) (config.MailProvider, error) {
 		return config.MailProvider{}, &domain.ValidationError{Field: "fromAddress", Problem: "isn't an email address"}
 	}
 	if err := domain.ValidateHeaderText("fromName", current.FromName); err != nil {
-		return config.MailProvider{}, err //nolint:wrapcheck // the ValidationError passes through untouched: the HTTP layer maps it to 400
+		return config.MailProvider{}, err // the ValidationError passes through untouched: the HTTP layer maps it to 400
 	}
 	if len(current.FromName) > MaxFromNameLength {
 		return config.MailProvider{}, &domain.ValidationError{Field: "fromName", Problem: "is too long"}
@@ -332,7 +332,7 @@ func validateSMTPSettings(provider config.MailProvider, current Settings) error 
 		return &domain.ValidationError{Field: "username", Problem: "is required"}
 	}
 	if err := domain.ValidateHeaderText("username", current.Username); err != nil {
-		return err //nolint:wrapcheck // the ValidationError passes through untouched: the HTTP layer maps it to 400
+		return err // the ValidationError passes through untouched: the HTTP layer maps it to 400
 	}
 	host := current.Host
 	if host == "" {

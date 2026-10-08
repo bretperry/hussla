@@ -53,23 +53,28 @@ linters:
           - wrapcheck
   settings:
     wrapcheck:
-      # The defaults, plus the mail failure constructors: a mail adapter's error IS the classified
-      # *mailsetup.DeliveryError (may it have been sent?), built where the failure is understood;
-      # wrapping it again would only prefix the reason the owner reads.
-      ignore-sigs:
-        - .Errorf(
-        - errors.New(
-        - errors.Unwrap(
-        - errors.Join(
-        - .Wrap(
-        - .Wrapf(
-        - .WithMessage(
-        - .WithMessagef(
-        - .WithStack(
-        - mailsetup.NotSentRetry(
-        - mailsetup.NotSentRefused(
-        - mailsetup.MaybeSent(
-        - mailsetup.ValidateMessage(
+      # The defaults (errors made here need no wrapping), plus three kinds of pass-through: a repository
+      # method's error inside a unit of work (the use-case wraps it once, after Atomically returns); a
+      # domain rule's refusal (a ValidationError or sentinel the HTTP layer maps by type); and the mail
+      # failure constructors, whose *mailsetup.DeliveryError (may it have been sent?) is built where the
+      # failure is understood, so wrapping it again would only prefix the reason the owner reads. An
+      # error from any other package, the app layer's own use-cases included, must still be wrapped.
+      ignore-sig-regexps:
+        - '\.Errorf\('
+        - 'errors\.New\('
+        - 'errors\.Unwrap\('
+        - 'errors\.Join\('
+        - '\.Wrap\('
+        - '\.Wrapf\('
+        - '\.WithMessage\('
+        - '\.WithMessagef\('
+        - '\.WithStack\('
+        - 'internal/app/[a-z]+\.Repository\)\.'
+        - 'github\.com/bretperry/hussla/internal/domain\.'
+        - 'mailsetup\.NotSentRetry\('
+        - 'mailsetup\.NotSentRefused\('
+        - 'mailsetup\.MaybeSent\('
+        - 'mailsetup\.ValidateMessage\('
       # The shared HTTP mail plumbing returns those same classified errors for every API adapter.
       ignore-package-globs:
         - github.com/bretperry/hussla/internal/adapters/mailhttp
@@ -140,11 +145,19 @@ linters:
             - "**/internal/app/**"
             - "!$test"
           allow:
+            # cmp: ordering jobs by score (tracker); pure.
+            - cmp
             # bytes, strings: text handling in the JSON codec (wire) and slug matching; pure functions, no I/O.
             - bytes
             - context
+            # crypto/rand, crypto/subtle: agent keys, session and step-up secrets, setup codes, and their
+            # constant-time comparison (auth); randomness is a syscall but not I/O a test needs to fake.
+            - crypto/rand
             # crypto/sha256, encoding/hex: the seed import's content identity for an event (importseed); hashing, no I/O.
             - crypto/sha256
+            - crypto/subtle
+            # encoding/base64: secrets as URL-safe text (auth).
+            - encoding/base64
             # encoding/json: the one JSON codec for stored rows, the seed file and (Phase 3) the API (wire); pure in-memory encode/decode.
             # encoding/base64: mailsetup.Redact removes a credential's base64 form from provider text; pure encoding, no I/O.
             - encoding/base64
@@ -158,12 +171,35 @@ linters:
             - log/slog
             # math/rand/v2: the outbox draws each gap's jitter; randomness, no I/O.
             - math/rand/v2
+            # slices, sort: ordering lists the API returns (tracker); pure.
+            - slices
             - strings
             - sync
             - time
+            # unicode: refusing control characters in names (auth).
+            - unicode
             - github.com/bretperry/hussla/internal/app
             - github.com/bretperry/hussla/internal/config
             - github.com/bretperry/hussla/internal/domain
+        # httpapi: routing, auth checks and input parsing. It calls use-cases (internal/app) and reads
+        # domain types; it never reaches an adapter (storage, tailnet, passkey library) or test support,
+        # so every request goes through the same use-case rules an MCP tool or a test does.
+        httpapi:
+          list-mode: lax
+          files:
+            - "**/internal/httpapi/**"
+            - "!$test"
+          deny:
+            - pkg: github.com/bretperry/hussla/internal/adapters
+              desc: "the HTTP layer calls use-cases (internal/app), never an adapter"
+            - pkg: github.com/bretperry/hussla/internal/testsupport
+              desc: "production code never imports test support"
+            - pkg: tailscale.com
+              desc: "tsnet lives in internal/adapters/tailnet behind auth.PeerIdentifier"
+            - pkg: github.com/go-webauthn
+              desc: "WebAuthn lives in internal/adapters/passkey behind auth.Ceremony"
+            - pkg: database/sql
+              desc: "storage is a use-case's business, behind store.Store"
         # adapters: I/O lives here. They may use the inner layers, never test support.
         adapters:
           list-mode: lax
