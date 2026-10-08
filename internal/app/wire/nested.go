@@ -55,7 +55,7 @@ func (decoder *Decoder) contactsField(object Object, key string) (domain.Field[[
 			emailStatus, err := domain.ParseEmailCheck(item.EmailStatus)
 			if err != nil {
 				if !decoder.Lenient {
-					return nil, err //nolint:wrapcheck // the ValidationError passes through untouched: Decoder.problem reads its Problem text
+					return nil, err
 				}
 				// Stored and seeded data: keep the contact, drop only the spelling that isn't one of ours.
 				_ = decoder.problem(fmt.Sprintf("%s[%d].emailStatus", key, index), err)
