@@ -1,7 +1,7 @@
 # Go pack lint floor and import boundaries: golangci-lint v2, run by `pnpm go:lint` and the edit hook.
 # In the app: nothing at runtime; the gate on every Go change (pnpm check, pre-push, CI).
 # Used by: stacks/go/pack.json checks; stacks/go/gates.mjs proves each gate below still bites.
-# Uses: golangci-lint v2.5.0 (pinned in ci.yml; keep the two in step).
+# Uses: golangci-lint v2.14.0 (pinned in ci.yml; keep the two in step).
 #
 # Lint floor: the `standard` set (errcheck, govet, ineffassign, staticcheck, unused) plus the
 # linters that catch what Go lets slide: errors compared with == (errorlint), errors returned
