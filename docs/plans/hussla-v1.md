@@ -341,7 +341,7 @@ hover, skips the fade under reduced motion; compare view shows the diff and timi
 
 **Model:** workhorse · **Thinking:** medium — the bar is a non-technical person finishing setup alone.
 
-**Goal:** first-run flow: enter the setup code from the log (Security model), register a passkey,
+**Goal:** first-run flow: authorize the first passkey (First run, below), register it,
 then the wizard (your name and email; pick an email provider from the catalog with its steps
 and a link to its app-password page; paste the password; send a test; optionally import a seed
 file; make the first agent key). Docker image (one static binary on a distroless base, non-root,
@@ -365,20 +365,61 @@ Guides follow what tripped up the first real NAS install (2026-10-08): one linea
 "if you already did step N" branches; no placeholders to edit inside commands (prompt instead);
 any terminal step is one line (never `ssh` and a command pasted as two lines); every guide ends
 with a check that it is running and what to paste back if not.
+
+**First run on a headless host** (from an adversarial review, 2026-10-08;
+Phase 3 fixes the code bugs it found, on PR #5):
+- **Home-network page.** A second listener on the LAN port serves only: Tailscale state (needs
+  login with tsnet's link / waiting for approval / needs HTTPS / running), then the ts.net address
+  and QR. It accepts only a private source address and a `Host` that is a private IP, a bare name
+  or `.local` (checked on the connection, against DNS rebinding), never grants identity, and is
+  never published on a cloud host.
+- **First passkey without the log** (Bret's pick pending: first-start window, log code, or both):
+  window = never owned, within 15 minutes of start, the Tailscale node owner, from the LAN page's
+  one-time link; outside it, the setup code from the log. The code stays valid until a passkey is
+  stored, so a cancelled Face ID retries without a new code.
+- **Show who owns it.** Until the first passkey exists, the pages say "Owner: `<login>`, not you?
+  Start over"; the person who'll use it must be the one who clicks Connect (family tailnets).
+  A refusal page names the owner and the login it saw.
+- **HTTPS and MagicDNS.** If certificates are off, the LAN page shows the one switch to flip (with
+  the admin link) and the app retries without a restart.
+- **Phone.** A wizard step: install Tailscale on the phone, sign in as `<owner login>` with the same
+  provider, turn it on, scan the QR.
+- **Keep it signed in.** A wizard step to disable key expiry (link to the machine's admin page), a
+  Settings banner from the node's key expiry, and the LAN page offers Connect again whenever
+  Tailscale needs a login.
+- **Lost passkey, no terminal.** The owner (by identity) can ask for a recovery code in the log,
+  register a new passkey and remove old ones; the wizard suggests registering a second device.
+- **Hosts.** Cloud: publish no port; join with `TS_AUTHKEY` set in the provider's console (one
+  prompted line), non-ephemeral, untagged. Docker Desktop laptop: the LAN listener on
+  `127.0.0.1:<port>`, or drop that path for the binary. Pi: 64-bit OS required (say so).
+- **Names.** Watch for a node rename instead of fixing the host at start; the guide says to remove
+  the old machine before reinstalling, so there is no `hussla-1` surprise; plain `http://` and the
+  short name redirect to the full https address.
+- **Devices without passkeys** (iCloud Keychain off, Linux browsers): detect it and say what to turn
+  on, or register on the phone first.
 **Files:** `src/features/setup/`, `internal/app/setup/`, `Dockerfile` (multi-stage: Node builds the
 UI, Go builds a static binary, final stage distroless non-root), `docker-compose.yml`,
 `docs/install/{nas,laptop,cloud}.md`, README install link, release build script for the binaries.
 **Tests:** wizard flow component test; `pnpm infra:docker` (hadolint); container smoke test:
-a fresh container serves only the setup-code screen, and a wrong code is refused.
+a fresh container's LAN page shows only Tailscale state, a wrong code is refused, and the LAN port
+refuses `Host: evil.example` and a public source address. Playwright fakes Tailscale (say how) and
+drives the LAN listener, not the container's loopback.
 **Done when:**
-- Fresh container needs the setup code, then finishes the wizard → verify: Playwright run against `docker run`
+- Fresh container goes from the LAN page to a passkey to the finished wizard → verify: Playwright run against `docker run`
+- A tailnet with HTTPS certificates off shows the switch and recovers without a restart → verify: test with a fake tailnet status
+- A cancelled passkey prompt retries with the same code; a restart mid-setup resumes → verify: `go test ./internal/app/auth/...`
+- Recreating the container with the volume keeps the address and sign-in → verify: container smoke test
+- Key expiry warns ahead of time → verify: unit test with a fake clock
 - Image lint clean → verify: `pnpm infra:docker`
 - A fresh Synology (DSM 7.2, Container Manager) installs with no terminal and no auth key, from
   Project → Create to the job board on a phone, in under 5 minutes → verify: Human check `hussla-p6-nas`
 
 **Human checks**
 - `hussla-p6-mom` · decision · 30 min · none — Hand the NAS guide to someone non-technical and watch without helping. They reach their job board on their phone with no terminal and no questions; every place they stall becomes a guide or installer fix.
-- `hussla-p6-nas` · Mac · 10 min · none — Install on a fresh Synology with no terminal. Container Manager → Project → Create, paste the compose file, click the Tailscale link in the log; the job board opens on your phone within 5 minutes, with no auth key and no folders made by hand.
+- `hussla-p6-strangers` · Mac · 10 min · none — While setting up, open the LAN page from a second laptop first. It can't take ownership silently: the owner's login shows with Start over.
+- `hussla-p6-other-account` · iPhone · 5 min · none — Open Hussla on a phone signed in to Tailscale as another account. The page names the owner and the account it saw.
+- `hussla-p6-cloud` · Linux · 20 min · none — Install on a rented cloud server. No port is reachable from outside (nmap), and the job board opens on the phone.
+- `hussla-p6-nas` · Mac · 10 min · none — Install on a fresh Synology with no terminal. Container Manager → Project → Create, paste the compose file, open the NAS address in a browser and click Connect; the job board opens on your phone within 5 minutes, with no auth key and no folders made by hand.
 
 ## Phase 7 — Install and accept
 
