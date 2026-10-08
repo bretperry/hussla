@@ -5,7 +5,7 @@
 //
 // Start order is for speed and safety: lock first (a second process stops before touching
 // anything), then storage, then the local listener (serving in well under a second), then the
-// tailnet in the background (joining can wait on a login). Stop order is the reverse: stop taking
+// tailnet in the background (joining can wait on a login, and retries until it works). Stop order is the reverse: stop taking
 // requests, let the ones in flight finish (config.ShutdownGrace), close the tailnet, close storage,
 // release the lock.
 
@@ -131,27 +131,16 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 	var tailnetMutex sync.Mutex
 	var tailnetNode *tailnet.Node
 	if env.tailnet {
+		node := tailnet.New(tailnet.Options{DataDir: dataDir, Hostname: env.hostname, AuthKey: env.authKey, Logf: func(format string, args ...any) { logger.Info(fmt.Sprintf(format, args...)) }})
+		tailnetNode = node
 		go func() {
-			node, err := tailnet.Start(ctx, tailnet.Options{DataDir: dataDir, Hostname: env.hostname, AuthKey: env.authKey, Logf: func(format string, args ...any) { logger.Info(fmt.Sprintf(format, args...)) }})
+			listener, err := joinTailnet(ctx, node, logger)
 			if err != nil {
-				logger.Error("tailnet", "error", err)
-				return
+				return // stopping
 			}
-			tailnetMutex.Lock()
-			tailnetNode = node
-			tailnetMutex.Unlock()
-			if adopted, err := services.Auth.AdoptNodeOwner(ctx, node.NodeOwner()); err != nil {
-				logger.Error("owner", "error", err)
-			} else if adopted {
-				logger.Info("owner set to the tailnet user who owns this node", "login", node.NodeOwner().Login)
-			}
+			adoptNodeOwner(ctx, services.Auth, node.NodeOwner(), logger)
 			if err := services.Auth.IssueSetupCode(ctx); err != nil {
 				logger.Error("setup code", "error", err)
-			}
-			listener, err := node.Listener()
-			if err != nil {
-				logger.Error("tailnet listener", "error", err)
-				return
 			}
 			handler := httpapi.New(httpapi.Config{Listener: httpapi.ListenerTailnet, Hosts: []string{node.Domain()}, Peers: node}, services)
 			tailnetMutex.Lock()
@@ -197,6 +186,73 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 
 func newServer(handler http.Handler) *http.Server {
 	return &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
+}
+
+// tailnetJoiner is what joinTailnet needs from the tailnet node (a fake in tests).
+type tailnetJoiner interface {
+	Up(ctx context.Context) error
+	Listener() (net.Listener, error)
+}
+
+// httpsHint is the one line a headless owner needs when the tailnet has no certificate for Hussla.
+const httpsHint = "Tailnet HTTPS is off: turn on MagicDNS and HTTPS Certificates in the Tailscale admin console's DNS page (https://login.tailscale.com/admin/dns). Hussla keeps retrying and serves as soon as they are on."
+
+// joinTailnet joins and opens the HTTPS listener, retrying with backoff (config.TailnetRetryFirst
+// doubling to config.TailnetRetryMax) until both work or ctx ends. A headless server has nobody to
+// restart it after the owner logs in or turns HTTPS on, so it never gives up. Each new problem is
+// logged once; HTTPS off gets httpsHint.
+func joinTailnet(ctx context.Context, node tailnetJoiner, logger *slog.Logger) (net.Listener, error) {
+	wait := config.TailnetRetryFirst
+	lastProblem := ""
+	for {
+		err := node.Up(ctx)
+		if err == nil {
+			listener, listenErr := node.Listener()
+			if listenErr == nil {
+				return listener, nil
+			}
+			err = listenErr
+		}
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("join the tailnet: %w", ctx.Err())
+		}
+		if problem := err.Error(); problem != lastProblem {
+			lastProblem = problem
+			if errors.Is(err, tailnet.ErrHTTPSOff) {
+				logger.Warn(httpsHint)
+			} else {
+				logger.Error("tailnet: retrying", "error", err, "retryIn", wait.String())
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("join the tailnet: %w", ctx.Err())
+		case <-time.After(wait):
+		}
+		wait = min(wait*2, config.TailnetRetryMax)
+	}
+}
+
+// adoptNodeOwner makes the user who owns the node the owner when none is recorded, and says in one
+// line when HUSSLA_OWNER_LOGIN is why it didn't (naming both logins; logins aren't secrets).
+func adoptNodeOwner(ctx context.Context, authService *auth.Service, nodeOwner auth.TailnetPeer, logger *slog.Logger) {
+	adopted, err := authService.AdoptNodeOwner(ctx, nodeOwner)
+	switch {
+	case err != nil:
+		logger.Error("owner", "error", err)
+	case adopted:
+		logger.Info("owner set to the tailnet user who owns this node", "login", nodeOwner.Login)
+	default:
+		pinned, refuses := authService.PinRefuses(nodeOwner)
+		if !refuses {
+			return
+		}
+		if enrolled, err := authService.Enrolled(ctx); err != nil || enrolled {
+			return
+		}
+		logger.Warn("HUSSLA_OWNER_LOGIN doesn't match the Tailscale login that owns this node, so nobody was made the owner: fix HUSSLA_OWNER_LOGIN, or log the node in as that user",
+			"nodeOwner", nodeOwner.Login, "HUSSLA_OWNER_LOGIN", pinned)
+	}
 }
 
 func buildServices(dataDir string, storage *sqlite.Store, logger *slog.Logger, ownerLogin string) (httpapi.Deps, error) {

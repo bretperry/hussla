@@ -1,4 +1,4 @@
-// The auth ports: the tailnet's answer to "who is on the other end", the sign-in token file, and the passkey ceremony.
+// The auth ports: the tailnet's answer to "who is on the other end" and its own join state, the sign-in token file, and the passkey ceremony.
 // In the app: every request's identity, `hussla open`, the setup screen and every owner-only action's passkey tap.
 // Used by: auth.Service; implemented by internal/adapters/tailnet, internal/adapters/signinfile, internal/adapters/passkey;
 // faked in internal/testsupport (no real tailnet or authenticator in tests).
@@ -33,6 +33,34 @@ type PeerIdentifier interface {
 
 // ErrUnknownPeer: the tailnet doesn't know the address (not a tailnet connection).
 var ErrUnknownPeer = errors.New("unknown tailnet peer")
+
+// TailnetPhase is how far the server's own tailnet node has got.
+type TailnetPhase int
+
+const (
+	// TailnetStarting: joining, or retrying after a failure.
+	TailnetStarting TailnetPhase = iota
+	// TailnetNeedsLogin: waiting for someone to open AuthURL and log in (no auth key was given).
+	TailnetNeedsLogin
+	// TailnetNeedsHTTPS: on the tailnet, but HTTPS certificates or MagicDNS are off in the tailnet's DNS settings.
+	TailnetNeedsHTTPS
+	// TailnetRunning: serving HTTPS at Domain.
+	TailnetRunning
+)
+
+// TailnetState is a snapshot of the node's progress, for a setup page to show. AuthURL is
+// tsnet's login link (only while TailnetNeedsLogin); Domain is the ts.net name once known.
+type TailnetState struct {
+	Phase   TailnetPhase
+	AuthURL string
+	Domain  string
+}
+
+// TailnetStatus reports the node's current state. Only the tailnet adapter implements it; it is
+// read-only (nothing here can change the node).
+type TailnetStatus interface {
+	State() TailnetState
+}
 
 // SignInToken is the one-time token `hussla open` leaves in the data directory.
 type SignInToken struct {

@@ -1,12 +1,17 @@
-// Embedded Tailscale: the node Hussla runs as on the owner's tailnet, its HTTPS listener, and WhoIs for every connection.
+// Embedded Tailscale: the node Hussla runs as on the owner's tailnet, its HTTPS listener, its join state, and WhoIs for every connection.
 // In the app: https://hussla.<tailnet>.ts.net from the owner's phone and laptop, with no password.
-// Used by: cmd/hussla (Start, then Listener for the tailnet handler, Peers as auth.PeerIdentifier, NodeOwner at startup).
+// Used by: cmd/hussla (New, Up and Listener in its retry loop; the node as auth.PeerIdentifier; NodeOwner after joining).
 // Uses: tailscale.com/tsnet (pinned exactly in go.mod).
 //
 // Identity comes from the connection only: WhoIs asks the embedded node which tailnet peer owns the
 // remote address of this TCP connection. No header is read here or anywhere. The node's state lives
 // in <DATA_DIR>/tailscale, so the same node (and certificate name) comes back after a restart; the
 // auth key is used only for the first join.
+//
+// Up can be called again after it fails: that is how a headless server recovers from a tailnet
+// with HTTPS off (the owner flips the switch, the next Up sees the certificate name) without a
+// restart. While Up waits for a login it records tsnet's login link in State and logs it once per
+// new link (tsnet itself repeats it every few seconds; that line is dropped).
 
 package tailnet
 
@@ -17,12 +22,24 @@ import (
 	"net"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 
 	"tailscale.com/client/local"
+	"tailscale.com/ipn"
+	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tsnet"
 
 	"github.com/bretperry/hussla/internal/app/auth"
 )
+
+// ErrHTTPSOff: the node is on the tailnet but has no HTTPS certificate name (HTTPS certificates
+// or MagicDNS are off in the tailnet's DNS settings). Up again after they are turned on.
+var ErrHTTPSOff = errors.New("the tailnet has HTTPS certificates or MagicDNS turned off")
+
+// tsnetLoginLine starts tsnet's own repeated login-link line, which this adapter replaces with one
+// line per new link.
+const tsnetLoginLine = "To start this tsnet server"
 
 // Options configure the node.
 type Options struct {
@@ -32,35 +49,141 @@ type Options struct {
 	Logf     func(format string, args ...any)
 }
 
-// Node is the running tailnet node.
+// Node is the tailnet node. Its methods are safe for concurrent use.
 type Node struct {
-	server *tsnet.Server
-	client *local.Client
-	domain string
-	owner  auth.TailnetPeer
+	options Options
+
+	mutex   sync.Mutex
+	server  *tsnet.Server // nil until Up starts one, and again after a failed start
+	client  *local.Client
+	domain  string
+	owner   auth.TailnetPeer
+	state   auth.TailnetState
+	lastURL string // the login link last logged
 }
 
-// Start joins the tailnet (waiting for login when there is no auth key and no saved state) and
-// opens nothing yet. The context bounds the wait.
-func Start(ctx context.Context, options Options) (*Node, error) {
+var _ auth.TailnetStatus = (*Node)(nil)
+
+// New makes the node without touching the network; Up joins.
+func New(options Options) *Node {
+	if options.Logf == nil {
+		options.Logf = func(string, ...any) {}
+	}
+	return &Node{options: options}
+}
+
+// Up joins the tailnet and waits until the node runs (recording the login link while it waits for
+// one), then reads its certificate name and owner. ErrHTTPSOff when the tailnet gives no
+// certificate name; any other error leaves the node ready for another Up.
+func (node *Node) Up(ctx context.Context) error {
+	client, err := node.start()
+	if err != nil {
+		return err
+	}
+	watcher, err := client.WatchIPNBus(ctx, ipn.NotifyInitialState)
+	if err != nil {
+		node.discard()
+		return fmt.Errorf("join the tailnet: %w", err)
+	}
+	defer func() { _ = watcher.Close() }()
+	for {
+		notify, err := watcher.Next()
+		if err != nil {
+			if ctx.Err() == nil {
+				node.discard()
+			}
+			return fmt.Errorf("join the tailnet: %w", err)
+		}
+		if notify.ErrMessage != nil {
+			node.discard()
+			return fmt.Errorf("join the tailnet: %s", *notify.ErrMessage)
+		}
+		if !node.observe(notify) {
+			continue
+		}
+		status, err := client.Status(ctx)
+		if err != nil {
+			return fmt.Errorf("tailnet status: %w", err)
+		}
+		return node.running(status)
+	}
+}
+
+// start makes and starts the tsnet server when there is none (tsnet remembers a failed start, so a
+// retry needs a fresh one).
+func (node *Node) start() (*local.Client, error) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	if node.client != nil {
+		return node.client, nil
+	}
+	userLogf := node.options.Logf
 	server := &tsnet.Server{
-		Dir:      filepath.Join(options.DataDir, "tailscale"),
-		Hostname: options.Hostname,
-		AuthKey:  options.AuthKey,
-		UserLogf: options.Logf,
+		Dir:      filepath.Join(node.options.DataDir, "tailscale"),
+		Hostname: node.options.Hostname,
+		AuthKey:  node.options.AuthKey,
+		UserLogf: func(format string, args ...any) {
+			if !strings.HasPrefix(format, tsnetLoginLine) {
+				userLogf(format, args...)
+			}
+		},
 	}
-	status, err := server.Up(ctx)
+	client, err := server.LocalClient() // starts the server
 	if err != nil {
 		_ = server.Close()
-		return nil, fmt.Errorf("join the tailnet: %w", err)
+		return nil, fmt.Errorf("start the tailnet node: %w", err)
 	}
-	client, err := server.LocalClient()
-	if err != nil {
-		_ = server.Close()
-		return nil, fmt.Errorf("tailnet client: %w", err)
+	node.server, node.client = server, client
+	node.state = auth.TailnetState{Phase: auth.TailnetStarting}
+	return client, nil
+}
+
+// discard closes a server that failed, so the next Up starts a fresh one.
+func (node *Node) discard() {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	if node.server != nil {
+		_ = node.server.Close()
 	}
-	node := &Node{server: server, client: client}
-	if len(status.CertDomains) > 0 {
+	node.server, node.client = nil, nil
+	node.state = auth.TailnetState{Phase: auth.TailnetStarting}
+}
+
+// observe records what one bus message says and reports whether the node is now running. A login
+// link is logged once per new link.
+func (node *Node) observe(notify ipn.Notify) (running bool) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	if notify.BrowseToURL != nil && *notify.BrowseToURL != "" {
+		url := *notify.BrowseToURL
+		node.state = auth.TailnetState{Phase: auth.TailnetNeedsLogin, AuthURL: url}
+		if url != node.lastURL {
+			node.lastURL = url
+			node.options.Logf("Tailscale login needed: open %s and log in as the Tailscale user who will own Hussla", url)
+		}
+	}
+	if notify.State == nil {
+		return false
+	}
+	switch *notify.State {
+	case ipn.Running:
+		return true
+	case ipn.NeedsLogin:
+		if node.state.Phase != auth.TailnetNeedsLogin {
+			node.state = auth.TailnetState{Phase: auth.TailnetNeedsLogin}
+		}
+	case ipn.NoState, ipn.InUseOtherUser, ipn.NeedsMachineAuth, ipn.Stopped, ipn.Starting:
+		node.state = auth.TailnetState{Phase: auth.TailnetStarting}
+	}
+	return false
+}
+
+// running records the certificate name and the node's owner from a running node's status.
+func (node *Node) running(status *ipnstate.Status) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	node.domain = ""
+	if len(status.CertDomains) > 0 && (status.CurrentTailnet == nil || status.CurrentTailnet.MagicDNSEnabled) {
 		node.domain = status.CertDomains[0]
 	}
 	if self := status.Self; self != nil {
@@ -70,30 +193,62 @@ func Start(ctx context.Context, options Options) (*Node, error) {
 			node.owner.Login, node.owner.Name = profile.LoginName, profile.DisplayName
 		}
 	}
-	return node, nil
+	if node.domain == "" {
+		node.state = auth.TailnetState{Phase: auth.TailnetNeedsHTTPS}
+		return ErrHTTPSOff
+	}
+	node.state = auth.TailnetState{Phase: auth.TailnetStarting, Domain: node.domain}
+	return nil
+}
+
+// State is the node's progress right now (auth.TailnetStatus).
+func (node *Node) State() auth.TailnetState {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	return node.state
 }
 
 // Domain is the node's ts.net name, the one Host the tailnet listener answers.
-func (node *Node) Domain() string { return node.domain }
+func (node *Node) Domain() string {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	return node.domain
+}
 
 // NodeOwner is the user who owns the node (Tagged when it belongs to tags instead).
-func (node *Node) NodeOwner() auth.TailnetPeer { return node.owner }
+func (node *Node) NodeOwner() auth.TailnetPeer {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	return node.owner
+}
 
-// Listener is HTTPS on :443 with the node's certificate (MagicDNS and HTTPS must be on in the tailnet).
+// Listener is HTTPS on :443 with the node's certificate. Call it after Up succeeds.
 func (node *Node) Listener() (net.Listener, error) {
-	if node.domain == "" {
-		return nil, errors.New("the tailnet has no HTTPS certificate name for this node: turn on MagicDNS and HTTPS in the Tailscale admin console")
+	node.mutex.Lock()
+	server, domain := node.server, node.domain
+	node.mutex.Unlock()
+	if server == nil || domain == "" {
+		return nil, ErrHTTPSOff
 	}
-	listener, err := node.server.ListenTLS("tcp", ":443")
+	listener, err := server.ListenTLS("tcp", ":443")
 	if err != nil {
 		return nil, fmt.Errorf("listen on the tailnet: %w", err)
 	}
+	node.mutex.Lock()
+	node.state = auth.TailnetState{Phase: auth.TailnetRunning, Domain: domain}
+	node.mutex.Unlock()
 	return listener, nil
 }
 
 // WhoIs implements auth.PeerIdentifier from the connection's remote address.
 func (node *Node) WhoIs(ctx context.Context, remoteAddr string) (auth.TailnetPeer, error) {
-	who, err := node.client.WhoIs(ctx, remoteAddr)
+	node.mutex.Lock()
+	client := node.client
+	node.mutex.Unlock()
+	if client == nil {
+		return auth.TailnetPeer{}, auth.ErrUnknownPeer
+	}
+	who, err := client.WhoIs(ctx, remoteAddr)
 	if errors.Is(err, local.ErrPeerNotFound) {
 		return auth.TailnetPeer{}, auth.ErrUnknownPeer
 	}
@@ -111,6 +266,11 @@ func (node *Node) WhoIs(ctx context.Context, remoteAddr string) (auth.TailnetPee
 
 // Close leaves the tailnet (the node stays registered; it comes back on the next start).
 func (node *Node) Close() error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	if node.server == nil {
+		return nil
+	}
 	if err := node.server.Close(); err != nil {
 		return fmt.Errorf("close tailnet node: %w", err)
 	}
