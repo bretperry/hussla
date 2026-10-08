@@ -37,7 +37,8 @@ shape. Its seed bundle (`seed/seed.json`: jobs, companies, answers, events) is t
 | 3b | MCP endpoint for agents, "Add an agent" setup snippet | 3 | workhorse (high) | |
 | 4 | Mail port, provider catalog, adapters, secret store, outbox pacing | 1 | deep (high) | |
 | 5 | React UI: jobs, job, companies, compare, company, outbox, answers, activity, settings | 1 | workhorse (medium) | |
-| 6 | First-run wizard, Docker image, compose with Tailscale, binaries, install guides (NAS, laptop, cloud) | 3, 3b, 4, 5 | workhorse (medium) | |
+| 5b | Pitches: ten honed pitches, dashboard billboard, versions and side-by-side compare | 3, 5 | workhorse (medium) | |
+| 6 | First-run wizard, Docker image, compose with Tailscale, binaries, install guides (NAS, laptop, cloud) | 3, 3b, 4, 5, 5b | workhorse (medium) | |
 | 7 | Install on the NAS and accept on phone | 6; NAS model, Tailscale account | — (human) | |
 
 ## Phase 0 — Repo setup
@@ -192,6 +193,37 @@ placeholder warning) and the compare table sort.
 **Done when:**
 - Component tests green → verify: `pnpm test src/features`
 - Screens match on desktop and phone → verify: Playwright screenshots attached to the PR
+
+## Phase 5b — Pitches
+
+**Model:** workhorse · **Thinking:** medium — a self-contained slice; mistakes show on screen.
+
+**Goal:** the owner keeps ten pitches (short, sayable answers that fill silence and steer a
+conversation: who I am, why now, why me …) and hones them over time.
+- Each pitch has a slot (1–10), a title, a "when to use it" cue, and versions. A version is text,
+  its author (the owner, or an agent by key name), a time and an optional note; one version per
+  pitch is the live one. Agents (API and MCP) may add versions; only the owner picks the live one
+  or deletes.
+- **Billboard:** the live versions rotate at the top of the dashboard, under the title, one at a
+  time, every few minutes (knob `PitchRotateSeconds`, default 180), with a slow cross-fade and large
+  display type: title small above, pitch text large. Pause on hover or focus, click-through to
+  the pitch, and no motion under `prefers-reduced-motion` (it switches without the fade).
+- **Pitches page:** all ten with their live version; per pitch, the version history and a writer
+  for a new version; pick any two versions to compare side by side with a word-level diff, word
+  count and speaking time (knob `SpeakingWordsPerMinute`, default 150); make either one live.
+- Import the ten first drafts from `/mnt/project-files/tracker/pitches/pitches.json` (Bizzness
+  project) through the seed import, as version 1 of each.
+**Files:** `internal/domain/pitch.go`, `internal/config/pitches.go`, storage table and migration,
+API and MCP routes, `src/features/pitches/`, the dashboard billboard in `src/features/jobs/`.
+**Tests:** domain: a pitch always has exactly one live version, slots stay 1–10 and unique, an
+agent key cannot set live or delete; component: billboard rotates on a fake timer, pauses on
+hover, skips the fade under reduced motion; compare view shows the diff and timing.
+**Done when:**
+- Rules and screens covered → verify: `pnpm go:test` and `pnpm test src/features/pitches`
+- Billboard reads well on desktop and phone → verify: Playwright screenshots attached to the PR
+
+**Human checks**
+- `hussla-p5b-billboard` · decision · 2 min · none — Watch the billboard switch twice. It feels calm and weighty, not distracting.
 
 ## Phase 6 — Setup and packaging
 
