@@ -1,0 +1,1692 @@
+# Hussla's JSON API contract: every route, request body and response shape.
+# In the app: the one place the Go server (Phase 3) and the React UI (Phase 5) agree on the wire format.
+# Used by: `pnpm api:types` (generates src/shared/api-types.ts), docs/agents-api.md (Phase 3), route tests.
+# Uses: OpenAPI 3.1 (JSON Schema nullability: `type: [string, "null"]`).
+#
+# Shapes follow the prototype's API so agents keep working unchanged. Conventions:
+# - Text fields are always strings ("" when empty); numbers and timestamps that may be unknown are null.
+# - Timestamps in responses are fixed-width UTC, `2026-10-08T14:03:00.000Z` (they sort as text);
+#   requests accept any RFC 3339 time. Loose dates an agent copies from a source ("2026-08") are plain strings.
+# - PATCH bodies name only what they change; null clears a field; lists and objects replace whole,
+#   except a job's `followup`, which merges key by key. Unlisted top-level fields on a job or company
+#   are kept as-is (additionalProperties), the prototype's behavior.
+# - Auth: an agent sends `Authorization: Bearer <agent key>`; the owner is signed in by Tailscale Serve
+#   identity headers (not modeled here). Browser writes also carry `X-Hussla: 1` (CSRF guard).
+#   Routes marked "Owner only" refuse agent keys with 403.
+# - Agent writes can't clear or overwrite a field the owner last wrote (409, code "owner-field",
+#   naming the fields); `writers` on a record says who last wrote each field.
+
+openapi: 3.1.0
+info:
+  title: Hussla API
+  version: 1.0.0
+  description: Self-hosted job-search tracker. Agents read and write jobs, companies, answers and drafts; the owner approves email.
+
+servers:
+  - url: /
+
+security:
+  - agentKey: []
+  - tailscaleIdentity: []
+
+tags:
+  - name: meta
+  - name: jobs
+  - name: companies
+  - name: files
+  - name: events
+  - name: answers
+  - name: settings
+  - name: keys
+  - name: mail
+
+paths:
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: getHealth
+      summary: Liveness probe for the container healthcheck. No auth.
+      security: []
+      responses:
+        "200":
+          description: The server is up.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+
+  /api:
+    get:
+      tags: [meta]
+      operationId: getApiIndex
+      summary: Lists every endpoint and the job statuses.
+      responses:
+        "200":
+          description: The index.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiIndex" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/docs:
+    get:
+      tags: [meta]
+      operationId: getApiDocs
+      summary: The agents' guide, as markdown.
+      responses:
+        "200":
+          description: The guide.
+          content:
+            text/markdown:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/me:
+    get:
+      tags: [meta]
+      operationId: getMe
+      summary: Who is calling, and the product name for the page header.
+      responses:
+        "200":
+          description: The caller.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/jobs:
+    get:
+      tags: [jobs]
+      operationId: listJobs
+      summary: Jobs, best score first, then most recently updated.
+      parameters:
+        - name: status
+          in: query
+          description: Comma-separated statuses to keep (e.g. `review,queued`).
+          schema: { type: string }
+        - name: q
+          in: query
+          description: Case-insensitive text search over company, title, location and the job's details.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The matching jobs.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/JobListItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [jobs]
+      operationId: createJob
+      summary: Adds a job. The id defaults to the slug of company and title; 409 if it exists (use PUT to upsert).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobCreate" }
+      responses:
+        "201":
+          description: The new job.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/jobs/{jobId}:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    get:
+      tags: [jobs]
+      operationId: getJob
+      summary: One job with its company, activity, files and emails.
+      responses:
+        "200":
+          description: The job.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [jobs]
+      operationId: patchJob
+      summary: Changes the named fields only; `note` logs a line in the job's activity.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobPatch" }
+      responses:
+        "200":
+          description: The job after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [jobs]
+      operationId: upsertJob
+      summary: Creates the job at this id (company and title required) or patches it if it exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobPatch" }
+      responses:
+        "200":
+          description: The job, created or updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [jobs]
+      operationId: deleteJob
+      summary: Owner only. Deletes the job.
+      responses:
+        "200":
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/jobs/{jobId}/events:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [events]
+      operationId: logJobEvent
+      summary: Logs a line in the job's activity.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobEventCreate" }
+      responses:
+        "201":
+          description: Logged.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/jobs/{jobId}/contacts:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [jobs]
+      operationId: saveJobContact
+      summary: Saves one contact, replacing the one with the same name (ignoring case) where it stands.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Contact" }
+      responses:
+        "200":
+          description: The job after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/jobs/{jobId}/files:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [files]
+      operationId: uploadJobFile
+      summary: Attaches a file (raw bytes body; content-type is stored as the file's type).
+      parameters:
+        - name: name
+          in: query
+          description: File name to store; unsafe characters become `_`.
+          schema: { type: string, default: upload.bin }
+        - name: kind
+          in: query
+          description: What the file is (`cover-letter`, `confirmation`, `screenshot`, `file`).
+          schema: { type: string, default: file }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, contentMediaType: application/octet-stream }
+          "*/*":
+            schema: { type: string, contentMediaType: application/octet-stream }
+      responses:
+        "201":
+          description: The stored file.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileRecord" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413": { $ref: "#/components/responses/TooLarge" }
+
+  /api/jobs/{jobId}/emails:
+    parameters:
+      - $ref: "#/components/parameters/JobId"
+    post:
+      tags: [mail]
+      operationId: draftJobEmail
+      summary: Drafts an email about this job for the owner to approve. `approve` is honored only for the owner.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailCreate" }
+      responses:
+        "201":
+          description: The draft (or approved email, when the owner approved it at once).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Email" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/files/{fileId}:
+    parameters:
+      - name: fileId
+        in: path
+        required: true
+        schema: { type: string }
+    get:
+      tags: [files]
+      operationId: getFile
+      summary: The file's bytes (HTML is served as text, under a locked-down CSP).
+      responses:
+        "200":
+          description: The file.
+          content:
+            "*/*":
+              schema: { type: string, contentMediaType: application/octet-stream }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [files]
+      operationId: deleteFile
+      summary: Owner only. Removes the file.
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/companies:
+    get:
+      tags: [companies]
+      operationId: listCompanies
+      summary: One summary per company, for the companies table and the compare view.
+      responses:
+        "200":
+          description: The summaries, by name.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CompanySummary" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/companies/{slug}:
+    parameters:
+      - $ref: "#/components/parameters/CompanySlug"
+    get:
+      tags: [companies]
+      operationId: getCompany
+      summary: The full company profile with its summary, jobs, emails and every job's contacts.
+      responses:
+        "200":
+          description: The company.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompanyDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [companies]
+      operationId: patchCompany
+      summary: Changes the named top-level fields (objects and lists replace whole); creates the company if it is new.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CompanyPatch" }
+      responses:
+        "200":
+          description: The company after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Company" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/companies/{slug}/news:
+    parameters:
+      - $ref: "#/components/parameters/CompanySlug"
+    post:
+      tags: [companies]
+      operationId: addCompanyNews
+      summary: Adds one news item (an item with the same url is replaced), kept newest first.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewsItem" }
+      responses:
+        "200":
+          description: The company after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Company" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/companies/{slug}/reviews:
+    parameters:
+      - $ref: "#/components/parameters/CompanySlug"
+    post:
+      tags: [companies]
+      operationId: saveCompanyReview
+      summary: Saves one review per source (matched ignoring case); posting the same source again replaces it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviewInput" }
+      responses:
+        "200":
+          description: The company after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Company" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/companies/{slug}/emails:
+    parameters:
+      - $ref: "#/components/parameters/CompanySlug"
+    post:
+      tags: [mail]
+      operationId: draftCompanyEmail
+      summary: Drafts an email to the company, optionally tied to one of its jobs, for the owner to approve.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CompanyEmailCreate" }
+      responses:
+        "201":
+          description: The draft (or approved email, when the owner approved it at once).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Email" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/events:
+    get:
+      tags: [events]
+      operationId: listEvents
+      summary: The activity log across every job, newest first.
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+      responses:
+        "200":
+          description: The events.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Event" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [events]
+      operationId: logEvent
+      summary: Logs a search-wide line (or one on a job, with jobId).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EventCreate" }
+      responses:
+        "201":
+          description: Logged.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Created" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/answers:
+    get:
+      tags: [answers]
+      operationId: listAnswers
+      summary: Saved form answers, unanswered first.
+      responses:
+        "200":
+          description: The answers.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Answer" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [answers]
+      operationId: saveAnswer
+      summary: Saves a question (an empty answer flags it for the owner) or updates the one with the same id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnswerCreate" }
+      responses:
+        "201":
+          description: The answer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Answer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/answers/{answerId}:
+    parameters:
+      - name: answerId
+        in: path
+        required: true
+        schema: { type: string }
+    patch:
+      tags: [answers]
+      operationId: patchAnswer
+      summary: Changes the named fields of a saved answer (creates it when the id is new and a question is given).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnswerPatch" }
+      responses:
+        "200":
+          description: The answer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Answer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [answers]
+      operationId: deleteAnswer
+      summary: Owner only. Deletes a saved answer; `ok` is false when there was none.
+      responses:
+        "200":
+          description: Done.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/config:
+    get:
+      tags: [settings]
+      operationId: getSearchConfig
+      summary: The search settings agents follow (if `paused` is true, agents only read).
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchConfig" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [settings]
+      operationId: patchSearchConfig
+      summary: Owner only. Merges the named settings.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SearchConfig" }
+      responses:
+        "200":
+          description: The settings after the change.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchConfig" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/resumes:
+    get:
+      tags: [files]
+      operationId: listResumes
+      summary: The résumé files on the server (served at `/resumes/<name>`).
+      responses:
+        "200":
+          description: The résumés.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Resume" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/stats:
+    get:
+      tags: [meta]
+      operationId: getStats
+      summary: Counts for the nav badges and the dashboard.
+      responses:
+        "200":
+          description: The counts.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Stats" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/tokens:
+    get:
+      tags: [keys]
+      operationId: listAgentKeys
+      summary: Owner only. The agent keys (never the secret).
+      responses:
+        "200":
+          description: The keys.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AgentKey" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [keys]
+      operationId: createAgentKey
+      summary: Owner only. Makes a key; the secret is in this response only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AgentKeyCreate" }
+      responses:
+        "201":
+          description: The new key, with its secret.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AgentKeyCreated" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/tokens/{keyId}:
+    parameters:
+      - name: keyId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [keys]
+      operationId: revokeAgentKey
+      summary: Owner only. Revokes a key; `ok` is false when it was already revoked or unknown.
+      responses:
+        "200":
+          description: Done.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/export:
+    get:
+      tags: [settings]
+      operationId: exportAll
+      summary: A full JSON backup (the same shape /api/import and the seed file take).
+      responses:
+        "200":
+          description: The backup.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Bundle" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/import:
+    post:
+      tags: [settings]
+      operationId: importBundle
+      summary: Owner only. Imports a backup or seed bundle; records merge by id, so importing twice changes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Bundle" }
+      responses:
+        "200":
+          description: How many of each were imported.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/mail:
+    get:
+      tags: [mail]
+      operationId: getMailStatus
+      summary: Whether sending is set up, and where the outbox stands against its pacing.
+      responses:
+        "200":
+          description: The status.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/mail/test:
+    post:
+      tags: [mail]
+      operationId: sendTestEmail
+      summary: Owner only. Sends a test email to the owner's own address now (outside pacing).
+      responses:
+        "200":
+          description: Sent.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailTestResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+
+  /api/emails:
+    get:
+      tags: [mail]
+      operationId: listEmails
+      summary: The outbox, newest first.
+      parameters:
+        - name: status
+          in: query
+          description: Comma-separated statuses to keep (e.g. `draft,approved`).
+          schema: { type: string }
+        - name: jobId
+          in: query
+          schema: { type: string }
+        - name: company
+          in: query
+          description: A company slug.
+          schema: { type: string }
+      responses:
+        "200":
+          description: The emails.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Email" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/emails/{emailId}:
+    parameters:
+      - $ref: "#/components/parameters/EmailId"
+    patch:
+      tags: [mail]
+      operationId: editEmail
+      summary: Edits a draft, approved or failed email; a real change to an approved one returns it to draft. Agents may edit drafts only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailEdit" }
+      responses:
+        "200":
+          description: The email after the edit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Email" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/emails/{emailId}/approve:
+    parameters:
+      - $ref: "#/components/parameters/EmailId"
+    post:
+      tags: [mail]
+      operationId: approveEmail
+      summary: Owner only. Queues a draft (or a failed email) to send, at the outbox's pace, if it is still the version the owner read.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailApprove" }
+      responses:
+        "200":
+          description: The approved email.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Email" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/emails/{emailId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/EmailId"
+    post:
+      tags: [mail]
+      operationId: cancelEmail
+      summary: Withdraws an email that hasn't started sending. Agents may cancel drafts only.
+      responses:
+        "200":
+          description: The canceled email.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Email" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+components:
+  securitySchemes:
+    agentKey:
+      type: http
+      scheme: bearer
+      description: An agent key made on the Settings page. Shows in the activity log as `agent:<name>`.
+    tailscaleIdentity:
+      type: apiKey
+      in: header
+      name: Tailscale-User-Login
+      description: Set by Tailscale Serve on loopback only; the server ignores it from anywhere else.
+
+  parameters:
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      description: A job id, a slug like `acme-senior-software-engineer`.
+      schema: { type: string }
+    CompanySlug:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string }
+    EmailId:
+      name: emailId
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    BadRequest:
+      description: The input is invalid; `error` says which field and why.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: No valid agent key or owner identity.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Owner only, or a browser write without the X-Hussla header.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No such record.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: 'The record exists, is in a state that doesn''t allow this, changed since the caller read it, or an agent tried to change owner-written fields (see `code` and `fields`).'
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooLarge:
+      description: The body is over the size limit.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadGateway:
+      description: The mail provider refused or failed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    # ---------- shared
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        code:
+          type: string
+          description: "A stable reason for the refusals a client acts on."
+          enum: [owner-field, changed-since-read, transition-not-allowed]
+        fields:
+          type: array
+          items: { type: string }
+          description: 'With code "owner-field": the fields the owner last wrote, which an agent may not change.'
+    Ok:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+    Created:
+      type: object
+      required: [id]
+      properties:
+        id: { type: integer, format: int64 }
+    Writer:
+      type: string
+      enum: [agent, owner]
+    Writers:
+      type: object
+      description: 'Who last wrote each field, by API name ("notes", "followup.body", an extra key). A field not listed counts as agent-written.'
+      propertyNames: { type: string }
+      additionalProperties: { $ref: "#/components/schemas/Writer" }
+      readOnly: true
+    Timestamp:
+      description: 'UTC, fixed width in responses ("2026-10-08T14:03:00.000Z"); any RFC 3339 time in requests; null when not set.'
+      type: [string, "null"]
+      format: date-time
+    ApiIndex:
+      type: object
+      required: [name, docs, statuses, endpoints]
+      properties:
+        name: { type: string }
+        docs: { type: string }
+        statuses:
+          type: array
+          items: { $ref: "#/components/schemas/JobStatus" }
+        endpoints:
+          type: array
+          items: { type: string }
+    Me:
+      type: object
+      required: [kind, name, appName]
+      properties:
+        kind: { type: string, enum: [user, agent] }
+        name: { type: string }
+        login: { type: string, description: The owner's Tailscale login (users only). }
+        appName: { type: string }
+
+    # ---------- jobs
+    JobStatus:
+      type: string
+      enum: [review, queued, waiting, applied, screening, interviewing, offer, rejected, withdrawn, skipped, filtered, failed]
+    WorkType:
+      type: string
+      description: Empty when the posting doesn't say.
+      enum: ["", remote, hybrid, onsite]
+    PostingStatus:
+      type: string
+      enum: [unknown, open, closed]
+    EmailCheck:
+      type: string
+      description: How the contact's address is known; `inferred` means guessed from the company's pattern.
+      enum: ["", verified, inferred, not found]
+    Contact:
+      type: object
+      required: [name]
+      properties:
+        priority: { type: string, description: "The agent's ranking: Primary, Backup, Company." }
+        name: { type: string }
+        role: { type: string }
+        email: { type: string }
+        emailStatus: { $ref: "#/components/schemas/EmailCheck" }
+        phone: { type: string }
+        linkedin: { type: string }
+        source: { type: string }
+        notes: { type: string }
+    Followup:
+      type: object
+      required: [to, subject, body, linkedin, callNotes, emailSentAt, linkedinSentAt, callMadeAt]
+      properties:
+        to: { type: string }
+        subject: { type: string }
+        body: { type: string, description: Markdown. }
+        linkedin: { type: string }
+        callNotes: { type: string }
+        emailSentAt: { $ref: "#/components/schemas/Timestamp" }
+        linkedinSentAt: { $ref: "#/components/schemas/Timestamp" }
+        callMadeAt: { $ref: "#/components/schemas/Timestamp" }
+    FollowupPatch:
+      type: object
+      description: Merges key by key into the stored follow-up; null clears one key.
+      properties:
+        to: { type: [string, "null"] }
+        subject: { type: [string, "null"] }
+        body: { type: [string, "null"] }
+        linkedin: { type: [string, "null"] }
+        callNotes: { type: [string, "null"] }
+        emailSentAt: { $ref: "#/components/schemas/Timestamp" }
+        linkedinSentAt: { $ref: "#/components/schemas/Timestamp" }
+        callMadeAt: { $ref: "#/components/schemas/Timestamp" }
+    Job:
+      type: object
+      description: A job and everything known about it. Unlisted fields an agent stored come back as extra properties.
+      additionalProperties: true
+      required:
+        - id
+        - companySlug
+        - createdAt
+        - updatedAt
+        - company
+        - title
+        - status
+        - statusNote
+        - score
+        - url
+        - location
+        - workType
+        - salaryMin
+        - salaryMax
+        - payText
+        - compensation
+        - source
+        - resume
+        - resumeSent
+        - foundAt
+        - appliedAt
+        - nextAction
+        - nextActionDue
+        - headsUp
+        - description
+        - descriptionFetchedAt
+        - postingStatus
+        - whyScore
+        - reasons
+        - scamFlags
+        - contacts
+        - bestChannel
+        - followup
+        - companyNotes
+        - roleNotes
+        - sources
+        - notes
+        - writers
+      properties:
+        writers: { $ref: "#/components/schemas/Writers" }
+        id: { type: string }
+        companySlug: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        company: { type: string }
+        title: { type: string }
+        status: { $ref: "#/components/schemas/JobStatus" }
+        statusNote: { type: string }
+        score: { type: [integer, "null"], minimum: 0, maximum: 100 }
+        url: { type: string }
+        location: { type: string }
+        workType: { $ref: "#/components/schemas/WorkType" }
+        salaryMin: { type: [integer, "null"], minimum: 0 }
+        salaryMax: { type: [integer, "null"], minimum: 0 }
+        payText: { type: string }
+        compensation: { type: string, description: "The posting's full pay text." }
+        source: { type: string, description: Where the job was found. }
+        resume: { type: string, description: Résumé variant planned. }
+        resumeSent: { type: string, description: File actually submitted. }
+        foundAt: { $ref: "#/components/schemas/Timestamp" }
+        appliedAt: { $ref: "#/components/schemas/Timestamp" }
+        nextAction: { type: string }
+        nextActionDue: { type: string, description: A date or free text. }
+        headsUp: { type: string, description: One-line warning shown at the top of the job page. }
+        description: { type: string, description: Markdown. }
+        descriptionFetchedAt: { $ref: "#/components/schemas/Timestamp" }
+        postingStatus: { $ref: "#/components/schemas/PostingStatus" }
+        whyScore: { type: string }
+        reasons: { type: array, items: { type: string } }
+        scamFlags: { type: array, items: { type: string } }
+        contacts: { type: array, items: { $ref: "#/components/schemas/Contact" } }
+        bestChannel: { type: string, description: Markdown. }
+        followup: { $ref: "#/components/schemas/Followup" }
+        companyNotes: { type: string, description: Markdown. }
+        roleNotes: { type: string, description: Markdown. }
+        sources: { type: array, items: { type: string } }
+        notes: { type: string, description: "The owner's own notes; agents don't overwrite them." }
+    JobListItem:
+      type: object
+      description: The slice of a job the jobs table shows.
+      required:
+        - id
+        - companySlug
+        - createdAt
+        - updatedAt
+        - company
+        - title
+        - status
+        - score
+        - url
+        - location
+        - workType
+        - salaryMin
+        - salaryMax
+        - payText
+        - source
+        - resume
+        - resumeSent
+        - foundAt
+        - appliedAt
+        - nextAction
+        - nextActionDue
+        - headsUp
+        - followup
+        - primaryContact
+      properties:
+        id: { type: string }
+        companySlug: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        company: { type: string }
+        title: { type: string }
+        status: { $ref: "#/components/schemas/JobStatus" }
+        score: { type: [integer, "null"] }
+        url: { type: string }
+        location: { type: string }
+        workType: { $ref: "#/components/schemas/WorkType" }
+        salaryMin: { type: [integer, "null"] }
+        salaryMax: { type: [integer, "null"] }
+        payText: { type: string }
+        source: { type: string }
+        resume: { type: string }
+        resumeSent: { type: string }
+        foundAt: { $ref: "#/components/schemas/Timestamp" }
+        appliedAt: { $ref: "#/components/schemas/Timestamp" }
+        nextAction: { type: string }
+        nextActionDue: { type: string }
+        headsUp: { type: string }
+        followup:
+          type: object
+          required: [emailSentAt, linkedinSentAt, callMadeAt]
+          properties:
+            emailSentAt: { $ref: "#/components/schemas/Timestamp" }
+            linkedinSentAt: { $ref: "#/components/schemas/Timestamp" }
+            callMadeAt: { $ref: "#/components/schemas/Timestamp" }
+        primaryContact:
+          oneOf:
+            - $ref: "#/components/schemas/Contact"
+            - type: "null"
+    JobDetail:
+      description: A job with its company, activity, files and emails.
+      allOf:
+        - $ref: "#/components/schemas/Job"
+        - type: object
+          required: [companyInfo, events, files, emails]
+          properties:
+            companyInfo:
+              oneOf:
+                - $ref: "#/components/schemas/Company"
+                - type: "null"
+            events: { type: array, items: { $ref: "#/components/schemas/Event" } }
+            files: { type: array, items: { $ref: "#/components/schemas/FileRecord" } }
+            emails: { type: array, items: { $ref: "#/components/schemas/Email" } }
+    JobPatch:
+      type: object
+      description: Names only what changes; null clears. Lists replace whole; `followup` merges by key. Other keys are stored as extras.
+      additionalProperties: true
+      properties:
+        note: { type: string, description: Logged in the job's activity; not stored on the job. }
+        company: { type: string, minLength: 1 }
+        title: { type: string, minLength: 1 }
+        status: { $ref: "#/components/schemas/JobStatus" }
+        statusNote: { type: [string, "null"] }
+        score: { type: [integer, "null"], minimum: 0, maximum: 100 }
+        url: { type: [string, "null"] }
+        location: { type: [string, "null"] }
+        workType:
+          oneOf:
+            - $ref: "#/components/schemas/WorkType"
+            - type: "null"
+        salaryMin: { type: [integer, "null"], minimum: 0 }
+        salaryMax: { type: [integer, "null"], minimum: 0 }
+        payText: { type: [string, "null"] }
+        compensation: { type: [string, "null"] }
+        source: { type: [string, "null"] }
+        resume: { type: [string, "null"] }
+        resumeSent: { type: [string, "null"] }
+        foundAt: { $ref: "#/components/schemas/Timestamp" }
+        appliedAt: { $ref: "#/components/schemas/Timestamp" }
+        nextAction: { type: [string, "null"] }
+        nextActionDue: { type: [string, "null"] }
+        headsUp: { type: [string, "null"] }
+        description: { type: [string, "null"] }
+        descriptionFetchedAt: { $ref: "#/components/schemas/Timestamp" }
+        postingStatus:
+          oneOf:
+            - $ref: "#/components/schemas/PostingStatus"
+            - type: "null"
+        whyScore: { type: [string, "null"] }
+        reasons: { type: [array, "null"], items: { type: string } }
+        scamFlags: { type: [array, "null"], items: { type: string } }
+        contacts: { type: [array, "null"], items: { $ref: "#/components/schemas/Contact" } }
+        bestChannel: { type: [string, "null"] }
+        followup:
+          oneOf:
+            - $ref: "#/components/schemas/FollowupPatch"
+            - type: "null"
+        companyNotes: { type: [string, "null"] }
+        roleNotes: { type: [string, "null"] }
+        sources: { type: [array, "null"], items: { type: string } }
+        notes: { type: [string, "null"] }
+    JobCreate:
+      description: A new job. `id` is optional (the slug of company and title by default).
+      allOf:
+        - $ref: "#/components/schemas/JobPatch"
+        - type: object
+          required: [company, title]
+          properties:
+            id: { type: string, pattern: "^[a-z0-9-]{1,120}$" }
+
+    # ---------- files and events
+    FileRecord:
+      type: object
+      required: [id, jobId, name, kind, mime, size, createdAt, actor, url]
+      properties:
+        id: { type: string }
+        jobId: { type: [string, "null"] }
+        name: { type: string }
+        kind: { type: string }
+        mime: { type: string }
+        size: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        actor: { type: string }
+        url: { type: string, description: "`/api/files/<id>`" }
+    Resume:
+      type: object
+      required: [name, variant, url, size]
+      properties:
+        name: { type: string, description: "File name, e.g. `owner-resume-staff.pdf`." }
+        variant: { type: string, description: The name without its extension; what a job's `resume` names. }
+        url: { type: string }
+        size: { type: integer, format: int64 }
+    Event:
+      type: object
+      required: [id, jobId, at, actor, action, detail]
+      properties:
+        id: { type: integer, format: int64 }
+        jobId: { type: [string, "null"] }
+        at: { type: string, format: date-time }
+        actor: { type: string, description: "The owner's name, `agent:<key name>`, `mailer`, `system` or `import`." }
+        action: { type: string }
+        detail: { type: string }
+        company: { type: [string, "null"], description: "The job's company (search-wide list only)." }
+        title: { type: [string, "null"], description: "The job's title (search-wide list only)." }
+    JobEventCreate:
+      type: object
+      required: [action]
+      properties:
+        action: { type: string, minLength: 1, maxLength: 200 }
+        detail: { type: string }
+    EventCreate:
+      allOf:
+        - $ref: "#/components/schemas/JobEventCreate"
+        - type: object
+          properties:
+            jobId: { type: [string, "null"] }
+
+    # ---------- companies
+    HealthSignal:
+      type: string
+      enum: ["", strong, steady, watch, risky]
+    Profile:
+      type: object
+      properties:
+        website: { type: string }
+        careersUrl: { type: string }
+        linkedin: { type: string }
+        hq: { type: string }
+        founded: { type: [integer, "null"] }
+        employees: { type: string, description: 'With source and date: "about 900 (LinkedIn, Oct 2026)".' }
+        ceo: { type: string }
+        type: { type: string, description: "private, public or subsidiary." }
+        ticker: { type: string }
+        stage: { type: string }
+        phone: { type: string, description: A company main line, never a person's. }
+        phoneLabel: { type: string }
+        remotePolicy: { type: string }
+    FundingRound:
+      type: object
+      properties:
+        type: { type: string }
+        amount: { type: string }
+        amountUsd: { type: [integer, "null"], format: int64 }
+        date: { type: string, description: '"2025-06" or "2025-06-12".' }
+        leadInvestors: { type: array, items: { type: string } }
+    Layoff:
+      type: object
+      properties:
+        date: { type: string }
+        detail: { type: string }
+        url: { type: string }
+    Financials:
+      type: object
+      properties:
+        totalFunding: { type: string }
+        totalFundingUsd: { type: [integer, "null"], format: int64 }
+        lastRound:
+          oneOf:
+            - $ref: "#/components/schemas/FundingRound"
+            - type: "null"
+        valuation: { type: string }
+        valuationUsd: { type: [integer, "null"], format: int64 }
+        revenue: { type: string }
+        revenueUsd: { type: [integer, "null"], format: int64 }
+        growth: { type: string }
+        profitability: { type: string }
+        marketCap: { type: string }
+        stockNote: { type: string }
+        investors: { type: array, items: { type: string } }
+        layoffs: { type: array, items: { $ref: "#/components/schemas/Layoff" } }
+        healthSignal: { $ref: "#/components/schemas/HealthSignal" }
+        healthNote: { type: string }
+    Anecdote:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string }
+        source: { type: string }
+        url: { type: string }
+    NewsItem:
+      type: object
+      required: [headline]
+      properties:
+        date: { type: string, description: 'As precise as the source: "2026", "2026-08" or "2026-08-28".' }
+        headline: { type: string, minLength: 1 }
+        summary: { type: string }
+        source: { type: string }
+        url: { type: string, description: Items with the same url are one item. }
+    Review:
+      type: object
+      required: [source, rating, ratingScale, reviewCount, summary, pros, cons, url, fetchedAt]
+      properties:
+        source: { type: string }
+        rating: { type: [number, "null"], description: Only a rating actually seen. }
+        ratingScale: { type: number, description: Usually 5. }
+        reviewCount: { type: [integer, "null"] }
+        summary: { type: string }
+        pros: { type: array, items: { type: string } }
+        cons: { type: array, items: { type: string } }
+        url: { type: string }
+        fetchedAt: { type: string, format: date-time }
+    ReviewInput:
+      type: object
+      required: [source]
+      properties:
+        source: { type: string, minLength: 1, description: 'e.g. "Glassdoor"; one review per source.' }
+        rating: { type: [number, "null"], minimum: 0 }
+        ratingScale: { type: number, exclusiveMinimum: 0, default: 5 }
+        reviewCount: { type: [integer, "null"], minimum: 0 }
+        summary: { type: string }
+        pros: { type: array, items: { type: string } }
+        cons: { type: array, items: { type: string } }
+        url: { type: string }
+        fetchedAt: { type: string, format: date-time, description: Defaults to now. }
+    Company:
+      type: object
+      description: One employer's profile. Unlisted fields an agent stored come back as extra properties.
+      additionalProperties: true
+      required:
+        - slug
+        - name
+        - updatedAt
+        - quickTake
+        - profile
+        - financials
+        - facts
+        - anecdotes
+        - news
+        - reviews
+        - interview
+        - sources
+        - notes
+        - profileFetchedAt
+        - reviewsFetchedAt
+        - writers
+      properties:
+        writers: { $ref: "#/components/schemas/Writers" }
+        slug: { type: string }
+        name: { type: string }
+        updatedAt: { type: string, format: date-time }
+        quickTake: { type: string, description: "3-4 sentences: what they do, size and health, what it's like, the one thing to know." }
+        profile: { $ref: "#/components/schemas/Profile" }
+        financials: { $ref: "#/components/schemas/Financials" }
+        facts: { type: array, items: { type: string } }
+        anecdotes: { type: array, items: { $ref: "#/components/schemas/Anecdote" } }
+        news: { type: array, items: { $ref: "#/components/schemas/NewsItem" }, description: Newest first. }
+        reviews: { type: array, items: { $ref: "#/components/schemas/Review" } }
+        interview: { type: string, description: Markdown. }
+        sources: { type: array, items: { type: string } }
+        notes: { type: string, description: "The owner's own notes; agents don't overwrite them." }
+        profileFetchedAt: { $ref: "#/components/schemas/Timestamp" }
+        reviewsFetchedAt: { $ref: "#/components/schemas/Timestamp" }
+    CompanyPatch:
+      type: object
+      description: Names only what changes; null clears; objects and lists replace whole. Other keys are stored as extras.
+      additionalProperties: true
+      properties:
+        name: { type: string, minLength: 1 }
+        quickTake: { type: [string, "null"] }
+        profile:
+          oneOf:
+            - $ref: "#/components/schemas/Profile"
+            - type: "null"
+        financials:
+          oneOf:
+            - $ref: "#/components/schemas/Financials"
+            - type: "null"
+        facts: { type: [array, "null"], items: { type: string } }
+        anecdotes: { type: [array, "null"], items: { $ref: "#/components/schemas/Anecdote" } }
+        news: { type: [array, "null"], items: { $ref: "#/components/schemas/NewsItem" } }
+        reviews: { type: [array, "null"], items: { $ref: "#/components/schemas/ReviewInput" } }
+        interview: { type: [string, "null"] }
+        sources: { type: [array, "null"], items: { type: string } }
+        notes: { type: [string, "null"] }
+        profileFetchedAt: { $ref: "#/components/schemas/Timestamp" }
+        reviewsFetchedAt: { $ref: "#/components/schemas/Timestamp" }
+    JobBrief:
+      type: object
+      required: [id, title, status, score, payText, salaryMin, salaryMax]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        status: { $ref: "#/components/schemas/JobStatus" }
+        score: { type: [integer, "null"] }
+        payText: { type: string }
+        salaryMin: { type: [integer, "null"] }
+        salaryMax: { type: [integer, "null"] }
+    CompanySummary:
+      type: object
+      description: One row of the companies table and one column of the compare view.
+      required:
+        - slug
+        - name
+        - quickTake
+        - jobs
+        - bestScore
+        - payMin
+        - payMax
+        - glassdoor
+        - glassdoorCount
+        - avgRating
+        - healthSignal
+        - healthRank
+        - healthNote
+        - totalFunding
+        - totalFundingUsd
+        - valuation
+        - valuationUsd
+        - revenue
+        - employees
+        - hq
+        - founded
+        - stage
+        - remotePolicy
+        - phone
+        - layoffs
+        - newsCount
+        - updatedAt
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        quickTake: { type: string }
+        jobs: { type: array, items: { $ref: "#/components/schemas/JobBrief" } }
+        bestScore: { type: [integer, "null"], description: "Highest fit score among its jobs." }
+        payMin: { type: [integer, "null"], description: Lowest positive salary bound among its jobs. }
+        payMax: { type: [integer, "null"], description: Highest positive salary bound among its jobs. }
+        glassdoor: { type: [number, "null"] }
+        glassdoorCount: { type: [integer, "null"] }
+        avgRating: { type: [number, "null"], description: "Mean of 5-point employee-review ratings (news, self-published and surveys left out), one decimal." }
+        healthSignal: { $ref: "#/components/schemas/HealthSignal" }
+        healthRank: { type: integer, minimum: 0, maximum: 4, description: "Sort key: strong 4, steady 3, watch 2, risky 1, unknown 0." }
+        healthNote: { type: string }
+        totalFunding: { type: string }
+        totalFundingUsd: { type: [integer, "null"], format: int64 }
+        valuation: { type: string, description: Valuation, or market cap for a public company. }
+        valuationUsd: { type: [integer, "null"], format: int64 }
+        revenue: { type: string }
+        employees: { type: string }
+        hq: { type: string }
+        founded: { type: [integer, "null"] }
+        stage: { type: string }
+        remotePolicy: { type: string }
+        phone: { type: string }
+        layoffs: { type: integer, description: How many layoffs are on record. }
+        newsCount: { type: integer }
+        updatedAt: { type: string, format: date-time }
+    CompanyContact:
+      description: A contact from one of the company's jobs.
+      allOf:
+        - $ref: "#/components/schemas/Contact"
+        - type: object
+          required: [jobId, jobTitle]
+          properties:
+            jobId: { type: string }
+            jobTitle: { type: string }
+    CompanyDetail:
+      description: The company page.
+      allOf:
+        - $ref: "#/components/schemas/Company"
+        - type: object
+          required: [summary, jobs, emails, jobContacts]
+          properties:
+            summary: { $ref: "#/components/schemas/CompanySummary" }
+            jobs: { type: array, items: { $ref: "#/components/schemas/Job" } }
+            emails: { type: array, items: { $ref: "#/components/schemas/Email" } }
+            jobContacts: { type: array, items: { $ref: "#/components/schemas/CompanyContact" } }
+
+    # ---------- answers and settings
+    Answer:
+      type: object
+      required: [id, question, answer, jobIds, createdAt, answeredAt, writers]
+      properties:
+        writers: { $ref: "#/components/schemas/Writers" }
+        id: { type: string }
+        question: { type: string }
+        answer: { type: string, description: Empty while the owner hasn't answered. }
+        jobIds: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        answeredAt: { $ref: "#/components/schemas/Timestamp" }
+    AnswerPatch:
+      type: object
+      properties:
+        question: { type: string, minLength: 1 }
+        answer: { type: [string, "null"] }
+        jobIds: { type: [array, "null"], items: { type: string } }
+    AnswerCreate:
+      allOf:
+        - $ref: "#/components/schemas/AnswerPatch"
+        - type: object
+          required: [question]
+          properties:
+            id: { type: string, pattern: "^[a-z0-9-]{1,120}$", description: Defaults to the question's slug. }
+    SearchConfig:
+      type: object
+      description: The search settings agents follow. Free-form beyond `paused`; PATCH merges top-level keys.
+      additionalProperties: true
+      properties:
+        paused: { type: boolean, description: When true, agents only read. }
+        updatedAt: { type: string, format: date-time, readOnly: true }
+    Stats:
+      type: object
+      required: [total, byStatus, unanswered, drafts]
+      properties:
+        total: { type: integer }
+        byStatus:
+          type: object
+          propertyNames: { $ref: "#/components/schemas/JobStatus" }
+          additionalProperties: { type: integer }
+        unanswered: { type: integer }
+        drafts: { type: integer }
+
+    # ---------- agent keys
+    AgentKey:
+      type: object
+      required: [id, name, createdAt, lastUsedAt, revokedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { $ref: "#/components/schemas/Timestamp" }
+        revokedAt: { $ref: "#/components/schemas/Timestamp" }
+    AgentKeyCreate:
+      type: object
+      properties:
+        name: { type: string, maxLength: 80, default: agent }
+    AgentKeyCreated:
+      type: object
+      required: [id, name, token]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        token: { type: string, description: The secret. Shown once; only its hash is stored. }
+
+    # ---------- backup
+    Bundle:
+      type: object
+      description: A backup or seed bundle. Every list is optional on import.
+      properties:
+        exportedAt: { type: string, format: date-time }
+        config: { $ref: "#/components/schemas/SearchConfig" }
+        jobs: { type: array, items: { $ref: "#/components/schemas/JobPatch" } }
+        companies: { type: array, items: { $ref: "#/components/schemas/CompanyPatch" } }
+        answers: { type: array, items: { $ref: "#/components/schemas/AnswerCreate" } }
+        events:
+          type: array
+          items:
+            type: object
+            required: [action]
+            properties:
+              jobId: { type: [string, "null"] }
+              at: { type: string, format: date-time }
+              actor: { type: string }
+              action: { type: string }
+              detail: { type: string }
+        files: { type: array, items: { $ref: "#/components/schemas/FileRecord" } }
+    ImportResult:
+      type: object
+      required: [jobs, companies, answers, events]
+      properties:
+        jobs: { type: integer }
+        companies: { type: integer }
+        answers: { type: integer }
+        events: { type: integer }
+
+    # ---------- mail
+    EmailStatus:
+      type: string
+      description: "draft → approved → sending → sent | failed; draft, approved and failed can be canceled."
+      enum: [draft, approved, sending, sent, failed, canceled]
+    Email:
+      type: object
+      required: [id, jobId, companySlug, to, cc, subject, body, kind, status, createdBy, createdAt, approvedBy, approvedAt, sentAt, messageId, error, attempts, version]
+      properties:
+        id: { type: string }
+        jobId: { type: [string, "null"] }
+        companySlug: { type: [string, "null"] }
+        to: { type: array, items: { type: string, format: email } }
+        cc: { type: array, items: { type: string, format: email } }
+        subject: { type: string }
+        body: { type: string, description: Plain text. }
+        kind: { type: string, description: '"follow-up" (a sent one stamps the job''s followup.emailSentAt), "note", or another short word.' }
+        status: { $ref: "#/components/schemas/EmailStatus" }
+        createdBy: { type: string }
+        createdAt: { type: string, format: date-time }
+        approvedBy: { type: [string, "null"] }
+        approvedAt: { $ref: "#/components/schemas/Timestamp" }
+        sentAt: { $ref: "#/components/schemas/Timestamp" }
+        messageId: { type: [string, "null"] }
+        error: { type: [string, "null"], description: The last delivery error. }
+        attempts: { type: integer }
+        version: { type: integer, minimum: 1, description: Bumped by every content edit; approve names the version the owner read. }
+    EmailApprove:
+      type: object
+      required: [version]
+      properties:
+        version: { type: integer, minimum: 1, description: 'The version the owner was shown; a mismatch is 409 "changed-since-read".' }
+    AddressList:
+      description: 'Addresses as a list, or one string split on commas, semicolons and spaces. Bare addresses only ("Name <a@b.c>" is refused).'
+      oneOf:
+        - type: array
+          items: { type: string }
+        - type: string
+    EmailCreate:
+      type: object
+      required: [to, subject, body]
+      properties:
+        to: { $ref: "#/components/schemas/AddressList" }
+        cc: { $ref: "#/components/schemas/AddressList" }
+        subject: { type: string, minLength: 1, maxLength: 300 }
+        body: { type: string, minLength: 1, description: Plain text; no markdown. }
+        kind: { type: string, pattern: "^[a-z0-9-]{1,40}$", description: 'Defaults to "follow-up" for a job, "note" for a company.' }
+        approve: { type: boolean, description: "Owner only: approve in the same step. Ignored for agents." }
+    CompanyEmailCreate:
+      allOf:
+        - $ref: "#/components/schemas/EmailCreate"
+        - type: object
+          properties:
+            jobId: { type: string, description: One of this company's jobs, to tie the email to it. }
+    EmailEdit:
+      type: object
+      properties:
+        to: { $ref: "#/components/schemas/AddressList" }
+        cc: { $ref: "#/components/schemas/AddressList" }
+        subject: { type: string, minLength: 1, maxLength: 300 }
+        body: { type: string, minLength: 1 }
+    MailStatus:
+      type: object
+      required: [configured, from, fromName, provider, dailyLimit, sentToday, minGapMinutes, hours, inWindow, lastSentAt, nextSendAt, queued, bccSelf]
+      properties:
+        configured: { type: boolean }
+        from: { type: string }
+        fromName: { type: string }
+        provider: { type: string, description: The mail provider id from the catalog (empty until set up). }
+        dailyLimit: { type: integer }
+        sentToday: { type: integer }
+        minGapMinutes: { type: integer }
+        hours: { type: string, description: 'e.g. "8:00–18:00 America/New_York".' }
+        inWindow: { type: boolean }
+        lastSentAt: { $ref: "#/components/schemas/Timestamp" }
+        nextSendAt: { $ref: "#/components/schemas/Timestamp" }
+        queued: { type: integer, description: Approved emails waiting to send. }
+        bccSelf: { type: boolean }
+    MailTestResult:
+      type: object
+      required: [ok, messageId]
+      properties:
+        ok: { type: boolean }
+        messageId: { type: string }

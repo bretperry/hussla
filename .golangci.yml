@@ -69,13 +69,21 @@ linters:
             - "**/internal/domain/**"
             - "!$test"
           allow:
+            - cmp
             - context
             - errors
             - fmt
+            # math, slices: rounding the average rating and sorting news; arithmetic, no I/O.
+            - math
+            - slices
+            # regexp: the markdown-to-plain rules (text.go); RE2, linear time, no I/O.
+            - regexp
             - strconv
             - strings
             - time
             - unicode
+            # unicode/utf8: cutting stored text without splitting a character.
+            - unicode/utf8
             - github.com/bretperry/hussla/internal/config
           deny: []
         # domain tests may also use the test tooling. `**_test.go`, not `**/*_test.go`: the latter
@@ -97,6 +105,8 @@ linters:
             - "!$test"
           allow:
             - time
+            # time/tzdata: embeds the zone database so config.MailTimeZone loads on any host; data, no I/O.
+            - time/tzdata
         # app: use-cases and their ports. Strict: the pure standard library, sync, and the inner layers
         # (domain, config, itself). No I/O package, no adapter, no test support, no other new layer.
         app:

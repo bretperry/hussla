@@ -1,0 +1,300 @@
+# 2026/10/07 23:57:36.137765 [TestPatchNeverTouchesUnnamedFields] [rapid] draw company: "A"
+# 2026/10/07 23:57:36.137773 [TestPatchNeverTouchesUnnamedFields] [rapid] draw title: "A"
+# 2026/10/07 23:57:36.137776 [TestPatchNeverTouchesUnnamedFields] [rapid] draw status: 0
+# 2026/10/07 23:57:36.137794 [TestPatchNeverTouchesUnnamedFields] [rapid] draw statusNote: "A"
+# 2026/10/07 23:57:36.137796 [TestPatchNeverTouchesUnnamedFields] [rapid] draw scoreNil: false
+# 2026/10/07 23:57:36.137798 [TestPatchNeverTouchesUnnamedFields] [rapid] draw score: 0
+# 2026/10/07 23:57:36.137800 [TestPatchNeverTouchesUnnamedFields] [rapid] draw url: "A"
+# 2026/10/07 23:57:36.137813 [TestPatchNeverTouchesUnnamedFields] [rapid] draw location: "A"
+# 2026/10/07 23:57:36.137815 [TestPatchNeverTouchesUnnamedFields] [rapid] draw workType: 0
+# 2026/10/07 23:57:36.137816 [TestPatchNeverTouchesUnnamedFields] [rapid] draw salaryMinNil: false
+# 2026/10/07 23:57:36.137817 [TestPatchNeverTouchesUnnamedFields] [rapid] draw salaryMin: 0
+# 2026/10/07 23:57:36.137820 [TestPatchNeverTouchesUnnamedFields] [rapid] draw salaryMaxNil: false
+# 2026/10/07 23:57:36.137821 [TestPatchNeverTouchesUnnamedFields] [rapid] draw salaryMax: 0
+# 2026/10/07 23:57:36.137834 [TestPatchNeverTouchesUnnamedFields] [rapid] draw payText: "A"
+# 2026/10/07 23:57:36.137836 [TestPatchNeverTouchesUnnamedFields] [rapid] draw compensation: "A"
+# 2026/10/07 23:57:36.137837 [TestPatchNeverTouchesUnnamedFields] [rapid] draw source: "A"
+# 2026/10/07 23:57:36.137839 [TestPatchNeverTouchesUnnamedFields] [rapid] draw resume: "A"
+# 2026/10/07 23:57:36.137841 [TestPatchNeverTouchesUnnamedFields] [rapid] draw resumeSent: "A"
+# 2026/10/07 23:57:36.137852 [TestPatchNeverTouchesUnnamedFields] [rapid] draw foundAtUnset: false
+# 2026/10/07 23:57:36.137856 [TestPatchNeverTouchesUnnamedFields] [rapid] draw foundAt: 1700000000
+# 2026/10/07 23:57:36.137857 [TestPatchNeverTouchesUnnamedFields] [rapid] draw appliedAtUnset: false
+# 2026/10/07 23:57:36.137858 [TestPatchNeverTouchesUnnamedFields] [rapid] draw appliedAt: 1700000000
+# 2026/10/07 23:57:36.137861 [TestPatchNeverTouchesUnnamedFields] [rapid] draw nextAction: "A"
+# 2026/10/07 23:57:36.137997 [TestPatchNeverTouchesUnnamedFields] [rapid] draw nextActionDue: "A"
+# 2026/10/07 23:57:36.138209 [TestPatchNeverTouchesUnnamedFields] [rapid] draw headsUp: "A"
+# 2026/10/07 23:57:36.138213 [TestPatchNeverTouchesUnnamedFields] [rapid] draw description: "A"
+# 2026/10/07 23:57:36.138215 [TestPatchNeverTouchesUnnamedFields] [rapid] draw descriptionFetchedAtUnset: false
+# 2026/10/07 23:57:36.138219 [TestPatchNeverTouchesUnnamedFields] [rapid] draw descriptionFetchedAt: 1700000000
+# 2026/10/07 23:57:36.138241 [TestPatchNeverTouchesUnnamedFields] [rapid] draw postingStatus: 0
+# 2026/10/07 23:57:36.138244 [TestPatchNeverTouchesUnnamedFields] [rapid] draw whyScore: "A"
+# 2026/10/07 23:57:36.138249 [TestPatchNeverTouchesUnnamedFields] [rapid] draw reasons: []string{}
+# 2026/10/07 23:57:36.138253 [TestPatchNeverTouchesUnnamedFields] [rapid] draw scamFlags: []string{}
+# 2026/10/07 23:57:36.138260 [TestPatchNeverTouchesUnnamedFields] [rapid] draw contacts: []domain.Contact{}
+# 2026/10/07 23:57:36.138265 [TestPatchNeverTouchesUnnamedFields] [rapid] draw bestChannel: "A"
+# 2026/10/07 23:57:36.138267 [TestPatchNeverTouchesUnnamedFields] [rapid] draw followupTo: "A"
+# 2026/10/07 23:57:36.138268 [TestPatchNeverTouchesUnnamedFields] [rapid] draw emailSentAtUnset: true
+# 2026/10/07 23:57:36.138270 [TestPatchNeverTouchesUnnamedFields] [rapid] draw companyNotes: "A"
+# 2026/10/07 23:57:36.138271 [TestPatchNeverTouchesUnnamedFields] [rapid] draw roleNotes: "A"
+# 2026/10/07 23:57:36.138273 [TestPatchNeverTouchesUnnamedFields] [rapid] draw sources: []string{}
+# 2026/10/07 23:57:36.138275 [TestPatchNeverTouchesUnnamedFields] [rapid] draw notes: "A"
+# 2026/10/07 23:57:36.138276 [TestPatchNeverTouchesUnnamedFields] [rapid] draw hasExtras: false
+# 2026/10/07 23:57:36.138279 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Company: 0
+# 2026/10/07 23:57:36.138280 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Title: 0
+# 2026/10/07 23:57:36.138281 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Status: 0
+# 2026/10/07 23:57:36.138282 [TestPatchNeverTouchesUnnamedFields] [rapid] draw StatusNote: 0
+# 2026/10/07 23:57:36.138283 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Score: 0
+# 2026/10/07 23:57:36.138284 [TestPatchNeverTouchesUnnamedFields] [rapid] draw URL: 0
+# 2026/10/07 23:57:36.138285 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Location: 0
+# 2026/10/07 23:57:36.138286 [TestPatchNeverTouchesUnnamedFields] [rapid] draw WorkType: 0
+# 2026/10/07 23:57:36.138287 [TestPatchNeverTouchesUnnamedFields] [rapid] draw SalaryMin: 0
+# 2026/10/07 23:57:36.138288 [TestPatchNeverTouchesUnnamedFields] [rapid] draw SalaryMax: 0
+# 2026/10/07 23:57:36.138289 [TestPatchNeverTouchesUnnamedFields] [rapid] draw PayText: 0
+# 2026/10/07 23:57:36.138289 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Compensation: 0
+# 2026/10/07 23:57:36.138290 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Source: 0
+# 2026/10/07 23:57:36.138291 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Resume: 0
+# 2026/10/07 23:57:36.138292 [TestPatchNeverTouchesUnnamedFields] [rapid] draw ResumeSent: 0
+# 2026/10/07 23:57:36.138293 [TestPatchNeverTouchesUnnamedFields] [rapid] draw FoundAt: 0
+# 2026/10/07 23:57:36.138294 [TestPatchNeverTouchesUnnamedFields] [rapid] draw AppliedAt: 0
+# 2026/10/07 23:57:36.138295 [TestPatchNeverTouchesUnnamedFields] [rapid] draw NextAction: 0
+# 2026/10/07 23:57:36.138296 [TestPatchNeverTouchesUnnamedFields] [rapid] draw NextActionDue: 0
+# 2026/10/07 23:57:36.138297 [TestPatchNeverTouchesUnnamedFields] [rapid] draw HeadsUp: 0
+# 2026/10/07 23:57:36.138298 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Description: 0
+# 2026/10/07 23:57:36.138299 [TestPatchNeverTouchesUnnamedFields] [rapid] draw DescriptionFetchedAt: 0
+# 2026/10/07 23:57:36.138300 [TestPatchNeverTouchesUnnamedFields] [rapid] draw PostingStatus: 0
+# 2026/10/07 23:57:36.138317 [TestPatchNeverTouchesUnnamedFields] [rapid] draw WhyScore: 0
+# 2026/10/07 23:57:36.138318 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Reasons: 0
+# 2026/10/07 23:57:36.138319 [TestPatchNeverTouchesUnnamedFields] [rapid] draw ScamFlags: 0
+# 2026/10/07 23:57:36.138321 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Contacts: 0
+# 2026/10/07 23:57:36.138323 [TestPatchNeverTouchesUnnamedFields] [rapid] draw BestChannel: 0
+# 2026/10/07 23:57:36.138324 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Followup: 0
+# 2026/10/07 23:57:36.138324 [TestPatchNeverTouchesUnnamedFields] [rapid] draw CompanyNotes: 0
+# 2026/10/07 23:57:36.138325 [TestPatchNeverTouchesUnnamedFields] [rapid] draw RoleNotes: 0
+# 2026/10/07 23:57:36.138326 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Sources: 0
+# 2026/10/07 23:57:36.138327 [TestPatchNeverTouchesUnnamedFields] [rapid] draw Notes: 0
+# 2026/10/07 23:57:36.138329 [TestPatchNeverTouchesUnnamedFields] [rapid] draw extraKey: ""
+# 2026/10/07 23:57:36.138356 [TestPatchNeverTouchesUnnamedFields] Reasons changed though the patch didn't name it:
+#  before []string{}
+#  after  []string(nil)
+# 
+v0.4.8#10582996794661808247
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x1
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0
+0x0

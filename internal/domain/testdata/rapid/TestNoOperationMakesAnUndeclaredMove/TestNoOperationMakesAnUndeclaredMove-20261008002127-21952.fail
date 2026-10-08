@@ -1,0 +1,8 @@
+# 2026/10/08 00:21:27.055946 [TestNoOperationMakesAnUndeclaredMove] [rapid] draw operations: []domain_test.emailOperation{domain_test.emailOperation{name:"approveStale", run:(func(domain.Email) (domain.Email, error))(0x6753c0)}}
+# 2026/10/08 00:21:27.055959 [TestNoOperationMakesAnUndeclaredMove] approveStale from draft: unexpected error changed since you read it (you saw version 0, it is now 1): review it again
+# 
+v0.4.8#9402859210903808995
+0x0
+0x0
+0x1
+0x0
