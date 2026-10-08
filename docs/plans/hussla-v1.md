@@ -85,7 +85,7 @@ mail must keep these true and test them.
 | 1 | Go domain types, pure rules, knobs; API contract (OpenAPI) and generated UI types | 0 | deep (high) | |
 | 2 | Storage ports, SQLite adapters, migrations, seed import | 1 | workhorse (high) | |
 | 3 | HTTP API, auth (embedded Tailscale, owner enrollment, local sign-in, passkey step-up, agent keys), use-cases | 2 | deep (xhigh) | |
-| 3b | MCP endpoint for agents, "Add an agent" setup snippet | 3, 5 | workhorse (high) | |
+| 3b | MCP endpoint for agents, "Add an agent" setup snippet | 3, 5 | workhorse (high) | running; server part built (draft PR), snippet UI after Phase 5 (`docs/deferred.md`) |
 | 4 | Mail port, provider catalog, adapters, secret store, outbox pacing | 2 | deep (high) | |
 | 5 | React UI: jobs, job, companies, compare, company, outbox, answers, activity, settings | 1 | workhorse (medium) | |
 | 5b | Pitches: ten honed pitches, dashboard billboard, versions and side-by-side compare | 3b, 5 | workhorse (medium) | |
