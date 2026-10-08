@@ -296,3 +296,9 @@ File bytes live in `<DATA_DIR>/files/<id>` and résumés in `<DATA_DIR>/resumes/
 `open` · recorded 2026-10-08 · from Phase 3 (`docs/plans/hussla-v1.md`)
 
 Passkeys can be added (setup code for the first on each address, then a tap with an existing one) and listed, not removed or renamed. An owner who loses every passkey for an address can still read and edit there, but no owner-only action (approve, delete, settings, keys) works on it until a passkey is added, and adding one needs a tap or a setup code, which that address no longer gets. **Why deferred:** Phase 3 is the API's security core; managing passkeys is a Settings screen (Phase 5), and two registered devices (phone and laptop) cover a single loss. **Where:** `internal/app/auth/passkeys.go`, settings key `auth.passkeys`. **If we take it:** `DELETE /api/passkeys/{id}` behind a tap with a *different* passkey (refuse removing the last one), and `PATCH` for the name; add both to `api/openapi.yaml` and the auth matrix. For recovery, a `hussla reset-passkeys` command (access to the data directory is the proof, like `hussla open`) that sets the address's passkeys aside so the setup screen issues a code again.
+
+## A lost log loses a live setup code
+
+`open` · recorded 2026-10-08 · from the first-run review (decision 0012)
+
+Only the setup code's hash is stored, so a restart reminds the owner of the code printed earlier instead of printing it again. If that log line is gone (the container recreated before setup finished), no code can be read and none is issued. **Why deferred:** the review asked for a hash, not the code, at rest; Phase 6 decides how the first passkey is authorized without the log (review blocker 1), which may retire the code. **Where:** `internal/app/auth/owner.go` (`issueSetupCode`), settings key `auth.setupCode`. **If we take it:** a `hussla new-setup-code` command (data-directory access is the proof, like `hussla open`) that replaces the stored hash and prints the new code.
