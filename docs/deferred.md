@@ -25,10 +25,10 @@ reason, then deleted).
 
 What. **Why deferred:** … **Where:** … **If we take it:** … -->
 
-## command-guard test: wall-clock asserts flake on loaded CI runners
+## command-guard test timing fix isn't upstream yet
 `open` · recorded 2026-10-09 · from the ship dynamite test fixes (`fix/ship-findings`)
 
-`scripts/command-guard.test.mjs` fails on busy CI runners: four times so far, in the 50 ms bound in "asks, without parsing, for a line over the size budget" and in "looks nothing up for a line of plain commands after a cd", which hits the default 250 ms budget and then gets an ask instead of no verdict. **Why deferred:** the file is harness-owned (`harness.json`), so the fix belongs upstream in whippletree, not in this project. **Where:** the proposed patch is `/mnt/project-files/hussla/command-guard-timing.patch` (`git apply -p1`; the first test keeps its `character budget` reason check and gets `BOUND_MS`, the second counts lookups with the budgets lifted). In a scratch copy with the patch applied, all 1313 of the file's other tests passed. **If we take it:** apply it in whippletree (or here, then `pnpm harness:push`), and `pnpm harness:pull` the release here; then delete this entry.
+Two wall-clock asserts in `scripts/command-guard.test.mjs` failed on loaded CI runners (measured: 262.8 ms against the 250 ms budget). Bret approved fixing them here (2026-10-09), so this repo's copy now differs from whippletree's. **Why deferred:** pushing upstream is a separate PR on whippletree. **Where:** `scripts/command-guard.test.mjs` (the size-budget test and "looks nothing up … 5000 of them"). **If we take it:** `pnpm harness:push`, then delete this entry once `pnpm harness:status` shows no difference.
 
 ## Mail: OAuth2 sign-in for Outlook.com and Microsoft 365 (and Gmail without app passwords)
 `open` · recorded 2026-10-08 · from `docs/plans/hussla-v1.md` Phase 4
