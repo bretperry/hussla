@@ -85,7 +85,7 @@ mail must keep these true and test them.
 | 1 | Go domain types, pure rules, knobs; API contract (OpenAPI) and generated UI types | 0 | deep (high) | QA passed (#2); stacked on #1 |
 | 2 | Storage ports, SQLite adapters, migrations, seed import | 1 | workhorse (high) | |
 | 3 | HTTP API, auth (embedded Tailscale, owner enrollment, local sign-in, passkey step-up, agent keys), use-cases | 2 | deep (xhigh) | landed (#5) |
-| 3b | MCP endpoint for agents, "Add an agent" setup snippet | 3, 5 | workhorse (high) | running (#6); snippet UI after Phase 5 (`docs/deferred.md`) |
+| 3b | MCP endpoint for agents, "Add an agent" setup snippet | 3, 5 | workhorse (high) | running (#8) |
 | 4 | Mail port, provider catalog, adapters, secret store, outbox pacing | 2 | deep (high) | landed (#4) |
 | 5 | React UI: jobs, job, companies, compare, company, outbox, answers, activity, settings | 1 | workhorse (medium) | |
 | 5b | Pitches: ten honed pitches, dashboard billboard, versions and side-by-side compare | 3b, 5 | workhorse (medium) | |
@@ -228,7 +228,7 @@ can't reach a user-only action by any tool; tool list matches the HTTP API's age
 - Claude Code connects with the copied snippet → verify: Human check `hussla-p3b-claude-code`
 
 **Human checks**
-- `hussla-p3b-claude-code` · Mac · 5 min · none — Run Hussla locally, paste the "Add an agent" snippet into Claude Code, and ask it to add a note to a job. The note appears on the job page.
+- `hussla-p3b-claude-code` · Mac · 5 min · none — Run Hussla locally, paste the "Add an agent" snippet into Claude Code, and ask it to add a note to a job. The note appears on the job page. Also paste the Claude Desktop snippet into its config; if it connects, drop "(unverified)" from its title in `src/features/settings/agent-snippets.ts`.
 
 ## Phase 4 — Mail
 

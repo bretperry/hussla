@@ -1,6 +1,6 @@
-// Seed import: loads the prototype's seed bundle (config, companies, jobs, answers, events) into the store.
-// In the app: the setup wizard's "import a seed file" step and the one-time move from the prototype.
-// Used by: the setup use-case and `hussla import` (Phases 3 and 6).
+// Seed import: loads the prototype's seed bundle or full export (config, companies, jobs, answers, events, emails) into the store.
+// In the app: the setup wizard's "import a seed file" step, Settings → "Import from the old tracker", and `hussla import`.
+// Used by: the tracker use-case (POST /api/import) and `hussla import` (cmd/hussla/import.go).
 // Uses: internal/app/store (one unit of work), internal/app/wire (the bundle's JSON), internal/domain (the rules a new record must pass).
 //
 // Idempotent by "existing wins": a record whose id (slug, answer id, event identity) is already
@@ -11,6 +11,12 @@
 //
 // Imported fields carry no writer: the domain counts a field with no recorded writer as
 // agent-written, so the owner's later edits are the first ones it protects.
+//
+// The prototype's GET /api/export is the seed format plus `exportedAt` and `files` (and `emails`
+// when a file has them); a bare JSON list is read as the prototype's GET /api/emails. Emails follow
+// emails.go: nothing imported can send by itself. File records are counted, not stored, because
+// the export names the files but doesn't hold their bytes. Agent keys and secrets are never in
+// either file, and Report.Notices says so.
 //
 // The real seed is the owner's private file, picked at install time; the repo only ever holds a
 // synthetic sample (docs/reference/prototype/seed-sample.json).
@@ -26,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -48,11 +55,21 @@ type Count struct {
 
 // Report says what an import did.
 type Report struct {
-	Companies, Jobs, Answers, Events Count
+	Companies, Jobs, Answers, Events, Emails Count
 	// ConfigStored is true when the search configuration was written; false when one was already stored or the file had none.
 	ConfigStored bool
-	Warnings     []string
+	// NeedApproval counts imported emails that never went out: they wait for the owner's approval in the Outbox.
+	NeedApproval int
+	// FilesNotImported counts the export's file records; their contents aren't in it.
+	FilesNotImported int
+	// Warnings name each record or field that was skipped, dropped or mapped to something else.
+	Warnings []string
+	// Notices say what an import never brings over, whatever the file holds.
+	Notices []string
 }
+
+// NoticeSecrets is on every report: the prototype's export holds no keys or passwords, and nothing would import them if it did.
+const NoticeSecrets = "Agent keys, mail passwords and other secrets are never imported: make new agent keys and set up mail in Settings."
 
 // bundle is the file's top level. Sections stay raw until a record is read.
 type bundle struct {
@@ -61,10 +78,15 @@ type bundle struct {
 	Jobs      []json.RawMessage `json:"jobs"`
 	Answers   []json.RawMessage `json:"answers"`
 	Events    []json.RawMessage `json:"events"`
+	Emails    []json.RawMessage `json:"emails"`
+	Files     []json.RawMessage `json:"files"`
 }
 
-// knownSections are the keys a bundle may have; others are reported, not stored.
-var knownSections = map[string]bool{"config": true, "companies": true, "jobs": true, "answers": true, "events": true}
+// knownSections are the keys a bundle may have; others are reported, not stored. `exportedAt` is the prototype export's stamp.
+var knownSections = map[string]bool{
+	"config": true, "companies": true, "jobs": true, "answers": true, "events": true,
+	"emails": true, "files": true, "exportedAt": true,
+}
 
 // Import reads a bundle from input and stores what is new, in one unit of work. `now` stamps
 // records the file gave no time for.
@@ -75,6 +97,14 @@ func Import(ctx context.Context, target store.Store, input io.Reader, now time.T
 	}
 	if len(raw) > MaxBundleBytes {
 		return Report{}, fmt.Errorf("the seed file is larger than %d MB", MaxBundleBytes>>20)
+	}
+	if trimmed := bytes.TrimSpace(raw); len(trimmed) > 0 && trimmed[0] == '[' {
+		// The prototype's GET /api/emails list: a list of objects, read as a bundle with only emails.
+		var rows []map[string]json.RawMessage
+		if err := json.Unmarshal(trimmed, &rows); err != nil {
+			return Report{}, fmt.Errorf("the file is a list, but not a list of emails: %w", err)
+		}
+		raw = append(append([]byte(`{"emails":`), trimmed...), '}')
 	}
 	var parsed bundle
 	if err := json.Unmarshal(raw, &parsed); err != nil {
@@ -91,13 +121,15 @@ func Import(ctx context.Context, target store.Store, input io.Reader, now time.T
 			importer.warn("seed file", "unknown section %q ignored", name)
 		}
 	}
+	sectionWarnings := importer.report.Warnings
 	err = target.Atomically(ctx, func(tx store.Tx) error {
-		importer.report = Report{Warnings: importer.report.Warnings} // a retried unit of work starts its counts again
+		importer.report = Report{Warnings: slices.Clone(sectionWarnings)} // a retried unit of work starts its counts and record warnings again
 		return importer.run(ctx, tx, parsed, raw)
 	})
 	if err != nil {
 		return Report{}, err //nolint:wrapcheck // run's errors are wrapped where they arise; the store's own failure passes through
 	}
+	importer.addNotices()
 	return importer.report, nil
 }
 
@@ -134,7 +166,35 @@ func (i *importer) run(ctx context.Context, tx store.Tx, parsed bundle, raw []by
 			return err
 		}
 	}
+	for index, record := range parsed.Emails {
+		if err := i.importEmail(ctx, tx, index, record); err != nil {
+			return err
+		}
+	}
+	i.report.FilesNotImported = len(parsed.Files)
 	return i.logImport(ctx, tx, raw)
+}
+
+// addNotices says what the import left behind on purpose.
+func (i *importer) addNotices() {
+	i.report.Notices = append(i.report.Notices, NoticeSecrets)
+	if count := i.report.NeedApproval; count > 0 {
+		i.report.Notices = append(i.report.Notices, fmt.Sprintf(
+			"%d imported %s never sent: unapproved in the Outbox, and nothing goes out until you approve it again.",
+			count, plural(count, "email was", "emails were")))
+	}
+	if count := i.report.FilesNotImported; count > 0 {
+		i.report.Notices = append(i.report.Notices, fmt.Sprintf(
+			"%d attached %s not imported: the export lists names, not contents. They are still in the old tracker's data folder; attach them again from each job's page.",
+			count, plural(count, "file was", "files were")))
+	}
+}
+
+func plural(count int, one, many string) string {
+	if count == 1 {
+		return one
+	}
+	return many
 }
 
 func (i *importer) importConfig(ctx context.Context, tx store.Tx, config json.RawMessage) error {
@@ -149,6 +209,7 @@ func (i *importer) importConfig(ctx context.Context, tx store.Tx, config json.Ra
 	_, err := tx.Settings().Get(ctx, settings.KeySearchConfig)
 	switch {
 	case err == nil:
+		i.warn("config", "search settings are already set here; the file's were not applied")
 		return nil // the stored configuration wins
 	case !errors.Is(err, storeerr.ErrNotFound):
 		return fmt.Errorf("read search config: %w", err)
@@ -239,6 +300,7 @@ func (i *importer) importJob(ctx context.Context, tx store.Tx, index int, record
 	for _, warning := range decoder.Warnings() {
 		i.warn(where, "%s", warning)
 	}
+	unmappedStatus := unmappedJobStatus(object)
 	id := seeded.ID
 	if !domain.IsValidRecordID(id) {
 		derived, ok := domain.JobIDFor(seeded.Company, seeded.Title)
@@ -270,8 +332,25 @@ func (i *importer) importJob(ctx context.Context, tx store.Tx, index int, record
 	if err := tx.Jobs().Create(ctx, job); err != nil {
 		return fmt.Errorf("store job %s: %w", id, err)
 	}
+	if unmappedStatus != "" {
+		i.warn(where+" ("+id+")", "status %q has no match in Hussla; imported as %q, so set it by hand", unmappedStatus, job.Status)
+	}
 	i.report.Jobs.Created++
 	return nil
+}
+
+// unmappedJobStatus is the record's status when it is text Hussla doesn't know, else "".
+// The prototype's statuses and Hussla's are the same list (config.JobStatusOrder), so this
+// catches only a hand-edited file or a status added to the prototype later.
+func unmappedJobStatus(object wire.Object) string {
+	var text string
+	if json.Unmarshal(object["status"], &text) != nil || text == "" {
+		return ""
+	}
+	if _, err := domain.ParseJobStatus(text); err != nil {
+		return text
+	}
+	return ""
 }
 
 func (i *importer) importAnswer(ctx context.Context, tx store.Tx, index int, record json.RawMessage) error {
@@ -370,11 +449,12 @@ func (i *importer) importEvent(ctx context.Context, tx store.Tx, index int, reco
 // logImport leaves one activity line for an import that added something. Its key is the file's
 // digest, so importing the same file again (which adds nothing) adds no second line either.
 func (i *importer) logImport(ctx context.Context, tx store.Tx, raw []byte) error {
-	created := i.report.Companies.Created + i.report.Jobs.Created + i.report.Answers.Created + i.report.Events.Created
+	created := i.report.Companies.Created + i.report.Jobs.Created + i.report.Answers.Created + i.report.Events.Created + i.report.Emails.Created
 	if created == 0 && !i.report.ConfigStored {
 		return nil
 	}
-	detail := fmt.Sprintf("%d companies, %d jobs, %d answers, %d events", i.report.Companies.Created, i.report.Jobs.Created, i.report.Answers.Created, i.report.Events.Created)
+	detail := fmt.Sprintf("%d companies, %d jobs, %d answers, %d events, %d emails",
+		i.report.Companies.Created, i.report.Jobs.Created, i.report.Answers.Created, i.report.Events.Created, i.report.Emails.Created)
 	event, err := domain.NewEvent("", domain.ActorImport, "Imported a seed file", detail, i.now)
 	if err != nil {
 		return fmt.Errorf("build import event: %w", err)

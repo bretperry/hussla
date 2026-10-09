@@ -1,0 +1,190 @@
+{
+  "exportedAt": "2026-10-08T21:14:05.123Z",
+  "config": {
+    "minScore": 60,
+    "autoApplyMinScore": 85,
+    "maxAppliesPerDay": 5,
+    "paused": false,
+    "homeMetro": "Example City",
+    "remoteMode": "include",
+    "roles": [{ "name": "Example role", "enabled": true, "resume": "example-resume.pdf" }],
+    "salaryMin": 120000,
+    "salaryMax": 180000,
+    "updatedAt": "2026-10-01T09:30:00.000Z"
+  },
+  "jobs": [
+    {
+      "id": "example-co-staff-engineer",
+      "companySlug": "example-co",
+      "createdAt": "2026-09-20T15:00:00.000Z",
+      "updatedAt": "2026-10-02T16:45:10.500Z",
+      "company": "Example Co",
+      "title": "Staff Engineer",
+      "status": "applied",
+      "score": 81,
+      "url": "https://example.com/jobs/1",
+      "location": "Remote (US)",
+      "workType": "remote",
+      "salaryMin": 150000,
+      "salaryMax": 190000,
+      "payText": "$150k-$190k",
+      "source": "example-board",
+      "resume": "example-resume.pdf",
+      "resumeSent": "example-resume.pdf",
+      "foundAt": "2026-09-20T14:00:00.000Z",
+      "appliedAt": "2026-09-22T18:05:00.000Z",
+      "nextAction": "Follow up with the recruiter",
+      "nextActionDue": "2026-10-10",
+      "headsUp": "Example heads-up",
+      "reasons": ["Example reason one", "Example reason two"],
+      "contacts": [{ "name": "Pat Example", "role": "Recruiter", "email": "pat@example.com" }],
+      "followup": { "email": "Example follow-up text", "emailSentAt": "2026-09-29T17:00:00.000Z" },
+      "description": "Example job description.",
+      "statusNote": "Example status note"
+    },
+    {
+      "id": "example-co-frontend-engineer",
+      "companySlug": "example-co",
+      "createdAt": "2026-09-21T10:00:00.000Z",
+      "updatedAt": "2026-09-21T10:00:00.000Z",
+      "company": "Example Co",
+      "title": "Frontend Engineer",
+      "status": "review",
+      "score": null,
+      "url": null,
+      "location": null,
+      "workType": null,
+      "salaryMin": null,
+      "salaryMax": null,
+      "payText": null,
+      "source": null,
+      "resume": null,
+      "resumeSent": null,
+      "foundAt": null,
+      "appliedAt": null,
+      "nextAction": null,
+      "nextActionDue": null
+    },
+    {
+      "id": "sample-labs-product-engineer",
+      "companySlug": "sample-labs",
+      "createdAt": "2026-09-25T08:00:00.000Z",
+      "updatedAt": "2026-10-05T12:00:00.000Z",
+      "company": "Sample Labs",
+      "title": "Product Engineer",
+      "status": "interviewing",
+      "score": 74,
+      "url": "https://example.org/careers/2",
+      "location": "Example City",
+      "workType": "hybrid",
+      "foundAt": "2026-09-25T07:00:00.000Z",
+      "appliedAt": "2026-09-26T09:00:00.000Z"
+    },
+    {
+      "id": "sample-labs-design-engineer",
+      "companySlug": "sample-labs",
+      "createdAt": "2026-09-26T08:00:00.000Z",
+      "updatedAt": "2026-09-27T08:00:00.000Z",
+      "company": "Sample Labs",
+      "title": "Design Engineer",
+      "status": "ghosted",
+      "score": 55
+    }
+  ],
+  "companies": [
+    {
+      "slug": "example-co",
+      "name": "Example Co",
+      "updatedAt": "2026-09-28T11:00:00.000Z",
+      "quickTake": "Example quick take",
+      "facts": ["Example fact"],
+      "reviews": [
+        { "source": "Example Reviews", "rating": 4.2, "ratingScale": 5, "reviewCount": 120, "summary": "Example summary", "fetchedAt": "2026-09-28T11:00:00.000Z" }
+      ]
+    },
+    {
+      "slug": "sample-labs",
+      "name": "Sample Labs",
+      "updatedAt": "2026-09-25T08:00:00.000Z"
+    }
+  ],
+  "answers": [
+    {
+      "id": "why-do-you-want-this-job",
+      "question": "Why do you want this job?",
+      "answer": "Example answer.",
+      "jobIds": ["example-co-staff-engineer"],
+      "createdAt": "2026-09-22T17:00:00.000Z",
+      "answeredAt": "2026-09-22T17:30:00.000Z"
+    },
+    {
+      "id": "earliest-start-date",
+      "question": "Earliest start date?",
+      "answer": "",
+      "jobIds": [],
+      "createdAt": "2026-09-23T09:00:00.000Z",
+      "answeredAt": null
+    }
+  ],
+  "events": [
+    { "id": 1, "jobId": null, "at": "2026-09-20T13:59:00.000Z", "actor": "seed", "action": "Seeded", "detail": "{\"jobs\":2}" },
+    { "id": 2, "jobId": "example-co-staff-engineer", "at": "2026-09-22T18:05:00.000Z", "actor": "owner@example.com", "action": "Status changed", "detail": "review → applied" },
+    { "id": 3, "jobId": "example-co-staff-engineer", "at": "2026-09-29T17:00:00.000Z", "actor": "mailer", "action": "Email sent", "detail": "To pat@example.com: Following up" },
+    { "id": 4, "jobId": "sample-labs-product-engineer", "at": "2026-10-05T12:00:00.000Z", "actor": "agent:Example laptop", "action": "Status changed", "detail": "applied → interviewing" }
+  ],
+  "files": [
+    { "id": "00000000-0000-4000-8000-000000000001", "jobId": "example-co-staff-engineer", "name": "cover-letter.pdf", "kind": "cover-letter", "mime": "application/pdf", "size": 2048, "createdAt": "2026-09-22T18:00:00.000Z", "actor": "agent:Example laptop" }
+  ],
+  "emails": [
+    {
+      "id": "00000000-0000-4000-8000-0000000000e1",
+      "jobId": "example-co-staff-engineer",
+      "to": ["pat@example.com"], "cc": [],
+      "subject": "Following up", "body": "Example sent body.",
+      "kind": "follow-up", "status": "sent",
+      "createdBy": "agent:Example laptop", "createdAt": "2026-09-29T15:00:00.000Z",
+      "approvedBy": "owner@example.com", "approvedAt": "2026-09-29T16:00:00.000Z",
+      "sentAt": "2026-09-29T17:00:00.000Z", "messageId": "<example-1@example.com>", "error": null, "attempts": 1
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000000e2",
+      "jobId": "sample-labs-product-engineer",
+      "to": ["hiring@example.org"], "cc": ["pat@example.com"],
+      "subject": "Thank you", "body": "Example approved body.",
+      "kind": "follow-up", "status": "approved",
+      "createdBy": "agent:Example laptop", "createdAt": "2026-10-05T12:30:00.000Z",
+      "approvedBy": "owner@example.com", "approvedAt": "2026-10-05T13:00:00.000Z",
+      "sentAt": null, "messageId": null, "error": null, "attempts": 0
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000000e3",
+      "jobId": "example-co-frontend-engineer",
+      "to": ["jobs@example.com"], "cc": [],
+      "subject": "Question about the role", "body": "Example draft body.",
+      "kind": "note", "status": "draft",
+      "createdBy": "agent:Example laptop", "createdAt": "2026-10-06T09:00:00.000Z",
+      "approvedBy": null, "approvedAt": null,
+      "sentAt": null, "messageId": null, "error": null, "attempts": 0
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000000e4",
+      "jobId": "sample-labs-product-engineer",
+      "to": ["hiring@example.org"], "cc": [],
+      "subject": "Checking in", "body": "Example interrupted body.",
+      "kind": "follow-up", "status": "sending",
+      "createdBy": "owner@example.com", "createdAt": "2026-10-06T10:00:00.000Z",
+      "approvedBy": "owner@example.com", "approvedAt": "2026-10-06T10:00:00.000Z",
+      "sentAt": null, "messageId": null, "error": null, "attempts": 1
+    },
+    {
+      "id": "00000000-0000-4000-8000-0000000000e5",
+      "jobId": null,
+      "to": ["someone@example.net"], "cc": [],
+      "subject": "Never mind", "body": "Example canceled body.",
+      "kind": "note", "status": "canceled",
+      "createdBy": "owner@example.com", "createdAt": "2026-10-07T10:00:00.000Z",
+      "approvedBy": null, "approvedAt": null,
+      "sentAt": null, "messageId": null, "error": null, "attempts": 0
+    }
+  ]
+}

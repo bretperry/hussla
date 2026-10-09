@@ -35,6 +35,7 @@ export type Passkey = Schemas["Passkey"];
 export type Resume = Schemas["Resume"];
 export type FileRecord = Schemas["FileRecord"];
 export type SearchConfig = Schemas["SearchConfig"];
+export type ImportResult = Schemas["ImportResult"];
 export type JobStatus = Schemas["JobStatus"];
 export type SetupStatus = Schemas["SetupStatus"];
 export type SetupStep = Schemas["SetupStepMark"]["step"];
@@ -196,7 +197,8 @@ export const api = {
   mailProviders: (): Promise<MailProvider[]> => send("GET", "/api/mail/providers"),
   mailSettings: (): Promise<MailSettings> => send("GET", "/api/mail/settings"),
   saveMailSettings: (body: MailSettingsSave): Promise<MailSettings> => send("PUT", "/api/mail/settings", { body, stepUp: true }),
-  importBundle: (bundle: Bundle): Promise<ImportResult> => send("POST", "/api/import", { body: bundle, stepUp: true }),
+  // The old tracker's export (or a seed or backup file), sent as the file's own bytes.
+  importBundle: (file: File): Promise<ImportResult> => send("POST", "/api/import", { file, stepUp: true }),
 };
 
 // A message for a failed call that a person can act on.

@@ -8,7 +8,7 @@ import { useState } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import { TAILSCALE_ADMIN_MACHINES, TAILSCALE_DOWNLOAD } from "@/config/setup";
 import { api, describeError } from "@/shared/api";
-import type { AgentKeyCreated, Bundle, ImportResult, SetupStatus, SetupStep } from "@/shared/api";
+import type { AgentKeyCreated, ImportResult, SetupStatus, SetupStep } from "@/shared/api";
 import { formText } from "@/shared/lib/form";
 import { Button, LinkButton } from "@/shared/ui/Button";
 import { ErrorLine } from "@/shared/ui/Feedback";
@@ -35,12 +35,10 @@ const ImportStep = ({ onDone }: { onDone: () => void }) => {
     if (file === undefined) return;
     setProblem("");
     try {
-      // The server validates the bundle; this only checks it is JSON at all.
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- JSON boundary; POST /api/import validates every record
-      const bundle = JSON.parse(await file.text()) as Bundle;
-      setResult(await api.importBundle(bundle));
+      // The server parses and validates the file (backup, seed, or the old tracker's export or emails list).
+      setResult(await api.importBundle(file));
     } catch (failure) {
-      setProblem(failure instanceof SyntaxError ? "That file isn't a Hussla backup (it isn't JSON)." : describeError(failure));
+      setProblem(describeError(failure));
     }
   };
   return (

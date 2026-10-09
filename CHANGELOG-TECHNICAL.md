@@ -22,9 +22,17 @@ Internal record of how Hussla was built, newest first. Every entry says **what**
 - **Image, compose and binaries.** Multi-stage `Dockerfile` (Vite build, cgo-free Go cross-compile, distroless nonroot, `/data` owned by 65532, `HEALTHCHECK` via `hussla health`) with an `e2e` target linking a fake Tailscale (`-tags faketailnet`); `docker-compose.yml` with `image:`, a named volume and no required value; laptop and cloud variants in `deploy/`; `.github/workflows/publish-image.yml` pushes amd64+arm64 to GHCR on a `v*` tag and drafts a release with `scripts/release-binaries.sh`'s six binaries. *Why:* the 2026-10-08 NAS install (bind mounts, building on the NAS, placeholders).
 - **Evidence.** `pnpm e2e:setup` (Playwright + CDP virtual authenticator against `docker run` of the e2e image) and `pnpm smoke:container` (fresh volume, evil Host, wrong code, recreate keeps the sign-in); screenshots in `docs/screenshots/phase-6/`.
 
+### Import from the prototype
+
+- **The prototype's export imports into v1.** `importseed` reads the prototype's `GET /api/export` file (and its `GET /api/emails` list) besides the seed: `exportedAt` and `files` are known sections, `emails` land as sent history or unapproved drafts (never `approved`, so the dispatcher can't pick one up), file records are counted but not stored (the export has no bytes), and every report carries a "secrets are never imported" notice. Paths: Settings → Import from the old tracker (`POST /api/import`, whose reply now adds `emails`, `needApproval`, `filesNotImported`, `warnings`, `notices`) and `hussla import <file>` (takes the data-folder lock; exit 75 under a running server). `Tracker.Import` no longer logs an activity line when nothing was added, so a repeat import adds nothing at all. Synthetic fixture: `docs/reference/prototype/export-sample.json`. *Why:* Bret's one-step move off the prototype (`docs/install/move-from-the-old-tracker.md`).
+
 ### Phase 5 UI
 
 - **Gazette React UI.** Pages: jobs front page, job, companies, compare, company, outbox, answers, activity, settings. Tokens in `src/shared/ui/tokens.css`, knobs in `src/config/ui.ts`, one sanitizing Markdown renderer for untrusted text, passkey step-up for owner-only actions, small History API router, `useResource` fetch hook (no client store). Evidence: `pnpm ui:evidence` (screenshots at 1280 and 390, grid and column-end DOM check) writes `docs/screenshots/phase-5/`. *Why:* Phase 5 of `docs/plans/hussla-v1.md`.
+
+### Phase 3b agent setup
+
+- **Settings → "Add an agent".** Name it, create its key (passkey tap, `POST /api/tokens`), then copy a ready snippet for Claude Code, Cursor/JSON clients, Claude Desktop via `mcp-remote` (unverified) or a plain-API prompt, filled with `window.location.origin` and the one-time key. The key lives only in component state; key creation moved out of the "Agent keys" list. Snippets in `src/features/settings/agent-snippets.ts`. *Why:* last part of Phase 3b of `docs/plans/hussla-v1.md`.
 
 ### Hussla setup
 
