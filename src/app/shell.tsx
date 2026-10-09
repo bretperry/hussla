@@ -59,7 +59,8 @@ const Dateline = () => {
       <time dateTime={today.toISOString()} className="kicker col-span-6 text-right lg:hidden">
         {today.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}
       </time>
-      <Nav className="col-span-12 mt-4 justify-between lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:mt-0 lg:justify-end" linkClassName="inline-flex h-touch items-center lg:h-auto" />
+      {/* Six sections don't fit one line at 390 wide, so the phone nav wraps to a second row; from lg it is one line again. */}
+      <Nav className="col-span-12 mt-4 flex-wrap justify-between gap-y-0 lg:flex-nowrap lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:mt-0 lg:justify-end" linkClassName="inline-flex h-touch items-center lg:h-auto" />
     </div>
   );
 };

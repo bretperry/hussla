@@ -329,18 +329,18 @@ Passkeys can be added, listed and removed (never the last; `/setup/passkeys`), a
 The front page fetches one company detail per open job (N+1, capped by `FRONT_PAGE_COMPANY_DETAILS`). **Why deferred:** out of Phase 5's scope. **Where:** `src/features/jobs/use-front-page.ts`. **If we take it:** add one overview endpoint to `api/openapi.yaml` and drop the second fetch wave.
 
 
-## Pitch billboard
+## Activity nav item; no MSW
 
 `open` · recorded 2026-10-08 · from Phase 5 (`docs/plans/hussla-v1.md`)
 
-The pitch slot (Phase 5b) is a placeholder. **Why deferred:** out of Phase 5's scope. **Where:** `src/features/jobs/PitchSlot.tsx`. **If we take it:** build it when Phase 5b lands.
+Activity is reachable by link only (Pitches got its nav item in Phase 5b). Tests stub `fetch` and spy on `api` instead of using MSW. **Why deferred:** out of Phase 5's scope. **Where:** `src/config/ui.ts` (`NAV_ITEMS`). **If we take it:** add the nav item (the phone nav already wraps to a second row); adopt MSW only if the stubs get unwieldy.
 
 
-## Pitches and Activity nav items; no MSW
+## Import result doesn't count pitches on the wire
 
-`open` · recorded 2026-10-08 · from Phase 5 (`docs/plans/hussla-v1.md`)
+`open` · recorded 2026-10-09 · from Phase 5b (`docs/plans/hussla-v1.md`)
 
-Activity is reachable by link only; Pitches has no page. Tests stub `fetch` and spy on `api` instead of using MSW. **Why deferred:** out of Phase 5's scope. **Where:** `src/config/ui.ts` (`NAV_ITEMS`). **If we take it:** add the nav items with Phase 5b; adopt MSW only if the stubs get unwieldy.
+The seed import creates pitches and its activity line counts them, but the HTTP `ImportResult` and the Settings import summary don't show a pitches count. **Why deferred:** PR #9 (`feat/import-prototype`) reshapes the same result and Settings code; adding a field here would conflict. **Where:** `internal/app/importseed/importseed.go` (`Report.Pitches`), `internal/httpapi` import route, `src/features/settings/SettingsPage.tsx`. **If we take it:** add `pitches` to the result schema in `api/openapi.yaml` after #9 lands.
 
 ## MCP tools for the HTTP-only agent routes
 

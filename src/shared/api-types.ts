@@ -363,6 +363,106 @@ export interface paths {
         patch: operations["patchAnswer"];
         trace?: never;
     };
+    "/api/pitches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The owner's pitches by slot, each with every version (oldest first), and the pitch knobs the UI uses. */
+        get: operations["listPitches"];
+        put?: never;
+        /** Owner only. Starts a pitch in a slot (the lowest free one when `slot` is left out) with its first version, which is live. */
+        post: operations["createPitch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pitches/{slot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Owner only, with a passkey tap. Deletes a pitch and its history (the activity log keeps its live words); `ok` is false when the slot was empty. */
+        delete: operations["deletePitch"];
+        options?: never;
+        head?: never;
+        /** Owner only. Changes a pitch's title or "when to use it" cue (null clears the cue). */
+        patch: operations["patchPitch"];
+        trace?: never;
+    };
+    "/api/pitches/{slot}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Adds a version to a pitch (owner or agent). The live version doesn't move; only the owner picks it. Sending the newest version's words again adds nothing. */
+        post: operations["addPitchVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pitches/{slot}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Owner only, with a passkey tap. Deletes one version; the live one can't be deleted (400). `ok` is false when there was no such version. */
+        delete: operations["deletePitchVersion"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pitches/{slot}/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Owner only, with a passkey tap. Puts one version of a pitch on the billboard. */
+        post: operations["setLivePitch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config": {
         parameters: {
             query?: never;
@@ -1355,6 +1455,69 @@ export interface components {
             /** @description Defaults to the question's slug. */
             id?: string;
         };
+        PitchVersion: {
+            /** @description Numbered 1, 2, 3 … in the order written; a deleted number is never reused. */
+            version: number;
+            /** @description Plain text */
+            text: string;
+            /** @description Why this version changed; empty when none. */
+            note: string;
+            /** @description Who wrote it, as the activity log names them ("agent:laptop", "import"). */
+            author: string;
+            /** @enum {string} */
+            writer: "owner" | "agent";
+            /** Format: date-time */
+            createdAt: string;
+        };
+        Pitch: {
+            slot: number;
+            title: string;
+            /** @description The "when to use it" cue; empty when none. */
+            when: string;
+            /** @description The number of the version on the billboard; always one of `versions`. */
+            liveVersion: number;
+            /** @description Oldest first. */
+            versions: components["schemas"]["PitchVersion"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @description The pitch knobs (internal/config/pitches.go), so the page and the server use the same numbers. */
+        PitchSettings: {
+            /** @description How many pitches the owner keeps. */
+            slots: number;
+            /** @description The longest a version may be. */
+            maxCharacters: number;
+            /** @description How long the billboard shows one pitch. */
+            rotateSeconds: number;
+            /** @description Speaking pace for the speaking-time estimate. */
+            wordsPerMinute: number;
+        };
+        PitchList: {
+            /** @description By slot. */
+            pitches: components["schemas"]["Pitch"][];
+            settings: components["schemas"]["PitchSettings"];
+        };
+        PitchVersionCreate: {
+            text: string;
+            note?: string;
+        };
+        PitchCreate: {
+            /** @description Defaults to the lowest free slot (409 when all are taken). */
+            slot?: number;
+            title: string;
+            when?: string;
+            text: string;
+            note?: string;
+        };
+        PitchPatch: {
+            title?: string;
+            when?: string | null;
+        };
+        PitchLive: {
+            version: number;
+        };
         /** @description The search settings agents follow. Free-form beyond `paused`; PATCH merges top-level keys. */
         SearchConfig: {
             /** @description When true */
@@ -1732,6 +1895,8 @@ export interface components {
         /** @description A job id, a slug like `acme-senior-software-engineer`. */
         JobId: string;
         CompanySlug: string;
+        /** @description A pitch's slot, 1 to `settings.slots` (10). */
+        PitchSlot: number;
         EmailId: string;
     };
     requestBodies: never;
@@ -2483,6 +2648,208 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    listPitches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The pitches. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PitchList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createPitch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PitchCreate"];
+            };
+        };
+        responses: {
+            /** @description The pitch. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pitch"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deletePitch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Done. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ok"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    patchPitch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PitchPatch"];
+            };
+        };
+        responses: {
+            /** @description The pitch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pitch"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addPitchVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PitchVersionCreate"];
+            };
+        };
+        responses: {
+            /** @description The pitch, with the new version last. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pitch"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deletePitchVersion: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Done. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ok"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    setLivePitch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PitchLive"];
+            };
+        };
+        responses: {
+            /** @description The pitch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pitch"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getSearchConfig: {

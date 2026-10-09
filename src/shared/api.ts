@@ -44,6 +44,10 @@ export type KeyExpiry = Schemas["KeyExpiry"];
 export type MailProvider = Schemas["MailProvider"];
 export type MailSettings = Schemas["MailSettings"];
 export type MailSettingsSave = Schemas["MailSettingsSave"];
+export type Pitch = Schemas["Pitch"];
+export type PitchVersion = Schemas["PitchVersion"];
+export type PitchList = Schemas["PitchList"];
+export type PitchSettings = Schemas["PitchSettings"];
 
 const JOB_STATUSES: readonly JobStatus[] = ["review", "queued", "waiting", "applied", "screening", "interviewing", "offer", "rejected", "withdrawn", "skipped", "filtered", "failed"];
 
@@ -166,6 +170,14 @@ export const api = {
   saveAnswer: (question: string): Promise<Answer> => send("POST", "/api/answers", { body: { question } }),
   patchAnswer: (answerId: string, answer: string): Promise<Answer> => send("PATCH", `/api/answers/${id(answerId)}`, { body: { answer } }),
   deleteAnswer: (answerId: string): Promise<Schemas["Ok"]> => send("DELETE", `/api/answers/${id(answerId)}`, { stepUp: true }),
+
+  listPitches: (extra: Signal = {}): Promise<PitchList> => send("GET", "/api/pitches", withSignal(extra.signal)),
+  createPitch: (body: Schemas["PitchCreate"]): Promise<Pitch> => send("POST", "/api/pitches", { body }),
+  patchPitch: (slot: number, body: Schemas["PitchPatch"]): Promise<Pitch> => send("PATCH", `/api/pitches/${slot}`, { body }),
+  addPitchVersion: (slot: number, body: Schemas["PitchVersionCreate"]): Promise<Pitch> => send("POST", `/api/pitches/${slot}/versions`, { body }),
+  setLivePitch: (slot: number, version: number): Promise<Pitch> => send("POST", `/api/pitches/${slot}/live`, { body: { version }, stepUp: true }),
+  deletePitchVersion: (slot: number, version: number): Promise<Schemas["Ok"]> => send("DELETE", `/api/pitches/${slot}/versions/${version}`, { stepUp: true }),
+  deletePitch: (slot: number): Promise<Schemas["Ok"]> => send("DELETE", `/api/pitches/${slot}`, { stepUp: true }),
 
   getSearchConfig: (): Promise<SearchConfig> => send("GET", "/api/config"),
   setPaused: (paused: boolean): Promise<SearchConfig> => send("PATCH", "/api/config", { body: { paused }, stepUp: true }),

@@ -85,11 +85,11 @@ mail must keep these true and test them.
 | 1 | Go domain types, pure rules, knobs; API contract (OpenAPI) and generated UI types | 0 | deep (high) | QA passed (#2); stacked on #1 |
 | 2 | Storage ports, SQLite adapters, migrations, seed import | 1 | workhorse (high) | |
 | 3 | HTTP API, auth (embedded Tailscale, owner enrollment, local sign-in, passkey step-up, agent keys), use-cases | 2 | deep (xhigh) | landed (#5) |
-| 3b | MCP endpoint for agents, "Add an agent" setup snippet | 3, 5 | workhorse (high) | running (#8) |
+| 3b | MCP endpoint for agents, "Add an agent" setup snippet | 3, 5 | workhorse (high) | landed (#8) |
 | 4 | Mail port, provider catalog, adapters, secret store, outbox pacing | 2 | deep (high) | landed (#4) |
 | 5 | React UI: jobs, job, companies, compare, company, outbox, answers, activity, settings | 1 | workhorse (medium) | |
-| 5b | Pitches: ten honed pitches, dashboard billboard, versions and side-by-side compare | 3b, 5 | workhorse (medium) | |
-| 6 | First-run wizard, prebuilt image, no-key no-terminal NAS install, binaries, install guides (NAS, laptop, cloud) | 3, 3b, 4, 5, 5b | workhorse (medium) | running (#10); built before 5b (Pitches): the pitch slot stays its placeholder; 10 human checks open |
+| 5b | Pitches: ten honed pitches, dashboard billboard, versions and side-by-side compare | 3b, 5 | workhorse (medium) | running (#11) |
+| 6 | First-run wizard, prebuilt image, no-key no-terminal NAS install, binaries, install guides (NAS, laptop, cloud) | 3, 3b, 4, 5, 5b | workhorse (medium) | landed (#10); 10 human checks open |
 | 7 | Install on the NAS and accept on phone | 6; NAS model, Tailscale account | — (human) | |
 
 ## Phase 0 — Repo setup

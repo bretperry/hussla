@@ -21,6 +21,7 @@ import { AddJobPage, EditJobPage } from "@/features/jobs/JobForms";
 import { JobPage } from "@/features/jobs/JobPage";
 import { JobsPage } from "@/features/jobs/JobsPage";
 import { OutboxPage } from "@/features/outbox/OutboxPage";
+import { PitchesPage } from "@/features/pitches/PitchesPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { MailStep } from "@/features/setup/MailStep";
 import { PasskeysPage } from "@/features/setup/PasskeysPage";
@@ -46,6 +47,7 @@ const ROUTES: RouteEntry[] = [
   { pattern: "/companies/:slug", render: (context) => <CompanyPage slug={param(context, "slug")} /> },
   { pattern: "/outbox", render: () => <OutboxPage /> },
   { pattern: "/answers", render: () => <AnswersPage /> },
+  { pattern: "/pitches", render: () => <PitchesPage /> },
   { pattern: "/activity", render: () => <ActivityPage /> },
   { pattern: "/settings", render: ({ me }) => <SettingsPage me={me} /> },
   { pattern: "/setup/passkeys", render: ({ status, reloadStatus }) => <PasskeysPage status={status} onChange={reloadStatus} /> },
