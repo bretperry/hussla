@@ -32,7 +32,7 @@ FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662
 WORKDIR /src
 ARG TARGETOS
 ARG TARGETARCH
-# Set by the publish workflow from the git tag; recorded with each migration.
+# Set by the publish workflow from the git tag; shown on Settings and recorded with each migration.
 ARG VERSION=dev
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
@@ -47,11 +47,11 @@ COPY --from=ui /src/dist ./cmd/hussla/web
 RUN mkdir -p /out/data && chown 65532:65532 /out/data
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -ldflags "-s -w -X main.appVersion=${VERSION}" -o /out/hussla ./cmd/hussla
+    go build -trimpath -ldflags "-s -w -X github.com/bretperry/hussla/internal/config.Version=${VERSION}" -o /out/hussla ./cmd/hussla
 # The same binary with the fake Tailscale linked in, for the e2e target only.
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
-    go build -trimpath -tags faketailnet -ldflags "-X main.appVersion=${VERSION}-e2e" -o /out/hussla-e2e ./cmd/hussla
+    go build -trimpath -tags faketailnet -ldflags "-X github.com/bretperry/hussla/internal/config.Version=${VERSION}-e2e" -o /out/hussla-e2e ./cmd/hussla
 
 # ---- e2e: the test build (fake Tailscale on plain HTTP); never published -----
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab AS e2e

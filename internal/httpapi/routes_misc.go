@@ -33,7 +33,7 @@ func (server *api) apiDocs(w http.ResponseWriter, _ *http.Request, _ auth.Princi
 }
 
 func (server *api) me(w http.ResponseWriter, _ *http.Request, caller auth.Principal) error {
-	body := map[string]any{"kind": "agent", "name": caller.Name(), "appName": config.ProductName}
+	body := map[string]any{"kind": "agent", "name": caller.Name(), "appName": config.ProductName, "version": config.Version}
 	if caller.IsOwner() {
 		body["kind"] = "user"
 		if caller.Login() != "" {

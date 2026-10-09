@@ -9,6 +9,8 @@
 
 services:
   hussla:
+    # To update on Synology, pin the exact version (e.g. :0.1.1) and bump it: Container Manager's
+    # Build never re-pulls a tag it already has, so :latest stays on the first image it fetched.
     image: ghcr.io/bretperry/hussla:latest
     container_name: hussla
     restart: unless-stopped
