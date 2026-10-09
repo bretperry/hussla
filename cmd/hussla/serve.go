@@ -401,6 +401,14 @@ func adoptNodeOwner(ctx context.Context, authService *auth.Service, nodeOwner au
 	}
 }
 
+// authNode is the node as auth sees it: nil without Tailscale (never a typed nil inside the interface).
+func authNode(node tailnetNode) auth.NodeIdentity {
+	if node == nil {
+		return nil
+	}
+	return node
+}
+
 func buildServices(dataDir string, storage *sqlite.Store, logger *slog.Logger, ownerLogin string, node tailnetNode) (httpapi.Deps, *outbox.Dispatcher, error) {
 	blobs, err := filestore.NewBlobs(filepath.Join(dataDir, "files"))
 	if err != nil {
@@ -425,7 +433,7 @@ func buildServices(dataDir string, storage *sqlite.Store, logger *slog.Logger, o
 	mailSetup := mailsetup.NewService(mailsetup.Dependencies{Store: storage, Secrets: secrets, Factory: mailfactory.New, Logger: logger})
 	dispatcher := outbox.New(outbox.Dependencies{Store: storage, Senders: mailSetup, Rules: domain.DefaultPacingRules(location), Logger: logger})
 	authService := auth.New(auth.Options{
-		Store: storage, Ceremony: passkey.Ceremony{}, SignIn: signinfile.New(dataDir), OwnerLogin: ownerLogin,
+		Store: storage, Ceremony: passkey.Ceremony{}, SignIn: signinfile.New(dataDir), OwnerLogin: ownerLogin, Node: authNode(node),
 		AnnounceSetupCode: func(code string) {
 			logger.Warn("Setup code (valid until used): " + code + " (enter it on the setup screen to claim this install and add your passkey; it stays the same across restarts)")
 		},

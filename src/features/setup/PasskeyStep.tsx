@@ -66,7 +66,7 @@ export const PasskeyStep = ({ status, onDone, mode = "first" }: PasskeyStepProps
     setProblem("");
     try {
       await api.newSetupCode();
-      setNote("A new code is in the server log now; the old one no longer works.");
+      setNote("A new code is in the server log now; codes printed earlier still work too.");
     } catch (failure) {
       setProblem(describeError(failure));
     }
@@ -97,7 +97,7 @@ export const PasskeyStep = ({ status, onDone, mode = "first" }: PasskeyStepProps
         <p>This link came from the home-network page and works once. If the passkey prompt is cancelled, press Make it mine there again.</p>
       ) : (
         <Field label="Setup code" hint={WHERE_THE_CODE_IS}>
-          <TextInput name="code" autoComplete="one-time-code" placeholder="XXXX-XXXX-XXXX" required autoCapitalize="characters" spellCheck={false} />
+          <TextInput name="code" autoComplete="one-time-code" placeholder="XXXX-XXXX-XXXX-XXXX" required autoCapitalize="characters" spellCheck={false} />
         </Field>
       )}
       <Field label="Name this passkey" hint="So you can tell them apart later: “iPhone”, “Work laptop”.">

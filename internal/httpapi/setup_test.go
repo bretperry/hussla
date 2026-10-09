@@ -336,7 +336,8 @@ func TestANewSetupCodeOnRequest(t *testing.T) {
 		t.Fatalf("no new code printed (%d)", r.announced)
 	}
 	r.must(http.StatusTooManyRequests, ownerWrite(http.MethodPost, "/api/setup/code", nil))
-	r.must(http.StatusForbidden, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": lost}))
+	// The code already printed stays good beside the new one: asking for codes can't make it stale.
+	r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": lost}))
 	r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": r.setupCode}))
 }
 
@@ -402,5 +403,109 @@ func TestMailSetupNeverGivesThePasswordBack(t *testing.T) {
 	status := r.must(http.StatusOK, call{path: "/api/mail"}).json(t)
 	if status["configured"] != true || status["provider"] != "iCloud Mail" {
 		t.Fatalf("mail status: %v", status)
+	}
+}
+
+// homeForm posts one of the home page's forms the way a browser does: Origin (as the browser
+// serializes it, "null" included) and Sec-Fetch-Site (empty: not sent).
+func (r *rig) homeForm(path, origin, fetchSite string) int {
+	r.t.Helper()
+	request := httptest.NewRequest(http.MethodPost, path, nil)
+	request.Host, request.RemoteAddr = homeHost, "192.168.1.30:51000"
+	if origin != "" {
+		request.Header.Set("Origin", origin)
+	}
+	if fetchSite != "" {
+		request.Header.Set("Sec-Fetch-Site", fetchSite)
+	}
+	recorder := httptest.NewRecorder()
+	httpapi.NewHome(r.deps.Setup).ServeHTTP(recorder, request)
+	return recorder.Code
+}
+
+// From a real browser: the page's Referrer-Policy must let Chromium send this page's Origin on its
+// own form POST (no-referrer made it "null", and every form answered 403). A browser that still
+// sends "null" but says Sec-Fetch-Site: same-origin is accepted; a cross-site one isn't.
+func TestHomeFormsWorkFromARealBrowser(t *testing.T) {
+	r := newRig(t)
+	if _, header, _ := r.homeFull(http.MethodGet, "/", homeHost, "192.168.1.30:51000", ""); header.Get("Referrer-Policy") != "same-origin" {
+		t.Fatalf("Referrer-Policy %q: Chromium sends Origin: null on a form POST under no-referrer", header.Get("Referrer-Policy"))
+	}
+	if _, err := r.auth.AdoptNodeOwner(context.Background(), ownerPeer); err != nil {
+		t.Fatal(err)
+	}
+	r.node.setOwner(ownerPeer)
+	for _, refused := range []struct{ origin, site string }{
+		{"null", ""}, {"null", "cross-site"}, {"null", "same-site"}, {"", "cross-site"}, {"http://evil.example", "same-origin"},
+	} {
+		if code := r.homeForm("/make-it-mine", refused.origin, refused.site); code != http.StatusForbidden {
+			t.Fatalf("make it mine with Origin %q, Sec-Fetch-Site %q: %d, want 403", refused.origin, refused.site, code)
+		}
+	}
+	if code := r.homeForm("/make-it-mine", "null", "same-origin"); code != http.StatusSeeOther {
+		t.Fatalf("make it mine with Origin null, Sec-Fetch-Site same-origin: %d, want 303", code)
+	}
+	if code := r.homeForm("/make-it-mine", "http://"+homeHost, "same-origin"); code != http.StatusSeeOther {
+		t.Fatalf("make it mine from this page: %d, want 303", code)
+	}
+	if code := r.homeForm("/start-over", "null", "same-origin"); code != http.StatusSeeOther {
+		t.Fatalf("start over with Origin null, Sec-Fetch-Site same-origin: %d, want 303", code)
+	}
+}
+
+// A tagged node claimed with the code, then logged in to someone else's tailnet and tagged there:
+// the tailnet door fails closed and the home page offers the way back.
+func TestATaggedNodeOnAnotherTailnetFailsClosed(t *testing.T) {
+	r := newRig(t)
+	home := auth.TailnetPeer{UserID: "9", Tagged: true, Tailnet: "id:Tnet-home"}
+	r.node.setOwner(home)
+	if adopted, err := r.auth.AdoptNodeOwner(context.Background(), home); err != nil || adopted {
+		t.Fatalf("adopt a tagged node: %v %v", adopted, err)
+	}
+	r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": r.setupCode}))
+	guarded := httpapi.GuardNodeOwner(r.deps.Setup, r.tailnetUI)
+	me := func() int {
+		request := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+		request.Host, request.RemoteAddr = tailnetHost, ownerAddr
+		recorder := httptest.NewRecorder()
+		guarded.ServeHTTP(recorder, request)
+		return recorder.Code
+	}
+	if code := me(); code != http.StatusOK {
+		t.Fatalf("the owner's own tagged node: %d", code)
+	}
+	r.node.setOwner(auth.TailnetPeer{UserID: "9", Tagged: true, Tailnet: "id:Tnet-attacker"})
+	if code := me(); code != http.StatusForbidden {
+		t.Fatalf("a tagged node on another tailnet: %d, want 403", code)
+	}
+	_, body := r.home(http.MethodGet, "/", homeHost, "192.168.1.30:51000", "")
+	if !strings.Contains(body, `action="/reconnect"`) {
+		t.Fatalf("no Sign out of that account on the home page:\n%s", body)
+	}
+	if code := r.homeForm("/reconnect", "http://"+homeHost, ""); code != http.StatusSeeOther || r.node.logouts != 1 {
+		t.Fatalf("reconnect: %d, %d logouts", code, r.node.logouts)
+	}
+}
+
+// HUSSLA_OWNER_LOGIN names someone other than the node's login: after that login claims with the
+// code, the tailnet still answers (the configured login is the owner, the node's own login is no mismatch).
+func TestAPinnedOwnerOnSomeoneElsesNodeIsServed(t *testing.T) {
+	r := newRigPinned(t, ownerPeer.Login)
+	admin := auth.TailnetPeer{UserID: "3003", Login: "admin@example.com", Tailnet: "id:Tnet-home"}
+	r.node.setOwner(admin)
+	if adopted, err := r.auth.AdoptNodeOwner(context.Background(), admin); err != nil || adopted {
+		t.Fatalf("the pin let the node's login be adopted: %v %v", adopted, err)
+	}
+	claimed := r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": r.setupCode})).json(t)
+	stepUp, _ := claimed["stepUp"].(string)
+	r.key = virtualauthn.New()
+	r.registerPasskey(r.key, stepUp, tailnetOrigin, "")
+	guarded := httpapi.GuardNodeOwner(r.deps.Setup, r.tailnetUI)
+	request := httptest.NewRequest(http.MethodGet, "/api/setup", nil)
+	request.Host, request.RemoteAddr = tailnetHost, ownerAddr
+	recorder := httptest.NewRecorder()
+	guarded.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"isOwner":true`) {
+		t.Fatalf("the pinned owner after setup: %d %s", recorder.Code, recorder.Body.String())
 	}
 }

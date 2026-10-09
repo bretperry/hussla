@@ -94,6 +94,8 @@ func statusFor(err error) (int, errorBody) {
 		return http.StatusConflict, errorBody{Error: rootMessage(err)}
 	case errors.Is(err, auth.ErrCodeTooSoon):
 		return http.StatusTooManyRequests, errorBody{Error: auth.ErrCodeTooSoon.Error()}
+	case errors.Is(err, auth.ErrTooManyCodes):
+		return http.StatusTooManyRequests, errorBody{Error: auth.ErrTooManyCodes.Error()}
 	case errors.Is(err, mailsetup.ErrNotConfigured):
 		return http.StatusBadRequest, errorBody{Error: mailbox.ErrMailNotConfigured.Error()}
 	case errors.Is(err, mailbox.ErrMailNotConfigured):

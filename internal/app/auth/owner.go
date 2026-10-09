@@ -8,10 +8,13 @@
 // each address (so an agent with the owner's tailnet identity, or on the owner's laptop, can't
 // register its own before the owner does). It is printed to the log only, stored only as a hash (so
 // it stays the same across restarts until used), and spent by the first passkey stored, not by the
-// claim: a cancelled Face ID prompt can be retried with the same code. Each caller (one tailnet
-// user, or the local listener) gets config.SetupCodeAttempts wrong guesses, then waits
-// config.SetupCodeLockout; the code never changes on a wrong guess, so nobody else can make the
-// owner's code stale.
+// claim: a cancelled Face ID prompt can be retried with the same code. Nobody can make the code in
+// the owner's log stale or unusable: it never changes on a wrong guess, a new code is added beside
+// it rather than replacing it, and the right code always passes. A caller (one tailnet user, or the
+// local listener) with config.SetupCodeAttempts wrong guesses has further wrong guesses refused for
+// config.SetupCodeLockout, but that lockout never stops the right code: an agent sharing the
+// owner's tailnet identity could otherwise lock the owner out at will. What makes guessing hopeless
+// is the code's length (80 bits), not the lockout.
 
 package auth
 
@@ -21,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -50,6 +54,58 @@ type ownerRecord struct {
 	// Released marks an owner given up with "Start over" before any passkey existed: it reads as
 	// no owner at all, so the next node owner is adopted. Kept, not deleted, for the history.
 	Released bool `json:"released,omitempty"`
+	// Node is the server's own node when the owner was set: its user (unless tagged) and tailnet.
+	// The node-owner check compares against it, so a tagged node or a node logged in as someone
+	// other than a pinned owner (HUSSLA_OWNER_LOGIN) is still checked. Nil on a record written
+	// before it existed, or claimed only on the local listener.
+	Node *nodeBinding `json:"node,omitempty"`
+}
+
+// nodeBinding is the node an owner was set on.
+type nodeBinding struct {
+	UserID  string `json:"userId,omitempty"` // empty when tagged
+	Tagged  bool   `json:"tagged,omitempty"`
+	Tailnet string `json:"tailnet,omitempty"`
+}
+
+// bindingOf records a logged-in node; nil when the node is logged out (nothing to bind).
+func bindingOf(node TailnetPeer) *nodeBinding {
+	if node.UserID == "" && !node.Tagged {
+		return nil
+	}
+	binding := &nodeBinding{Tagged: node.Tagged, Tailnet: node.Tailnet}
+	if !node.Tagged {
+		binding.UserID = node.UserID
+	}
+	return binding
+}
+
+// currentNode is the server's own node now (logged out, or no tailnet: the zero peer).
+func (s *Service) currentNode() TailnetPeer {
+	if s.node == nil {
+		return TailnetPeer{}
+	}
+	return s.node.NodeOwner()
+}
+
+// nodeMismatch reports whether a logged-in node isn't the owner's: on another tailnet than the one
+// the owner was set on (tagged or not), or untagged as a user who is neither the owner nor the
+// node's user when the owner was set (the HUSSLA_OWNER_LOGIN case).
+func (record ownerRecord) nodeMismatch(node TailnetPeer) bool {
+	bound := record.Node
+	if bound != nil && bound.Tailnet != "" && !sameSecret(node.Tailnet, bound.Tailnet) {
+		return true
+	}
+	if node.Tagged || node.UserID == "" {
+		return false // a tagged node on the owner's tailnet (or one recorded before tailnets were)
+	}
+	if record.TailnetUserID != "" && sameSecret(node.UserID, record.TailnetUserID) {
+		return false
+	}
+	if bound != nil && bound.UserID != "" && sameSecret(node.UserID, bound.UserID) {
+		return false
+	}
+	return record.TailnetUserID != ""
 }
 
 // displayName is how the owner shows in the log: their name, else their login, else "owner".
@@ -127,12 +183,22 @@ func (s *Service) AdoptNodeOwner(ctx context.Context, nodeOwner TailnetPeer) (ad
 		return false, nil
 	}
 	err = s.store.Atomically(ctx, func(tx store.Tx) error {
-		_, found, err := readOwnerTx(ctx, tx)
-		if err != nil || found {
+		existing, found, err := readOwnerTx(ctx, tx)
+		if err != nil {
 			return err
 		}
+		if found {
+			// An owner recorded before the first-run window existed gets it once, when this node is theirs.
+			if existing.TailnetUserID != "" && sameSecret(existing.TailnetUserID, nodeOwner.UserID) && !existing.nodeMismatch(nodeOwner) {
+				return s.startFirstRunTx(ctx, tx)
+			}
+			return nil
+		}
 		adopted = true
-		record := ownerRecord{TailnetUserID: nodeOwner.UserID, Login: nodeOwner.Login, Name: nodeOwner.Name, Handle: randomHandle(), ClaimedAt: domain.NormalizeTime(s.now())}
+		record := ownerRecord{
+			TailnetUserID: nodeOwner.UserID, Login: nodeOwner.Login, Name: nodeOwner.Name, Handle: randomHandle(),
+			ClaimedAt: domain.NormalizeTime(s.now()), Node: bindingOf(nodeOwner),
+		}
 		if err := writeJSON(ctx, tx, settingOwner, record); err != nil {
 			return err
 		}
@@ -148,20 +214,21 @@ func (s *Service) AdoptNodeOwner(ctx context.Context, nodeOwner TailnetPeer) (ad
 	return adopted, nil
 }
 
-// NodeOwnerMismatch reports whether the node is logged in to Tailscale as a user other than the
-// recorded owner: someone signed it in again (after a key expiry, say) with their own account.
-// The server then fails closed on the tailnet and the home-network page offers to log the node
-// out so the owner can connect again. Only an untagged node's user can be compared: a tagged node
-// has no owning user, so it never reads as a mismatch.
+// NodeOwnerMismatch reports whether the node is logged in to Tailscale as someone other than the
+// owner: someone signed it in again (after a key expiry, say) with their own account, or moved it
+// to their own tailnet, tagged or not. The server then fails closed on the tailnet and the
+// home-network page offers to log the node out so the owner can connect again. The tailnet is
+// compared when the owner record holds one (every owner set since it was added); a logged-out node
+// is never a mismatch.
 func (s *Service) NodeOwnerMismatch(ctx context.Context, nodeOwner TailnetPeer) (bool, error) {
-	if nodeOwner.Tagged || nodeOwner.UserID == "" {
+	if nodeOwner.UserID == "" && !nodeOwner.Tagged {
 		return false, nil
 	}
 	record, found, err := s.readOwner(ctx)
-	if err != nil || !found || record.TailnetUserID == "" {
+	if err != nil || !found {
 		return false, err
 	}
-	return !sameSecret(nodeOwner.UserID, record.TailnetUserID), nil
+	return record.nodeMismatch(nodeOwner), nil
 }
 
 // PinRefuses reports whether HUSSLA_OWNER_LOGIN keeps the untagged user who owns this node from
@@ -192,11 +259,21 @@ func (s *Service) TailnetPrincipal(ctx context.Context, peer TailnetPeer) (Princ
 
 // ---- Setup code
 
-// setupCodeRecord is the live setup code as stored (settings auth.setupCode): its hash only, so
-// a leaked backup doesn't hold the code. An empty Hash means no code is live.
+// setupCodeRecord is the live setup codes as stored (settings auth.setupCode): hashes only, so a
+// leaked backup doesn't hold a code. Hash is the newest; Earlier holds codes printed before it,
+// still good (a new code never invalidates a printed one). An empty Hash means no code is live.
 type setupCodeRecord struct {
 	Hash     string    `json:"hash,omitempty"`
+	Earlier  []string  `json:"earlier,omitempty"`
 	IssuedAt time.Time `json:"issuedAt,omitzero"`
+}
+
+// live is every hash that still claims, newest first.
+func (record setupCodeRecord) live() []string {
+	if record.Hash == "" {
+		return nil
+	}
+	return append([]string{record.Hash}, record.Earlier...)
 }
 
 // setupGuesses counts one caller's wrong setup codes. Guarded by Service.mu.
@@ -208,9 +285,10 @@ type setupGuesses struct {
 // setupAlphabet is Crockford's base32: no I, L, O or U, so a code read off a log can't be misread.
 const setupAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
-// newSetupCode is 12 characters (60 bits) as XXXX-XXXX-XXXX.
+// newSetupCode is 16 characters (80 bits) as XXXX-XXXX-XXXX-XXXX: long enough that guessing is
+// hopeless even with no lockout at all (at a million guesses a second, about 38,000 years on average).
 func newSetupCode() string {
-	buffer := make([]byte, 12)
+	buffer := make([]byte, 16)
 	_, _ = rand.Read(buffer)
 	var builder strings.Builder
 	for index, value := range buffer {
@@ -267,7 +345,7 @@ func (s *Service) IssueSetupCode(ctx context.Context) error {
 func (s *Service) issueSetupCode(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.setupHash != "" {
+	if len(s.setupHashes) > 0 {
 		return nil
 	}
 	var stored setupCodeRecord
@@ -279,7 +357,7 @@ func (s *Service) issueSetupCode(ctx context.Context) error {
 		return fmt.Errorf("read setup code: %w", err)
 	}
 	if stored.Hash != "" {
-		s.setupHash = stored.Hash
+		s.setupHashes = stored.live()
 		s.remind(stored.IssuedAt)
 		return nil
 	}
@@ -288,7 +366,7 @@ func (s *Service) issueSetupCode(ctx context.Context) error {
 	if err := s.store.Atomically(ctx, func(tx store.Tx) error { return writeJSON(ctx, tx, settingSetupCode, record) }); err != nil {
 		return fmt.Errorf("store setup code: %w", err)
 	}
-	s.setupHash = record.Hash
+	s.setupHashes = record.live()
 	s.announce(code)
 	return nil
 }
@@ -312,7 +390,7 @@ func (s *Service) Status(ctx context.Context, rp RelyingParty) (SetupStatus, err
 		}
 	}
 	s.mu.Lock()
-	live := s.setupHash != ""
+	live := len(s.setupHashes) > 0
 	s.mu.Unlock()
 	status := SetupStatus{Enrolled: enrolled, Passkeys: count, CodeLive: live}
 	if status.FirstRunOpen, err = s.firstRunOpen(ctx); err != nil {
@@ -363,7 +441,12 @@ func (s *Service) Claim(ctx context.Context, caller Principal, typed string) (Pr
 			if !found {
 				handle = randomHandle()
 			}
-			record = ownerRecord{TailnetUserID: caller.peer.UserID, Login: caller.peer.Login, Name: caller.peer.Name, Handle: handle, ClaimedAt: domain.NormalizeTime(s.now())}
+			// The node as it is now: a tagged node, or one logged in as someone other than a pinned
+			// owner, is still the owner's node for the node-owner check.
+			record = ownerRecord{
+				TailnetUserID: caller.peer.UserID, Login: caller.peer.Login, Name: caller.peer.Name, Handle: handle,
+				ClaimedAt: domain.NormalizeTime(s.now()), Node: bindingOf(s.currentNode()),
+			}
 			if err := writeJSON(ctx, tx, settingOwner, record); err != nil {
 				return err
 			}
@@ -397,17 +480,23 @@ func setupGuesser(caller Principal) string {
 	return "local"
 }
 
-// checkSetupCode checks a typed code against the live one. It doesn't spend it (a stored passkey
-// does). A caller with config.SetupCodeAttempts wrong guesses is refused, right code or not, for
-// config.SetupCodeLockout; the code itself never changes.
+// checkSetupCode checks a typed code against every live one. It doesn't spend it (a stored passkey
+// does). The right code always passes; wrong guesses count toward the caller's lockout (checkGuess).
 func (s *Service) checkSetupCode(guesser, typed string) error {
 	s.mu.Lock()
-	live := s.setupHash
+	live := slices.Clone(s.setupHashes)
 	s.mu.Unlock()
-	if live == "" {
+	if len(live) == 0 {
 		return ErrSetupClosed
 	}
-	return s.checkGuess(guesser, ErrWrongSetupCode, func() bool { return sameSecret(hashSecret(normalizeSetupCode(typed)), live) })
+	typedHash := hashSecret(normalizeSetupCode(typed))
+	return s.checkGuess(guesser, ErrWrongSetupCode, func() bool {
+		matched := false
+		for _, hash := range live {
+			matched = sameSecret(typedHash, hash) || matched // no early exit: the same work for every code
+		}
+		return matched
+	})
 }
 
 // ensureLocalOwner records an owner for an install first reached through the local listener: a

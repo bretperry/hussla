@@ -194,7 +194,7 @@ func (node *Node) running(status *ipnstate.Status) error {
 	var keyExpiry time.Time
 	if self := status.Self; self != nil {
 		tagged := self.Tags != nil && self.Tags.Len() > 0
-		node.owner = auth.TailnetPeer{UserID: strconv.FormatInt(int64(self.UserID), 10), Tagged: tagged}
+		node.owner = auth.TailnetPeer{UserID: strconv.FormatInt(int64(self.UserID), 10), Tagged: tagged, Tailnet: tailnetID(status.CurrentTailnet)}
 		if profile, found := status.User[self.UserID]; found && !tagged {
 			node.owner.Login, node.owner.Name = profile.LoginName, profile.DisplayName
 		}
@@ -212,6 +212,21 @@ func (node *Node) running(status *ipnstate.Status) error {
 	}
 	node.state = auth.TailnetState{Phase: phase, Domain: node.domain, KeyExpiry: keyExpiry}
 	return nil
+}
+
+// tailnetID names the tailnet the node is on, for the owner's node binding: the stable id when
+// the control server gives one, else the tailnet's name ("" when the status has neither).
+func tailnetID(tailnet *ipnstate.TailnetStatus) string {
+	if tailnet == nil {
+		return ""
+	}
+	if tailnet.StableID != "" {
+		return "id:" + string(tailnet.StableID)
+	}
+	if tailnet.Name != "" {
+		return "name:" + tailnet.Name
+	}
+	return ""
 }
 
 // Refresh re-reads a joined node's status (call it every config.TailnetRefresh): a rename moves

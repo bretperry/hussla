@@ -213,7 +213,7 @@ func (s *Service) FinishRegistration(ctx context.Context, owner Principal, rp Re
 		return StoredPasskey{}, fmt.Errorf("store passkey: %w", err)
 	}
 	s.mu.Lock()
-	s.setupHash = ""
+	s.setupHashes = nil
 	s.mu.Unlock()
 	return stored, nil
 }
@@ -381,7 +381,7 @@ func (s *Service) consumeStepUp(owner Principal, purpose, token string) (stepUp,
 
 // IsAuthError reports whether err is one of this package's refusals (for the HTTP layer's mapping).
 func IsAuthError(err error) bool {
-	for _, known := range []error{ErrUnauthorized, ErrNotOwner, ErrNotEnrolled, ErrStepUpRequired, ErrNoPasskey, ErrPasskeyRejected, ErrChallengeUnknown, ErrWrongSetupCode, ErrSetupCodeLocked, ErrSetupClosed, ErrSignInRefused, ErrFirstRunClosed, ErrStartOverClosed, ErrCodeTooSoon, ErrLastPasskey, ErrWrongLink, ErrFirstRunPasskeyLimited} {
+	for _, known := range []error{ErrUnauthorized, ErrNotOwner, ErrNotEnrolled, ErrStepUpRequired, ErrNoPasskey, ErrPasskeyRejected, ErrChallengeUnknown, ErrWrongSetupCode, ErrSetupCodeLocked, ErrSetupClosed, ErrSignInRefused, ErrFirstRunClosed, ErrStartOverClosed, ErrCodeTooSoon, ErrTooManyCodes, ErrLastPasskey, ErrWrongLink, ErrFirstRunPasskeyLimited} {
 		if errors.Is(err, known) {
 			return true
 		}

@@ -67,7 +67,10 @@ func (page *home) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	header := w.Header()
 	header.Set("Content-Security-Policy", homeCSP(""))
 	header.Set("X-Content-Type-Options", "nosniff")
-	header.Set("Referrer-Policy", "no-referrer")
+	// same-origin, not no-referrer: under no-referrer Chromium sends "Origin: null" on this page's
+	// own form POSTs, and fromThisPage refuses them. same-origin still sends no Referer to the
+	// tailnet address "Make it mine" redirects to, or to any link off the page.
+	header.Set("Referrer-Policy", "same-origin")
 	header.Set("X-Frame-Options", "DENY")
 	header.Set("Cache-Control", "no-store")
 	if !privateSource(r.RemoteAddr) {
@@ -136,9 +139,14 @@ func homeHost(hostHeader string) bool {
 }
 
 // fromThisPage reports whether a POST is a form post from this page: it carries this page's own
-// Origin; anything else (no Origin, or another site's) is refused.
+// Origin, or a browser's "Sec-Fetch-Site: same-origin" with no Origin or an opaque "null" one (a
+// browser that hides the origin still says where the request came from). Anything else (no
+// Origin and no fetch metadata, another site's Origin, or cross-site metadata) is refused.
 func fromThisPage(w http.ResponseWriter, r *http.Request) bool {
-	if r.Header.Get("Origin") != "http://"+r.Host {
+	origin := r.Header.Get("Origin")
+	sameOrigin := origin == "http://"+r.Host ||
+		((origin == "" || origin == "null") && r.Header.Get("Sec-Fetch-Site") == "same-origin")
+	if !sameOrigin {
 		http.Error(w, "Only from this page.", http.StatusForbidden)
 		return false
 	}

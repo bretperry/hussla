@@ -16,6 +16,7 @@ import (
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tailcfg"
+	"tailscale.com/types/views"
 
 	"github.com/bretperry/hussla/internal/app/auth"
 )
@@ -151,5 +152,30 @@ func TestRefreshFollowsRenameKeyExpiryAndLogout(t *testing.T) {
 	}
 	if len(*lines) != 1 || !strings.Contains((*lines)[0], "3333") {
 		t.Fatalf("want one log line for the new link, got %q", *lines)
+	}
+}
+
+// The node's tailnet rides along with its owner, tagged or not, so the owner check can tell a node
+// moved to someone else's tailnet: the stable id when there is one, else the tailnet's name.
+func TestTheNodeOwnerCarriesItsTailnet(t *testing.T) {
+	node, _ := recordingNode()
+	tags := views.SliceOf([]string{"tag:server"})
+	status := &ipnstate.Status{
+		CertDomains:    []string{"hussla.tail0000.ts.net"},
+		CurrentTailnet: &ipnstate.TailnetStatus{MagicDNSEnabled: true, StableID: "Tnet1234", Name: "example.com"},
+		Self:           &ipnstate.PeerStatus{UserID: 7, Tags: &tags},
+	}
+	if err := node.running(status); err != nil {
+		t.Fatal(err)
+	}
+	if owner := node.NodeOwner(); !owner.Tagged || owner.Tailnet != "id:Tnet1234" {
+		t.Fatalf("tagged owner: %+v", owner)
+	}
+	status.CurrentTailnet.StableID = ""
+	if err := node.running(status); err != nil {
+		t.Fatal(err)
+	}
+	if owner := node.NodeOwner(); owner.Tailnet != "name:example.com" {
+		t.Fatalf("owner with no stable id: %+v", owner)
 	}
 }

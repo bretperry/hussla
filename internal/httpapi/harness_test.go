@@ -117,6 +117,7 @@ func (r *rig) restart() *rig {
 		AnnounceSetupCode: func(code string) { r.setupCode = code; r.announced++ },
 		RemindSetupCode:   func(issuedAt time.Time) { r.reminded = append(r.reminded, issuedAt) },
 		OwnerLogin:        r.ownerPin,
+		Node:              r.node,
 	})
 	r.deps.Auth = r.auth
 	r.deps.Setup = setup.New(setup.Options{Auth: r.auth, Tailnet: r.node, Store: r.store, Now: r.clock.Now})

@@ -42,6 +42,8 @@ var (
 	ErrStartOverClosed = errors.New("this install already has a passkey, so its owner can't be changed here")
 	// ErrCodeTooSoon: a new setup code was printed moments ago (429).
 	ErrCodeTooSoon = errors.New("a new setup code was printed less than a minute ago: look for the newest \"Setup code\" line in the log")
+	// ErrTooManyCodes: config.SetupCodesLive codes are already live (429): use one from the log.
+	ErrTooManyCodes = errors.New("several setup codes are already in the log and all of them still work: use the newest \"Setup code\" line")
 	// ErrWrongLink: the first-run link isn't the live one (403): already used, or replaced by a newer press.
 	ErrWrongLink = errors.New("that setup link was already used or replaced: press Make it mine on the home-network page again, or use the setup code from the log")
 	// ErrFirstRunPasskeyLimited: a passkey added through the first-run link can't remove one added
@@ -66,7 +68,8 @@ func everOwned(ctx context.Context, tx store.Tx) (bool, error) {
 }
 
 // settingFirstRunStarted records when the first-run window opened (the node's owner was first
-// adopted on an install with no passkey). Its presence means the window never opens again.
+// adopted on an install with no passkey). Set, the window never opens again, except that Start over
+// (only possible before any passkey) resets it to null so the next owner adopted gets a fresh one.
 const settingFirstRunStarted = "auth.firstRunStartedAt"
 
 // FirstRun is the first-run window as the home-network page needs it.
@@ -94,7 +97,7 @@ func (s *Service) FirstRunState(ctx context.Context) (FirstRun, error) {
 func (s *Service) firstRunTx(ctx context.Context, tx store.Tx) (FirstRun, error) {
 	var started time.Time
 	found, err := readJSON(ctx, tx, settingFirstRunStarted, &started)
-	if err != nil || !found || s.firstRunWindow <= 0 {
+	if err != nil || !found || started.IsZero() || s.firstRunWindow <= 0 {
 		return FirstRun{}, err
 	}
 	state := FirstRun{Started: true, ClosesAt: started.Add(s.firstRunWindow)}
@@ -122,7 +125,7 @@ func (s *Service) startFirstRunTx(ctx context.Context, tx store.Tx) error {
 	}
 	var started time.Time
 	found, err := readJSON(ctx, tx, settingFirstRunStarted, &started)
-	if err != nil || found {
+	if err != nil || (found && !started.IsZero()) { // null: Start over reset it
 		return err
 	}
 	owned, err := everOwned(ctx, tx)
@@ -180,10 +183,12 @@ func (s *Service) ClaimWithLink(ctx context.Context, caller Principal, link stri
 	return caller, s.grantStepUp(caller, PurposeRegisterPasskey, true), nil
 }
 
-// RequestSetupCode prints a new setup code to the log, replacing the live one: for a lost log
+// RequestSetupCode prints a new setup code to the log, beside the live ones: for a lost log
 // before setup is done, and for an owner who lost every passkey (recovery). The owner may ask
 // (by tailnet identity or local session); before there is an owner, so may anyone who could
-// claim with it. At most once per config.SetupCodeReissueGap.
+// claim with it. At most once per config.SetupCodeReissueGap, and at most config.SetupCodesLive
+// codes live at once. A new code never invalidates one already printed: an agent sharing the
+// owner's tailnet identity could otherwise make the code in the owner's log stale every minute.
 func (s *Service) RequestSetupCode(ctx context.Context, caller Principal) error {
 	switch caller.role {
 	case RoleOwner:
@@ -206,6 +211,10 @@ func (s *Service) RequestSetupCode(ctx context.Context, caller Principal) error 
 		s.mu.Unlock()
 		return ErrCodeTooSoon
 	}
+	if len(s.setupHashes) >= config.SetupCodesLive {
+		s.mu.Unlock()
+		return ErrTooManyCodes
+	}
 	s.lastReissue = now
 	s.mu.Unlock()
 	who := caller.login
@@ -214,8 +223,16 @@ func (s *Service) RequestSetupCode(ctx context.Context, caller Principal) error 
 	}
 
 	code := newSetupCode()
-	record := setupCodeRecord{Hash: hashSecret(normalizeSetupCode(code)), IssuedAt: domain.NormalizeTime(now)}
+	var record setupCodeRecord
 	err := s.store.Atomically(ctx, func(tx store.Tx) error {
+		var stored setupCodeRecord
+		if _, err := readJSON(ctx, tx, settingSetupCode, &stored); err != nil {
+			return err
+		}
+		if len(stored.live()) >= config.SetupCodesLive {
+			return ErrTooManyCodes
+		}
+		record = setupCodeRecord{Hash: hashSecret(normalizeSetupCode(code)), Earlier: stored.live(), IssuedAt: domain.NormalizeTime(now)}
 		if err := writeJSON(ctx, tx, settingSetupCode, record); err != nil {
 			return err
 		}
@@ -226,7 +243,7 @@ func (s *Service) RequestSetupCode(ctx context.Context, caller Principal) error 
 	}
 	// Wrong-guess lockouts stay: a new code is no reason to let someone who was guessing guess again.
 	s.mu.Lock()
-	s.setupHash = record.Hash
+	s.setupHashes = record.live()
 	s.mu.Unlock()
 	s.announce(code)
 	return nil
@@ -254,6 +271,11 @@ func (s *Service) StartOver(ctx context.Context, logout func(context.Context) er
 		if found {
 			record.Released = true
 			if err := writeJSON(ctx, tx, settingOwner, record); err != nil {
+				return err
+			}
+			// Whoever connects next gets a fresh first-run window (docs/install/nas.md step 4.1):
+			// the start reads as never set, so the next adoption opens it again.
+			if err := writeJSON(ctx, tx, settingFirstRunStarted, nil); err != nil {
 				return err
 			}
 			if err := appendEvent(ctx, tx, domain.ActorSystem, "Setup started over", "Owner released: "+record.Login, s.now()); err != nil {
@@ -292,18 +314,20 @@ func (s *Service) OwnerLogin(ctx context.Context) (string, error) {
 }
 
 // checkGuess runs one guess at a setup secret under the caller's wrong-guess limit (the same
-// count and lockout as the setup code).
+// count and lockout as the setup code). The right secret always passes, locked or not: callers are
+// keyed by tailnet user, and an agent sharing the owner's identity must not be able to lock the
+// owner out. The lockout only refuses more wrong guesses; the secrets' length is what stops guessing.
 func (s *Service) checkGuess(guesser string, wrong error, right func() bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
 	guesses := s.setupGuesses[guesser]
-	if now.Before(guesses.lockedUntil) {
-		return ErrSetupCodeLocked
-	}
 	if right() {
 		delete(s.setupGuesses, guesser)
 		return nil
+	}
+	if now.Before(guesses.lockedUntil) {
+		return ErrSetupCodeLocked
 	}
 	guesses.wrong++
 	if guesses.wrong >= config.SetupCodeAttempts {

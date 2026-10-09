@@ -364,3 +364,10 @@ Phase 6 adds `/setup/passkeys` (list, remove, add, recovery code) and `/setup/ma
 `open` · recorded 2026-10-09 · from Phase 6 (`docs/plans/hussla-v1.md`)
 
 `.github/workflows/publish-image.yml` uses `docker/*@vN` and `actions/checkout@v7`, like `ci.yml`, not commit SHAs. It holds `packages: write` and `contents: write` on a tag push. **Why deferred:** the session that wrote it couldn't read the docker actions' repos to resolve SHAs, and `ci.yml` follows the same convention. **Where:** `.github/workflows/publish-image.yml`. **If we take it:** pin each to a full SHA with the tag in a comment, and let Dependabot bump them.
+
+## Reconnect shows the Tailscale login link to the whole home network
+
+`open` · recorded 2026-10-09 · from PR #13's second dynamite test (low)
+
+After **Sign out of that account**, the home-network page shows the node's new Tailscale login link to anyone on the LAN, as a fresh install does. Whoever signs in first sets the node's account; if that isn't the owner, the node is still someone else's (it fails closed again) and the owner presses Sign out once more. **Why deferred:** it is a nuisance, not a takeover: the owner record, passkeys and data never move, and the tailnet door stays closed to the wrong account. **Where:** `internal/httpapi/home.go` (needs-login view), `internal/app/setup/setup.go` (`Reconnect`). **If we take it:** after a Reconnect, show the link only on the setup code (typed on the LAN page), or name the account it must be signed in as.
+

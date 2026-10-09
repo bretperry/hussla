@@ -318,16 +318,16 @@ func TestANewCodeDoesNotLiftALockout(t *testing.T) {
 	if err := in.service.RequestSetupCode(ctx, owner); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := in.service.Claim(ctx, owner, in.code); !errors.Is(err, auth.ErrSetupCodeLocked) {
-		t.Fatalf("a locked-out caller with a new code: %v, want ErrSetupCodeLocked", err)
+	// More wrong guesses stay refused; the right code was never stopped (TestWrongGuessesNeverStopTheRightCode).
+	if _, _, err := in.service.Claim(ctx, owner, "WRONG-WRONG-WRON"); !errors.Is(err, auth.ErrSetupCodeLocked) {
+		t.Fatalf("a locked-out caller's wrong guess after a new code: %v, want ErrSetupCodeLocked", err)
 	}
-	in.clock.Advance(config.SetupCodeLockout)
 	if _, _, err := in.service.Claim(ctx, owner, in.code); err != nil {
-		t.Fatalf("after the lockout: %v", err)
+		t.Fatalf("the new code: %v", err)
 	}
 }
 
-func TestANewCodeOnRequestReplacesALostOne(t *testing.T) {
+func TestANewCodeOnRequestAddsToALostOne(t *testing.T) {
 	in := newInstall(t)
 	ctx := t.Context()
 	lost := in.code
@@ -349,8 +349,8 @@ func TestANewCodeOnRequestReplacesALostOne(t *testing.T) {
 	if in.printed != 2 || in.code == lost {
 		t.Fatalf("printed %d codes; new %q, lost %q", in.printed, in.code, lost)
 	}
-	if _, _, err := in.service.Claim(ctx, owner, lost); !errors.Is(err, auth.ErrWrongSetupCode) {
-		t.Fatalf("the lost code: %v", err)
+	if _, _, err := in.service.Claim(ctx, owner, lost); err != nil {
+		t.Fatalf("the earlier code after a new one: %v", err)
 	}
 	if _, _, err := in.service.Claim(ctx, owner, in.code); err != nil {
 		t.Fatalf("the new code: %v", err)

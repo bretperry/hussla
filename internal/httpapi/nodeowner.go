@@ -1,4 +1,4 @@
-// The tailnet door's fail-closed check: when the node is logged in to Tailscale as someone other than the recorded owner, it answers nothing but "belongs to someone else".
+// The tailnet door's fail-closed check: when the node is logged in to Tailscale as someone other than the recorded owner (or on another tailnet, tagged or not), it answers nothing but "belongs to someone else".
 // In the app: after a Tailscale key expiry, if someone on the home network signed the node in with their own account, every tailnet page and API call says so until the owner reconnects from the home-network page.
 // Used by: cmd/hussla (wraps the whole tailnet handler, /mcp included).
 // Uses: setup.Service.OwnerMismatch.
