@@ -121,7 +121,7 @@ export const MailStep = ({ onDone }: { onDone: () => void }) => {
 
   return (
     <form className="flex max-w-prose flex-col gap-4" onSubmit={(event) => void submit(event)} aria-label="Mail setup">
-      <h2 className="font-display text-lead-phone font-black">Send follow-ups from your own address</h2>
+      <h2 className="font-display text-lead-phone font-bold">Send follow-ups from your own address</h2>
       <p>Hussla only sends what you approve, one at a time. Pick who handles your email.</p>
       <Field label="Email provider">
         <SelectInput name="providerId" value={providerId} onChange={(event) => setChosenId(event.target.value)}>

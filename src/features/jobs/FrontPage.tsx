@@ -1,12 +1,14 @@
 /*
-  The jobs front page, built to mockup 8c: masthead with two ears, the lead story, the pitch slot, and the rail.
-  In the app: "/" . Desktop is a 12-column grid (lead 8 + rail 4, the two rows' rules aligned); a phone stacks ear, lead, pitch, news, board.
+  The jobs front page, built to mockup 8c with the row 9 type pass: the briefing, the lead story, the pitch slot, and the rail.
+  In the app: "/" . Desktop is a 12-column grid with 48px gutters (lead 8 + rail 4, the two rows' rules aligned); a phone stacks briefing, lead, pitch, news, board.
   Used by: src/app/App.tsx.
   Uses: src/features/jobs/front-page.ts for what to show, use-front-page.ts for the data, GET /api/pitches for the billboard, src/shared/ui for the type and rules.
 
-  States: day one (no jobs, no pitches), no lead story (the fact box hides), nothing to sign (the ear says so, no button).
+  States: day one (no jobs, no pitches), no lead story (the fact box hides), nothing to sign (the briefing says so, no button).
+  The desktop briefing renders into the shell's section bar (BarAside), so it sits beside the nav instead of taking its own band.
   Spec: docs/plans/hussla-v1.md → Phase 5.
 */
+import { BarAside } from "@/app/bar-slot";
 import { STATUS_LABEL, STATUS_TAG } from "@/config/ui";
 import type { CompanyDetail, CompanySummary, JobListItem, PitchList } from "@/shared/api";
 import { api, describeError } from "@/shared/api";
@@ -16,8 +18,7 @@ import { Link } from "@/shared/lib/router";
 import { useResource } from "@/shared/lib/use-resource";
 import { LinkButton } from "@/shared/ui/Button";
 import { ErrorLine, LoadingLine, Tag } from "@/shared/ui/Feedback";
-import { Nameplate, NameplateRule } from "@/shared/ui/Nameplate";
-import { SectionHead, Stat } from "@/shared/ui/Section";
+import { SectionHead } from "@/shared/ui/Section";
 import { awaitingSignature, billboardPitches, boardJobs, glanceFacts, latestNews, leadHeadline, leadKicker, overnightCounts, pickLead } from "./front-page";
 import type { FrontPageData } from "./use-front-page";
 import { useFrontPage } from "./use-front-page";
@@ -37,47 +38,63 @@ const leadBody = (text: string): string => {
   return joined.length > LEAD_BODY_MAX_CHARS ? `${joined.slice(0, LEAD_BODY_MAX_CHARS).trimEnd()}…` : joined;
 };
 
-const SignatureEar = ({ count, companies }: { count: number; companies: string[] }) => (
-  <section aria-label="Awaiting your signature" className="mt-6 flex flex-col gap-2 lg:col-span-3 lg:col-start-1 lg:row-start-1 lg:mt-0 lg:h-ear">
-    <SectionHead kicker="Awaiting your signature" urgent={count > 0} />
-    <h2 className="font-display text-title font-bold">{count > 0 ? `${count} follow-up${count === 1 ? "" : "s"} ready` : "Nothing to sign"}</h2>
-    {count > 0 ? (
-      <div className="flex items-center gap-4">
+type BriefingProps = { count: number; companies: string[]; applied: number; reviews: number; profiles: number };
+
+// What came in overnight, as one line; it links to the agent wire.
+const OvernightLine = ({ applied, reviews, profiles, className }: Omit<BriefingProps, "count" | "companies"> & { className?: string }) => (
+  <Link to="/activity" aria-label={`Overnight: ${applied} applied, ${reviews} reviews, ${profiles} profiles. Read the agent wire`} className={cn("text-ui text-body no-underline", className)}>
+    {/* One inline run, so the spaces survive when a caller makes the link a flex row. */}
+    <span>
+      Overnight: <b className="text-ink">{applied}</b> applied · <b className="text-ink">{reviews}</b> reviews · <b className="text-ink">{profiles}</b> profiles{" "}
+      <span className="underline underline-offset-4">Wire →</span>
+    </span>
+  </Link>
+);
+
+const ReadyCount = ({ count }: { count: number }) =>
+  count > 0 ? (
+    <>
+      <b className="text-accent">{count}</b> follow-up{count === 1 ? "" : "s"} ready
+    </>
+  ) : (
+    "Nothing to sign"
+  );
+
+// Desktop: the briefing sits in the section bar, right of the nav; the small button (32px at lg) stays inside the bar's rules.
+const BarBriefing = ({ count, applied, reviews, profiles }: BriefingProps) => (
+  <BarAside>
+    <OvernightLine applied={applied} reviews={reviews} profiles={profiles} />
+    <span role="presentation" className="h-6 w-px bg-hairline" />
+    <section aria-label="Awaiting your signature" className="flex items-center gap-4">
+      <span className="text-ui">
+        <ReadyCount count={count} />
+      </span>
+      {count > 0 ? (
+        <LinkButton to="/outbox" variant="primary" size="sm">
+          Review &amp; sign
+        </LinkButton>
+      ) : null}
+    </section>
+  </BarAside>
+);
+
+// Phone: the same briefing as the page's first section, with the full-size button.
+const PhoneBriefing = ({ count, companies, applied, reviews, profiles }: BriefingProps) => (
+  <section aria-label="Briefing" className="flex flex-col gap-2 pb-8 lg:hidden">
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-row">
+        <span className="block">
+          <ReadyCount count={count} />
+        </span>
+        <span className="block text-small text-muted">{count > 0 ? companies.slice(0, 3).join(" · ") : "No follow-ups are waiting on you."}</span>
+      </span>
+      {count > 0 ? (
         <LinkButton to="/outbox" variant="primary">
           Review &amp; sign
         </LinkButton>
-        <span className="text-small text-muted">
-          {companies.slice(0, 3).map((name) => (
-            <span key={name} className="block">
-              {name}
-            </span>
-          ))}
-        </span>
-      </div>
-    ) : (
-      <p className="text-small text-muted">No follow-ups are waiting on you.</p>
-    )}
-  </section>
-);
-
-const OvernightEar = ({ applied, reviews, profiles }: { applied: number; reviews: number; profiles: number }) => (
-  <section aria-label="Overnight" className="mt-6 flex flex-col gap-2 lg:col-span-3 lg:col-start-10 lg:row-start-1 lg:mt-0 lg:h-ear">
-    <SectionHead
-      kicker="Overnight · agents"
-      aside={
-        <Link to="/activity" className="underline underline-offset-4 lg:hidden">
-          Wire →
-        </Link>
-      }
-    />
-    <div className="grid grid-cols-3 gap-4">
-      <Stat value={applied} label="Applied" />
-      <Stat value={reviews} label="Reviews" />
-      <Stat value={profiles} label="Profiles" />
+      ) : null}
     </div>
-    <Link to="/activity" className="kicker mt-auto hidden underline underline-offset-4 lg:block">
-      Read the agent wire →
-    </Link>
+    <OvernightLine applied={applied} reviews={reviews} profiles={profiles} className="flex min-h-touch items-center border-t border-hairline" />
   </section>
 );
 
@@ -87,9 +104,10 @@ const LeadStory = ({ lead, summary, detail }: { lead: JobListItem | null; summar
   const fallback = lead === null ? "" : [lead.title, lead.location, payLabel(lead)].filter((part) => part !== "").join(" · ");
   const body = lead === null ? "" : quickTake !== "" ? leadBody(quickTake) : lead.headsUp !== "" ? lead.headsUp : fallback;
   return (
-    <article data-col="lead" className="grid grid-cols-8 gap-x-6 gap-y-2 pb-6 lg:col-span-8 lg:col-start-1 lg:row-start-1">
-      <SectionHead className="col-span-8" kicker={lead === null ? "Lead story" : leadKicker(lead)} urgent={lead !== null} />
-      <h1 className="col-span-8 font-display text-lead-phone font-black lg:text-lead">
+    <article data-col="lead" className="grid grid-cols-8 content-start gap-x-12 gap-y-2 pb-8 lg:col-span-8 lg:col-start-1 lg:row-start-1 lg:pb-10">
+      {/* 12px more than the usual kicker-to-headline gap: the small caps sat on top of the headline. */}
+      <SectionHead className="col-span-8 pb-3" kicker={lead === null ? "Lead story" : leadKicker(lead)} urgent={lead !== null} />
+      <h1 className="col-span-8 font-display text-lead-phone font-bold lg:text-lead">
         {lead === null ? "Your first story starts with one job" : leadHeadline(lead)}
       </h1>
       <div className="col-span-8 mt-2 flex flex-col gap-4 lg:col-span-5">
@@ -118,9 +136,9 @@ const LeadStory = ({ lead, summary, detail }: { lead: JobListItem | null; summar
             <SectionHead kicker={`${lead.company} at a glance`} />
             <div>
               {facts.map((fact) => (
-                <div key={fact.label} className="flex items-baseline justify-between gap-4 border-t border-hairline py-2">
-                  <span className="kicker">{fact.label}</span>
-                  <span className="text-right text-ui font-semibold">{fact.value}</span>
+                <div key={fact.label} className="flex items-baseline justify-between gap-4 border-t border-hairline py-1.5 text-small">
+                  <span className="text-muted">{fact.label}</span>
+                  <span className="text-right font-semibold">{fact.value}</span>
                 </div>
               ))}
             </div>
@@ -134,15 +152,15 @@ const LeadStory = ({ lead, summary, detail }: { lead: JobListItem | null; summar
 const NewsRail = ({ details }: { details: readonly CompanyDetail[] }) => {
   const stories = latestNews(details);
   return (
-    <section data-col="rail" aria-label="Latest news" className={cn("flex flex-col gap-2 pb-6 lg:col-span-4 lg:col-start-9 lg:row-start-1", columnRule)}>
+    <section data-col="rail" aria-label="Latest news" className={cn("flex flex-col gap-3 pb-8 lg:col-span-4 lg:col-start-9 lg:row-start-1", columnRule)}>
       <SectionHead kicker="Latest news" />
       {stories.length === 0 ? (
         <p className="text-small text-muted">No news yet. Research agents add headlines as they read about the companies you track.</p>
       ) : (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {stories.map((story, index) => (
-            <div key={`${story.slug}-${story.url ?? story.headline}`} className={cn(index > 0 && "border-t border-hairline pt-2")}>
-              <h3 className="font-display text-news-phone font-bold lg:text-news">
+            <div key={`${story.slug}-${story.url ?? story.headline}`} className={cn(index > 0 && "border-t border-hairline pt-3")}>
+              <h3 className="font-display text-news-phone font-semibold lg:text-news">
                 {story.url !== undefined && /^https?:/i.test(story.url) ? (
                   <a href={story.url} target="_blank" rel="noopener noreferrer" className="no-underline">
                     {story.headline}
@@ -153,7 +171,7 @@ const NewsRail = ({ details }: { details: readonly CompanyDetail[] }) => {
                   </Link>
                 )}
               </h3>
-              <div className="mt-2 text-small text-muted">
+              <div className="mt-1 text-small text-muted">
                 {[story.summary === undefined || story.summary === "" ? story.company : story.summary, story.date === undefined ? "" : formatLooseDate(story.date)]
                   .filter((part) => part !== "")
                   .join(" · ")}
@@ -176,13 +194,13 @@ const Board = ({ jobs, signing }: { jobs: readonly JobListItem[]; signing: Reado
         {rows.map((job) => (
           <Link key={job.id} to={`/jobs/${encodeURIComponent(job.id)}`} className="grid grid-cols-[1fr_var(--spacing-tag-column)] items-baseline gap-4 border-t border-hairline py-2 no-underline hover:text-ink">
             <span>
-              <span className="block font-display text-row font-bold">{job.company}</span>
+              <span className="block font-display text-row font-semibold">{job.company}</span>
               <span className="block text-small text-muted">{job.nextAction === "" ? job.title : job.nextAction}</span>
             </span>
             <span className="tag text-right">{signing.has(job.id) ? <Tag strong>To sign</Tag> : (STATUS_TAG[job.status] ?? STATUS_LABEL[job.status] ?? job.status)}</span>
           </Link>
         ))}
-        <Link to="/jobs" className="kicker mt-auto flex h-touch items-end border-t border-hairline underline underline-offset-4">
+        <Link to="/jobs" className="mt-auto flex h-touch items-center border-t border-hairline text-ui font-semibold underline underline-offset-4">
           {jobs.length === 0 ? "Add a job →" : `All ${jobs.length} jobs →`}
         </Link>
       </div>
@@ -190,13 +208,13 @@ const Board = ({ jobs, signing }: { jobs: readonly JobListItem[]; signing: Reado
   );
 };
 
-type FrontPageViewProps = { appName: string; data: FrontPageData; now?: Date; pitches?: readonly BillboardPitch[]; rotateSeconds?: number };
+type FrontPageViewProps = { data: FrontPageData; now?: Date; pitches?: readonly BillboardPitch[]; rotateSeconds?: number };
 
 // Until GET /api/pitches answers (or if it fails) the billboard is empty; this only paces an empty board.
 const NO_ROTATION = 0;
 
 // The page for data already in hand; FrontPage fetches it, tests hand it fixtures.
-export const FrontPageView = ({ appName, data, now = new Date(), pitches = [], rotateSeconds = NO_ROTATION }: FrontPageViewProps) => {
+export const FrontPageView = ({ data, now = new Date(), pitches = [], rotateSeconds = NO_ROTATION }: FrontPageViewProps) => {
   const { jobs, companies, drafts, details } = data;
   const lead = pickLead(jobs);
   const signatures = awaitingSignature(drafts, jobs, companies);
@@ -206,13 +224,9 @@ export const FrontPageView = ({ appName, data, now = new Date(), pitches = [], r
   const leadSummary = lead === null ? undefined : companies.find((company) => company.slug === lead.companySlug);
   return (
     <>
-      <header data-m="masthead" className="mt-4 flex flex-col lg:mt-6 lg:grid lg:grid-cols-12 lg:items-start lg:gap-x-6">
-        <Nameplate name={appName} size="front" className="-mb-4 lg:col-span-6 lg:col-start-4 lg:row-start-1 lg:-mt-nameplate-trim-top lg:-mb-nameplate-trim-bottom" />
-        <NameplateRule className="lg:col-span-12 lg:row-start-2 lg:mt-4" />
-        <SignatureEar count={signatures.count} companies={signatures.companies} />
-        <OvernightEar applied={overnight.applied} reviews={overnight.reviews} profiles={overnight.profiles} />
-      </header>
-      <div data-m="body" className="mt-6 grid grid-cols-1 lg:grid-cols-12 lg:gap-x-6">
+      <BarBriefing count={signatures.count} companies={signatures.companies} {...overnight} />
+      <PhoneBriefing count={signatures.count} companies={signatures.companies} {...overnight} />
+      <div data-m="body" className="grid grid-cols-1 lg:grid-cols-12 lg:gap-x-12">
         <LeadStory lead={lead} summary={leadSummary} detail={leadDetail} />
         {/* Keyed by the count so the billboard picks its starting pitch again once the list arrives. */}
         <PitchSlot key={pitches.length} pitches={pitches} rotateSeconds={rotateSeconds} now={now} />
@@ -223,7 +237,7 @@ export const FrontPageView = ({ appName, data, now = new Date(), pitches = [], r
   );
 };
 
-export const FrontPage = ({ appName }: { appName: string }) => {
+export const FrontPage = () => {
   const { data, error } = useFrontPage();
   // Pitches load on their own: a failure leaves the billboard empty instead of blanking the page.
   const pitches = useResource((signal): Promise<PitchList> => api.listPitches({ signal }), []);
@@ -232,7 +246,6 @@ export const FrontPage = ({ appName }: { appName: string }) => {
   }
   return (
     <FrontPageView
-      appName={appName}
       data={data}
       pitches={pitches.data === null ? [] : billboardPitches(pitches.data.pitches)}
       rotateSeconds={pitches.data?.settings.rotateSeconds ?? NO_ROTATION}

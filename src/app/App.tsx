@@ -37,7 +37,7 @@ type RouteEntry = { pattern: string; render: (context: RouteContext) => ReactNod
 const param = (context: RouteContext, key: string): string => context.params[key] ?? "";
 
 const ROUTES: RouteEntry[] = [
-  { pattern: "/", render: ({ me }) => <FrontPage appName={me.appName} /> },
+  { pattern: "/", render: () => <FrontPage /> },
   { pattern: "/jobs", render: () => <JobsPage /> },
   { pattern: "/jobs/new", render: () => <AddJobPage /> },
   { pattern: "/jobs/:id", render: (context) => <JobPage jobId={param(context, "id")} /> },

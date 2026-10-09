@@ -141,7 +141,7 @@ const JobView = ({ job, reload }: { job: JobDetail; reload: () => void }) => {
         <ScoreTag score={job.score} />
         <div className="flex-1">
           <p className="kicker">{job.company}</p>
-          <h1 className="font-display text-lead-phone font-black lg:text-page">{job.title}</h1>
+          <h1 className="font-display text-lead-phone font-bold lg:text-page">{job.title}</h1>
           <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-ui">
             <Tag strong>{STATUS_LABEL[job.status] ?? job.status}</Tag>
             {pay === "" ? null : <span><b>Pay</b> {pay}</span>}
