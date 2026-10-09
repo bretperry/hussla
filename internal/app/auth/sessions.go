@@ -100,7 +100,7 @@ func (s *Service) SessionPrincipal(ctx context.Context, secret string) (Principa
 			return err
 		}
 		var err error
-		enrolled, err = readJSON(ctx, tx, settingOwner, &record)
+		record, enrolled, err = readOwnerTx(ctx, tx)
 		return err
 	})
 	if err != nil {

@@ -520,6 +520,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mail/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Owner only. The mail provider catalog, with each provider's steps and the page where its app password or API key is made. */
+        get: operations["listMailProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mail/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Owner only. The saved mail setup; `hasSecret` says whether a password or key is stored, never what it is. */
+        get: operations["getMailSettings"];
+        /** Owner only, with a passkey tap. Saves the mail setup. `secret` is the app password or API key; leave it out to keep the stored one (same provider only). It is stored encrypted and never returned. */
+        put: operations["saveMailSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/emails": {
         parameters: {
             query?: never;
@@ -628,6 +663,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/setup/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prints a new setup code to the server log, replacing the live one (a lost log, or a lost passkey). The owner may ask; before there is an owner, so may anyone who could claim with it. At most once a minute (429). */
+        post: operations["requestSetupCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/setup/wizard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Owner only. Marks one first-run wizard step done or skipped; the others keep their state. A repeat is a no-op. */
+        patch: operations["markSetupStep"];
+        trace?: never;
+    };
+    "/api/setup/qr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Owner only. The tailnet address as a QR code (SVG), for the phone step. */
+        get: operations["getAddressQR"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/signin": {
         parameters: {
             query?: never;
@@ -674,6 +760,25 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/passkeys/{passkeyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                passkeyId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Owner only, with a passkey tap. Removes a passkey (a lost phone's). The last passkey for an address can't be removed (409). */
+        delete: operations["removePasskey"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1410,16 +1515,102 @@ export interface components {
             /** @enum {string} */
             listener: "tailnet" | "local";
             isOwner: boolean;
+            /** @description The owner's Tailscale login ("Owner: X"), for a caller on the tailnet or the owner; empty otherwise or before there is one. */
+            ownerLogin: string;
+            /** @description No passkey was ever stored, so the home-network page's "Start over" still works. */
+            canStartOver: boolean;
+            /** @description The Tailscale login this request came from (empty off the tailnet). */
+            seenLogin: string;
+            /** @description The first-run window is open */
+            firstRunOpen: boolean;
+            /** @description The tailnet address (https://<name>.ts.net) */
+            address: string;
+            wizard?: components["schemas"]["SetupWizard"];
+            keyExpiry?: components["schemas"]["KeyExpiry"];
         };
+        /** @description The owner only. Each first-run step's state; a step not listed is still to do. */
+        SetupWizard: {
+            steps: {
+                [key: string]: "done" | "skipped";
+            };
+            finished: boolean;
+        };
+        SetupStepMark: {
+            /** @enum {string} */
+            step: "mail" | "import" | "agent" | "phone" | "expiry" | "second-passkey";
+            /** @enum {string} */
+            state: "done" | "skipped";
+        };
+        /** @description The owner only. When this machine's Tailscale sign-in expires; absent when it never does. */
+        KeyExpiry: {
+            at: components["schemas"]["Timestamp"];
+            daysLeft: number;
+            /** @description Close enough to warn the owner. */
+            warn: boolean;
+            expired: boolean;
+        };
+        /** @description The setup code from the log, or the home-network page's first-run link (`link`), one of the two. */
         SetupClaim: {
             /** @description As printed (XXXX-XXXX-XXXX); case and dashes don't matter. */
-            code: string;
+            code?: string;
+            /** @description The secret from the home-network page's "Make it mine" link. */
+            link?: string;
         };
         SetupClaimed: {
             /** @description The token for X-Hussla-Step-Up on `next`. */
             stepUp: string;
             /** @description The action it is good for: "POST /api/passkeys/register/begin". */
             next: string;
+        };
+        MailProvider: {
+            id: string;
+            label: string;
+            /** @enum {string} */
+            kind: "smtp" | "api";
+            /** @description The owner types the server */
+            needsServer: boolean;
+            /** @description The provider sends for a verified domain the owner names. */
+            needsDomain: boolean;
+            usernameHint: string;
+            /** @description What the owner pastes: "App-specific password", "API key". */
+            secretLabel: string;
+            helpSteps: string[];
+            /** @description Where the app password or API key is made. */
+            credentialUrl: string;
+            docsUrl: string;
+            warning: string;
+            regions: {
+                id: string;
+                label: string;
+            }[];
+        };
+        MailSettings: {
+            configured: boolean;
+            /** @description A password or key is stored (it is never returned). */
+            hasSecret: boolean;
+            providerId: string;
+            host: string;
+            port: number;
+            security: string;
+            username: string;
+            fromAddress: string;
+            fromName: string;
+            region: string;
+            domain: string;
+        };
+        MailSettingsSave: {
+            providerId: string;
+            host?: string;
+            port?: number;
+            /** @description "starttls" or "tls"; empty for the provider's own. */
+            security?: string;
+            username?: string;
+            fromAddress: string;
+            fromName?: string;
+            region?: string;
+            domain?: string;
+            /** @description The app password or API key; leave out to keep the stored one. */
+            secret?: string;
         };
         Passkey: {
             id: string;
@@ -1509,6 +1700,15 @@ export interface components {
         };
         /** @description The body is over the size limit. */
         TooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Asked again too soon; wait a minute. */
+        TooSoon: {
             headers: {
                 [name: string]: unknown;
             };
@@ -2554,6 +2754,80 @@ export interface operations {
             502: components["responses"]["BadGateway"];
         };
     };
+    listMailProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The catalog, in display order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailProvider"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getMailSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The setup (all empty when none is saved). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailSettings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    saveMailSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MailSettingsSave"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     listEmails: {
         parameters: {
             query?: {
@@ -2718,6 +2992,79 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    requestSetupCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Printed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ok"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooSoon"];
+        };
+    };
+    markSetupStep: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupStepMark"];
+            };
+        };
+        responses: {
+            /** @description The wizard's progress. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupWizard"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getAddressQR: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The QR code. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/svg+xml": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     signIn: {
         parameters: {
             query: {
@@ -2785,6 +3132,35 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    removePasskey: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
+            path: {
+                passkeyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ok"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     beginPasskeyRegistration: {

@@ -1,0 +1,24 @@
+# Hussla on a cloud VM: as docker-compose.yml, with no port published at all, so nothing faces the internet.
+# In the app: docs/install/cloud.md (`TS_AUTHKEY=… docker compose -f docker-compose.cloud.yml up -d` on the VM).
+# Used by: docs/install/cloud.md.
+# Uses: ghcr.io/bretperry/hussla.
+#
+# A VM has no home network, so the home-network page stays unpublished and Tailscale signs in with
+# an auth key instead. Make it reusable: no, ephemeral: no, tags: none (a tagged node has no owner
+# to adopt, and an ephemeral one forgets itself on restart). Read the address from
+# `docker logs hussla` once it says "Hussla is running".
+
+services:
+  hussla:
+    image: ghcr.io/bretperry/hussla:latest
+    container_name: hussla
+    restart: unless-stopped
+    volumes:
+      - hussla-data:/data
+    environment:
+      # Only the first start needs it (the node then remembers its sign-in in the volume). Not "required"
+      # here, because compose would then refuse `docker compose ps` and `logs` without it.
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+
+volumes:
+  hussla-data:

@@ -1,0 +1,90 @@
+# Publishes Hussla on a version tag: the multi-arch image to GHCR and the plain binaries to a GitHub release.
+# In the app: what makes `ghcr.io/bretperry/hussla:latest` (docker-compose.yml) and the release downloads (docs/install/laptop.md) exist.
+# Used by: GitHub Actions on a `v*` tag push; on a PR that touches the Dockerfile, it builds both arches without pushing.
+# Uses: Dockerfile, scripts/release-binaries.sh, docker/* actions, the built-in GITHUB_TOKEN (packages: write, contents: write).
+#
+# A person pushes the tag (`git tag v1.0.0 && git push origin v1.0.0`); nothing here runs on a
+# schedule or on dev pushes. The first publish creates the GHCR package as private: a person makes
+# it public once (Package settings → Change visibility), or a NAS pull asks for a login.
+# The PR run is the only proof the Dockerfile still builds for arm64 before a tag needs it; it runs
+# only when the Dockerfile, .dockerignore or this file change.
+
+name: Publish
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    branches: [dev, main]
+    paths: [Dockerfile, .dockerignore, .github/workflows/publish-image.yml]
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      # No QEMU: the Dockerfile cross-compiles on the runner's own platform.
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # v1.2.3 → 1.2.3, 1.2, latest; a PR gets a throwaway tag it never pushes.
+      - name: Tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' }}
+            type=ref,event=pr
+      - name: Build (and push on a tag)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: release
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  binaries:
+    name: Binaries
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-node-pnpm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build every platform
+        run: bash scripts/release-binaries.sh "${{ github.ref_name }}"
+      # A draft release: a person reads it and presses Publish (signing and notarizing are theirs too).
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "${{ github.ref_name }}" --draft --generate-notes release/*

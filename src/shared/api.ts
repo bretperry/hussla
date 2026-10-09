@@ -9,7 +9,7 @@
   the browser sends the real Origin, and the owner is identified by the connection, never a header.
 */
 import type { components } from "./api-types";
-import { getPasskeyAssertion } from "./lib/webauthn";
+import { createPasskey, getPasskeyAssertion } from "./lib/webauthn";
 
 type Schemas = components["schemas"];
 export type Me = Schemas["Me"];
@@ -37,6 +37,13 @@ export type FileRecord = Schemas["FileRecord"];
 export type SearchConfig = Schemas["SearchConfig"];
 export type ImportResult = Schemas["ImportResult"];
 export type JobStatus = Schemas["JobStatus"];
+export type SetupStatus = Schemas["SetupStatus"];
+export type SetupStep = Schemas["SetupStepMark"]["step"];
+export type SetupStepState = Schemas["SetupStepMark"]["state"];
+export type KeyExpiry = Schemas["KeyExpiry"];
+export type MailProvider = Schemas["MailProvider"];
+export type MailSettings = Schemas["MailSettings"];
+export type MailSettingsSave = Schemas["MailSettingsSave"];
 
 const JOB_STATUSES: readonly JobStatus[] = ["review", "queued", "waiting", "applied", "screening", "interviewing", "offer", "rejected", "withdrawn", "skipped", "filtered", "failed"];
 
@@ -61,6 +68,8 @@ type RequestOptions = {
   file?: File;
   // Run the passkey tap first and send the one-use token the server asked for.
   stepUp?: boolean;
+  // A one-use token already in hand (the setup code's or the first-run link's), sent instead of a tap.
+  stepUpToken?: string;
   signal?: AbortSignal;
 };
 
@@ -91,7 +100,8 @@ const send = async <T>(method: string, path: string, options: RequestOptions = {
     body = JSON.stringify(options.body);
     headers["content-type"] = "application/json";
   }
-  if (options.stepUp === true) headers[STEP_UP_HEADER] = await requestStepUpToken(method, path.split("?")[0] ?? path);
+  if (options.stepUpToken !== undefined) headers[STEP_UP_HEADER] = options.stepUpToken;
+  else if (options.stepUp === true) headers[STEP_UP_HEADER] = await requestStepUpToken(method, path.split("?")[0] ?? path);
   let response: Response;
   try {
     response = await fetch(path, { method, headers, ...(body === undefined ? {} : { body }), ...(options.signal === undefined ? {} : { signal: options.signal }) });
@@ -165,6 +175,26 @@ export const api = {
   revokeAgentKey: (keyId: string): Promise<Schemas["Ok"]> => send("DELETE", `/api/tokens/${id(keyId)}`, { stepUp: true }),
   listPasskeys: (): Promise<Passkey[]> => send("GET", "/api/passkeys"),
   signOutEverywhere: (): Promise<Schemas["Ok"]> => send("POST", "/api/sessions/revoke-all", { stepUp: true }),
+  removePasskey: (passkeyId: string): Promise<Schemas["Ok"]> => send("DELETE", `/api/passkeys/${id(passkeyId)}`, { stepUp: true }),
+  // A new passkey: with the token from the setup code or the first-run link, or else a tap with a passkey already here.
+  registerPasskey: async (name: string, stepUpToken?: string): Promise<{ id: string; name: string; rpId: string }> => {
+    const challenge = await send<Schemas["PasskeyChallenge"]>(
+      "POST",
+      "/api/passkeys/register/begin",
+      stepUpToken === undefined ? { stepUp: true } : { stepUpToken },
+    );
+    const credential = await createPasskey(challenge.options);
+    return send("POST", "/api/passkeys/register/finish", { body: { challengeId: challenge.challengeId, name, credential } });
+  },
+
+  setupStatus: (): Promise<SetupStatus> => send("GET", "/api/setup"),
+  claimSetup: (proof: Schemas["SetupClaim"]): Promise<Schemas["SetupClaimed"]> => send("POST", "/api/setup/claim", { body: proof }),
+  newSetupCode: (): Promise<Schemas["Ok"]> => send("POST", "/api/setup/code"),
+  markSetupStep: (step: SetupStep, state: SetupStepState): Promise<Schemas["SetupWizard"]> =>
+    send("PATCH", "/api/setup/wizard", { body: { step, state } }),
+  mailProviders: (): Promise<MailProvider[]> => send("GET", "/api/mail/providers"),
+  mailSettings: (): Promise<MailSettings> => send("GET", "/api/mail/settings"),
+  saveMailSettings: (body: MailSettingsSave): Promise<MailSettings> => send("PUT", "/api/mail/settings", { body, stepUp: true }),
   // The old tracker's export (or a seed or backup file), sent as the file's own bytes.
   importBundle: (file: File): Promise<ImportResult> => send("POST", "/api/import", { file, stepUp: true }),
 };

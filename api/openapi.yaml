@@ -752,6 +752,58 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "502": { $ref: "#/components/responses/BadGateway" }
 
+  /api/mail/providers:
+    get:
+      tags: [mail]
+      operationId: listMailProviders
+      summary: Owner only. The mail provider catalog, with each provider's steps and the page where its app password or API key is made.
+      responses:
+        "200":
+          description: The catalog, in display order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MailProvider" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/mail/settings:
+    get:
+      tags: [mail]
+      operationId: getMailSettings
+      summary: Owner only. The saved mail setup; `hasSecret` says whether a password or key is stored, never what it is.
+      responses:
+        "200":
+          description: The setup (all empty when none is saved).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      tags: [mail]
+      operationId: saveMailSettings
+      summary: >-
+        Owner only, with a passkey tap. Saves the mail setup. `secret` is the app password or API key;
+        leave it out to keep the stored one (same provider only). It is stored encrypted and never returned.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MailSettingsSave" }
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailSettings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
   /api/emails:
     get:
       tags: [mail]
@@ -886,6 +938,60 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /api/setup/code:
+    post:
+      tags: [setup]
+      operationId: requestSetupCode
+      summary: >-
+        Prints a new setup code to the server log, replacing the live one (a lost log, or a lost
+        passkey). The owner may ask; before there is an owner, so may anyone who could claim with it.
+        At most once a minute (429).
+      security: []
+      responses:
+        "200":
+          description: Printed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooSoon" }
+
+  /api/setup/wizard:
+    patch:
+      tags: [setup]
+      operationId: markSetupStep
+      summary: Owner only. Marks one first-run wizard step done or skipped; the others keep their state. A repeat is a no-op.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetupStepMark" }
+      responses:
+        "200":
+          description: The wizard's progress.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SetupWizard" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/setup/qr:
+    get:
+      tags: [setup]
+      operationId: getAddressQR
+      summary: Owner only. The tailnet address as a QR code (SVG), for the phone step.
+      responses:
+        "200":
+          description: The QR code.
+          content:
+            image/svg+xml:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /signin:
     get:
       tags: [setup]
@@ -934,6 +1040,29 @@ paths:
                 items: { $ref: "#/components/schemas/Passkey" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/passkeys/{passkeyId}:
+    parameters:
+      - name: passkeyId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [setup]
+      operationId: removePasskey
+      summary: Owner only, with a passkey tap. Removes a passkey (a lost phone's). The last passkey for an address can't be removed (409).
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/passkeys/register/begin:
     post:
@@ -1081,6 +1210,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     TooLarge:
       description: The body is over the size limit.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooSoon:
+      description: Asked again too soon; wait a minute.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -1905,24 +2039,108 @@ components:
     # ---------- setup and passkeys
     SetupStatus:
       type: object
-      required: [enrolled, passkeys, codeInLog, listener, isOwner]
+      required: [enrolled, passkeys, codeInLog, listener, isOwner, ownerLogin, seenLogin, canStartOver, firstRunOpen, address]
       properties:
         enrolled: { type: boolean, description: An owner is recorded. }
         passkeys: { type: integer, description: Passkeys registered for this address. }
         codeInLog: { type: boolean, description: A setup code is waiting in the server log. }
         listener: { type: string, enum: [tailnet, local] }
         isOwner: { type: boolean }
+        ownerLogin: { type: string, description: 'The owner''s Tailscale login ("Owner: X"), for a caller on the tailnet or the owner; empty otherwise or before there is one.' }
+        canStartOver: { type: boolean, description: 'No passkey was ever stored, so the home-network page''s "Start over" still works.' }
+        seenLogin: { type: string, description: The Tailscale login this request came from (empty off the tailnet). }
+        firstRunOpen: { type: boolean, description: The first-run window is open, so the home-network page's link works. }
+        address: { type: string, description: The tailnet address (https://<name>.ts.net), or empty before there is one. }
+        wizard: { $ref: "#/components/schemas/SetupWizard" }
+        keyExpiry: { $ref: "#/components/schemas/KeyExpiry" }
+    SetupWizard:
+      type: object
+      description: The owner only. Each first-run step's state; a step not listed is still to do.
+      required: [steps, finished]
+      properties:
+        steps:
+          type: object
+          additionalProperties: { type: string, enum: [done, skipped] }
+        finished: { type: boolean }
+    SetupStepMark:
+      type: object
+      required: [step, state]
+      properties:
+        step: { type: string, enum: [mail, import, agent, phone, expiry, second-passkey] }
+        state: { type: string, enum: [done, skipped] }
+    KeyExpiry:
+      type: object
+      description: The owner only. When this machine's Tailscale sign-in expires; absent when it never does.
+      required: [at, daysLeft, warn, expired]
+      properties:
+        at: { $ref: "#/components/schemas/Timestamp" }
+        daysLeft: { type: integer }
+        warn: { type: boolean, description: Close enough to warn the owner. }
+        expired: { type: boolean }
     SetupClaim:
       type: object
-      required: [code]
+      description: The setup code from the log, or the home-network page's first-run link (`link`), one of the two.
       properties:
         code: { type: string, description: 'As printed (XXXX-XXXX-XXXX); case and dashes don''t matter.' }
+        link: { type: string, description: The secret from the home-network page's "Make it mine" link. }
     SetupClaimed:
       type: object
       required: [stepUp, next]
       properties:
         stepUp: { type: string, description: The token for X-Hussla-Step-Up on `next`. }
         next: { type: string, description: 'The action it is good for: "POST /api/passkeys/register/begin".' }
+    MailProvider:
+      type: object
+      required: [id, label, kind, needsServer, needsDomain, usernameHint, secretLabel, helpSteps, credentialUrl, docsUrl, warning, regions]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        kind: { type: string, enum: [smtp, api] }
+        needsServer: { type: boolean, description: The owner types the server, port and security ("Other SMTP"). }
+        needsDomain: { type: boolean, description: The provider sends for a verified domain the owner names. }
+        usernameHint: { type: string }
+        secretLabel: { type: string, description: 'What the owner pastes: "App-specific password", "API key".' }
+        helpSteps: { type: array, items: { type: string } }
+        credentialUrl: { type: string, description: Where the app password or API key is made. }
+        docsUrl: { type: string }
+        warning: { type: string }
+        regions:
+          type: array
+          items:
+            type: object
+            required: [id, label]
+            properties:
+              id: { type: string }
+              label: { type: string }
+    MailSettings:
+      type: object
+      required: [configured, hasSecret, providerId, host, port, security, username, fromAddress, fromName, region, domain]
+      properties:
+        configured: { type: boolean }
+        hasSecret: { type: boolean, description: A password or key is stored (it is never returned). }
+        providerId: { type: string }
+        host: { type: string }
+        port: { type: integer }
+        security: { type: string }
+        username: { type: string }
+        fromAddress: { type: string }
+        fromName: { type: string }
+        region: { type: string }
+        domain: { type: string }
+    MailSettingsSave:
+      type: object
+      required: [providerId, fromAddress]
+      properties:
+        providerId: { type: string }
+        host: { type: string }
+        port: { type: integer }
+        security: { type: string, description: "\"starttls\" or \"tls\"; empty for the provider's own." }
+        username: { type: string }
+        fromAddress: { type: string }
+        fromName: { type: string }
+        region: { type: string }
+        domain: { type: string }
+        secret: { type: string, description: The app password or API key; leave out to keep the stored one. }
     Passkey:
       type: object
       required: [id, name, rpId, createdAt, lastUsedAt]

@@ -2,13 +2,16 @@
   The page frame: dateline with the nav, then the page. Inner pages get a compact nameplate; the front page draws its own.
   In the app: wraps every route; the dateline is the same on a phone, reflowed into two rows.
   Used by: src/app/App.tsx.
-  Uses: src/app/stats.tsx for the badges and issue number, src/config/ui.ts for the nav and motto.
+  Uses: src/app/stats.tsx for the badges and issue number, src/config/ui.ts for the nav and motto, the setup status's key expiry for the banner.
 */
 import type { ReactNode } from "react";
+import { TAILSCALE_ADMIN_MACHINES } from "@/config/setup";
 import { MOTTO, NAV_ITEMS } from "@/config/ui";
+import type { KeyExpiry } from "@/shared/api";
 import { cn } from "@/shared/lib/cn";
 import { formatDateline } from "@/shared/lib/format";
 import { Link, useLocation } from "@/shared/lib/router";
+import { Callout } from "@/shared/ui/Feedback";
 import { Nameplate, NameplateRule } from "@/shared/ui/Nameplate";
 import { useStats } from "./stats";
 
@@ -61,11 +64,24 @@ const Dateline = () => {
   );
 };
 
-type ShellProps = { appName: string; children: ReactNode; front?: boolean };
+// Before this machine's Tailscale sign-in runs out, every page says so (once it has, nothing loads over the tailnet at all).
+const KeyExpiryBanner = ({ keyExpiry }: { keyExpiry: KeyExpiry | undefined }) => {
+  if (keyExpiry === undefined || !keyExpiry.warn) return null;
+  return (
+    <div className="mt-4">
+      <Callout tone="warn" title={keyExpiry.expired ? "Tailscale signed this Hussla out" : `Tailscale signs this Hussla out in ${keyExpiry.daysLeft} days`} role="status">
+        Open <a href={TAILSCALE_ADMIN_MACHINES}>Tailscale's Machines page</a>, find this Hussla, and choose “Disable key expiry” in its ⋯ menu.
+      </Callout>
+    </div>
+  );
+};
 
-export const Shell = ({ appName, children, front = false }: ShellProps) => (
+type ShellProps = { appName: string; children: ReactNode; front?: boolean; keyExpiry?: KeyExpiry | undefined };
+
+export const Shell = ({ appName, children, front = false, keyExpiry }: ShellProps) => (
   <div className="mx-auto flex min-h-screen max-w-page flex-col px-4 pt-4 pb-8 sm:px-8 lg:px-16 lg:pt-6">
     <Dateline />
+    <KeyExpiryBanner keyExpiry={keyExpiry} />
     {front ? null : (
       <>
         <Link to="/" className="mt-4 self-start no-underline hover:text-ink lg:mt-6" aria-label={`${appName}: front page`}>

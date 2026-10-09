@@ -14,10 +14,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/bretperry/hussla/internal/app/store"
+	"github.com/bretperry/hussla/internal/app/storeerr"
 	"github.com/bretperry/hussla/internal/config"
 	"github.com/bretperry/hussla/internal/domain"
 )
@@ -182,6 +184,17 @@ func (s *Service) FinishRegistration(ctx context.Context, owner Principal, rp Re
 		if err := writeJSON(ctx, tx, settingSetupCode, setupCodeRecord{}); err != nil {
 			return err
 		}
+		// The first passkey ever closes the first-run window and "Start over" for good.
+		var first time.Time
+		marked, err := readJSON(ctx, tx, settingFirstPasskey, &first)
+		if err != nil {
+			return err
+		}
+		if !marked {
+			if err := writeJSON(ctx, tx, settingFirstPasskey, now); err != nil {
+				return err
+			}
+		}
 		return appendEvent(ctx, tx, owner.Actor(), "Added a passkey", name+" ("+rp.ID+")", now)
 	})
 	if err != nil {
@@ -191,6 +204,37 @@ func (s *Service) FinishRegistration(ctx context.Context, owner Principal, rp Re
 	s.setupHash = ""
 	s.mu.Unlock()
 	return stored, nil
+}
+
+// RemovePasskey removes one passkey (a lost phone's, say). The owner has already tapped another
+// passkey for this exact request; the last passkey for an address can't go, so the owner never
+// locks themselves out of owner-only actions there.
+func (s *Service) RemovePasskey(ctx context.Context, owner Principal, id string) error {
+	if !owner.IsOwner() {
+		return ErrNotOwner
+	}
+	err := s.store.Atomically(ctx, func(tx store.Tx) error {
+		var list []StoredPasskey
+		if _, err := readJSON(ctx, tx, settingPasskeys, &list); err != nil {
+			return err
+		}
+		index := slices.IndexFunc(list, func(passkey StoredPasskey) bool { return passkey.ID == id })
+		if index < 0 {
+			return storeerr.ErrNotFound
+		}
+		removed := list[index]
+		if len(forRelyingParty(list, removed.RPID)) <= 1 {
+			return ErrLastPasskey
+		}
+		if err := writeJSON(ctx, tx, settingPasskeys, slices.Delete(list, index, index+1)); err != nil {
+			return err
+		}
+		return appendEvent(ctx, tx, owner.Actor(), "Removed a passkey", removed.Name+" ("+removed.RPID+")", s.now())
+	})
+	if err != nil {
+		return fmt.Errorf("remove passkey: %w", err)
+	}
+	return nil
 }
 
 // BeginStepUp asks for a passkey tap that will authorize one action (`purpose`).
@@ -300,7 +344,7 @@ func (s *Service) ConsumeStepUp(owner Principal, purpose, token string) error {
 
 // IsAuthError reports whether err is one of this package's refusals (for the HTTP layer's mapping).
 func IsAuthError(err error) bool {
-	for _, known := range []error{ErrUnauthorized, ErrNotOwner, ErrNotEnrolled, ErrStepUpRequired, ErrNoPasskey, ErrPasskeyRejected, ErrChallengeUnknown, ErrWrongSetupCode, ErrSetupCodeLocked, ErrSetupClosed, ErrSignInRefused} {
+	for _, known := range []error{ErrUnauthorized, ErrNotOwner, ErrNotEnrolled, ErrStepUpRequired, ErrNoPasskey, ErrPasskeyRejected, ErrChallengeUnknown, ErrWrongSetupCode, ErrSetupCodeLocked, ErrSetupClosed, ErrSignInRefused, ErrFirstRunClosed, ErrStartOverClosed, ErrCodeTooSoon, ErrLastPasskey, ErrWrongLink} {
 		if errors.Is(err, known) {
 			return true
 		}

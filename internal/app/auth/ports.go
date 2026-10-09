@@ -46,14 +46,18 @@ const (
 	TailnetNeedsHTTPS
 	// TailnetRunning: serving HTTPS at Domain.
 	TailnetRunning
+	// TailnetNeedsApproval: logged in, but the tailnet requires an admin to approve new machines.
+	TailnetNeedsApproval
 )
 
 // TailnetState is a snapshot of the node's progress, for a setup page to show. AuthURL is
-// tsnet's login link (only while TailnetNeedsLogin); Domain is the ts.net name once known.
+// tsnet's login link (only while TailnetNeedsLogin); Domain is the ts.net name once known;
+// KeyExpiry is when the node's Tailscale key expires (zero when expiry is off or not known yet).
 type TailnetState struct {
-	Phase   TailnetPhase
-	AuthURL string
-	Domain  string
+	Phase     TailnetPhase
+	AuthURL   string
+	Domain    string
+	KeyExpiry time.Time
 }
 
 // TailnetStatus reports the node's current state. Only the tailnet adapter implements it; it is

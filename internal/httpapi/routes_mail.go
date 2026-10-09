@@ -204,7 +204,7 @@ func (server *api) sendTest(w http.ResponseWriter, r *http.Request, _ auth.Princ
 	if err != nil {
 		// The provider's own words stay in the log: they can echo account details.
 		slog.Warn("test email failed", "error", err)
-		writeError(w, http.StatusBadGateway, errorBody{Error: "the mail provider refused or failed; the server log says why"})
+		writeError(w, http.StatusBadGateway, errorBody{Error: "the mail provider refused the test: check the email address and the password, then try again (the server log has the provider's own words)"})
 		return nil
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "messageId": id})
