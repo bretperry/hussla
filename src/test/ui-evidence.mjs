@@ -8,7 +8,11 @@
   - no console errors, no failed requests, and no horizontal scroll, on every page at both widths;
   - front page at 1280: the lead and rail columns end within 4px of each other, and every section's rule starts on a column
     start and ends on a column end of the 12 x 74px grid (64px margins, 24px gutters), within 1px;
-  - the three front page states (day one, nothing to sign, no lead story) show what the spec says.
+  - the three front page states (day one, nothing to sign, no lead story) show what the spec says;
+  - the billboard: every pitch (the longest the server allows included) fits its fixed box at both widths, turning to the
+    next one never moves the page, and under prefers-reduced-motion the switch draws no outgoing layer.
+
+  UI_EVIDENCE_OUT=<dir> writes the screenshots there instead of docs/screenshots/phase-5.
 */
 // oxlint-disable eslint/no-console -- a command-line report; the console is its output
 import { spawnSync } from "node:child_process";
@@ -19,7 +23,7 @@ import { chromium } from "playwright-core";
 import { startFixtureServer } from "./fixture-server.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const outDir = join(root, "docs", "screenshots", "phase-5");
+const outDir = process.env.UI_EVIDENCE_OUT ?? join(root, "docs", "screenshots", "phase-5");
 const CHROMIUM = process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium";
 
 // Grid at 1280: 64px margin, 12 columns of 74px, 24px gutters.
@@ -40,6 +44,7 @@ const PAGES = [
   ["answers", "/answers"],
   ["activity", "/activity"],
   ["settings", "/settings"],
+  ["pitches", "/pitches?slot=1"],
 ];
 
 const failures = [];
@@ -113,6 +118,55 @@ for (const edge of geometry.edges) {
   check(near(edge.right, ends), `front: "${edge.text.slice(0, 28)}" ends on a column (${edge.right.toFixed(1)})`);
 }
 await front.close();
+
+// The billboard at both widths: each pitch fits the box, and a turn never moves what sits below it.
+for (const width of [1280, 390]) {
+  const page = await open(width, "/", `billboard @${width}`);
+  const billboard = page.getByRole("region", { name: "Pitch of the hour" });
+  const measure = () =>
+    page.evaluate(() => {
+      const box = document.querySelector('[data-billboard="current"]')?.parentElement;
+      const section = document.querySelector('[aria-label="Pitch of the hour"]');
+      const news = document.querySelector('[aria-label="Latest news"]');
+      return {
+        overflow: box === null || box === undefined ? 1 : box.scrollHeight - box.clientHeight,
+        height: box?.getBoundingClientRect().height ?? 0,
+        sectionHeight: section?.getBoundingClientRect().height ?? 0,
+        newsTop: (news?.getBoundingClientRect().top ?? 0) + scrollY,
+        text: document.querySelector('[data-billboard="current"]')?.textContent.length ?? 0,
+      };
+    });
+  const first = await measure();
+  let longest = first.text;
+  for (let turn = 0; turn < 4; turn += 1) {
+    const now = await measure();
+    longest = Math.max(longest, now.text);
+    check(now.overflow <= 0, `billboard @${width}: a ${now.text}-character pitch fits its box (overflow ${now.overflow}px)`);
+    check(now.height === first.height && now.sectionHeight === first.sectionHeight && now.newsTop === first.newsTop, `billboard @${width}: the box, its section and the news below stay put (${now.height} / ${now.sectionHeight} / ${Math.round(now.newsTop)})`);
+    await billboard.getByRole("button", { name: "Next pitch" }).click();
+    await page.mouse.move(0, 0); // leave the billboard so it isn't paused for the next measure
+    await page.waitForTimeout(1000); // the 900ms cross-fade
+  }
+  check(longest >= 400, `billboard @${width}: the longest fixture pitch (${longest} characters with quotes) was among those measured`);
+  await billboard.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: join(outDir, `billboard-${width}.png`), fullPage: true });
+  await page.close();
+}
+{
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: "reduce" });
+  const page = await context.newPage();
+  await page.goto(fixture.origin + "/", { waitUntil: "networkidle" });
+  const billboard = page.getByRole("region", { name: "Pitch of the hour" });
+  await billboard.getByRole("button", { name: "Next pitch" }).click();
+  check((await page.locator('[data-billboard="leaving"]').count()) === 0, "billboard, reduced motion: the switch draws no outgoing pitch");
+  await context.close();
+}
+{
+  const page = await open(1280, "/pitches?slot=1", "pitches compare");
+  check((await page.getByRole("region", { name: "Compare versions" }).count()) === 1, "pitches: the open pitch shows the compare view");
+  check((await page.locator("[data-side=after] ins").count()) > 0, "pitches: the compare view marks added words");
+  await page.close();
+}
 
 // The three states from the spec.
 fixture.state.mode = "empty";

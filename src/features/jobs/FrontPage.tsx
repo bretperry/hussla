@@ -2,26 +2,27 @@
   The jobs front page, built to mockup 8c: masthead with two ears, the lead story, the pitch slot, and the rail.
   In the app: "/" . Desktop is a 12-column grid (lead 8 + rail 4, the two rows' rules aligned); a phone stacks ear, lead, pitch, news, board.
   Used by: src/app/App.tsx.
-  Uses: src/features/jobs/front-page.ts for what to show, use-front-page.ts for the data, src/shared/ui for the type and rules.
+  Uses: src/features/jobs/front-page.ts for what to show, use-front-page.ts for the data, GET /api/pitches for the billboard, src/shared/ui for the type and rules.
 
   States: day one (no jobs, no pitches), no lead story (the fact box hides), nothing to sign (the ear says so, no button).
   Spec: docs/plans/hussla-v1.md → Phase 5.
 */
 import { STATUS_LABEL, STATUS_TAG } from "@/config/ui";
-import type { CompanyDetail, CompanySummary, JobListItem } from "@/shared/api";
-import { describeError } from "@/shared/api";
+import type { CompanyDetail, CompanySummary, JobListItem, PitchList } from "@/shared/api";
+import { api, describeError } from "@/shared/api";
 import { cn } from "@/shared/lib/cn";
 import { formatLooseDate, payLabel } from "@/shared/lib/format";
 import { Link } from "@/shared/lib/router";
+import { useResource } from "@/shared/lib/use-resource";
 import { LinkButton } from "@/shared/ui/Button";
 import { ErrorLine, LoadingLine, Tag } from "@/shared/ui/Feedback";
 import { Nameplate, NameplateRule } from "@/shared/ui/Nameplate";
 import { SectionHead, Stat } from "@/shared/ui/Section";
-import { awaitingSignature, boardJobs, glanceFacts, latestNews, leadHeadline, leadKicker, overnightCounts, pickLead } from "./front-page";
+import { awaitingSignature, billboardPitches, boardJobs, glanceFacts, latestNews, leadHeadline, leadKicker, overnightCounts, pickLead } from "./front-page";
 import type { FrontPageData } from "./use-front-page";
 import { useFrontPage } from "./use-front-page";
 import { PitchSlot } from "./PitchSlot";
-import type { Pitch } from "./PitchSlot";
+import type { BillboardPitch } from "./PitchSlot";
 
 // Half a gutter back, with a hairline there: the column rule that sits in the middle of the gutter.
 const columnRule = "lg:-ml-half-gutter lg:border-l lg:border-hairline lg:pl-[calc(var(--spacing-half-gutter)-1px)]";
@@ -189,10 +190,13 @@ const Board = ({ jobs, signing }: { jobs: readonly JobListItem[]; signing: Reado
   );
 };
 
-type FrontPageViewProps = { appName: string; data: FrontPageData; now?: Date; pitch?: Pitch | null; onNextPitch?: () => void };
+type FrontPageViewProps = { appName: string; data: FrontPageData; now?: Date; pitches?: readonly BillboardPitch[]; rotateSeconds?: number };
+
+// Until GET /api/pitches answers (or if it fails) the billboard is empty; this only paces an empty board.
+const NO_ROTATION = 0;
 
 // The page for data already in hand; FrontPage fetches it, tests hand it fixtures.
-export const FrontPageView = ({ appName, data, now = new Date(), pitch = null, onNextPitch }: FrontPageViewProps) => {
+export const FrontPageView = ({ appName, data, now = new Date(), pitches = [], rotateSeconds = NO_ROTATION }: FrontPageViewProps) => {
   const { jobs, companies, drafts, details } = data;
   const lead = pickLead(jobs);
   const signatures = awaitingSignature(drafts, jobs, companies);
@@ -210,7 +214,8 @@ export const FrontPageView = ({ appName, data, now = new Date(), pitch = null, o
       </header>
       <div data-m="body" className="mt-6 grid grid-cols-1 lg:grid-cols-12 lg:gap-x-6">
         <LeadStory lead={lead} summary={leadSummary} detail={leadDetail} />
-        <PitchSlot pitch={pitch} {...(onNextPitch === undefined ? {} : { onNext: onNextPitch })} />
+        {/* Keyed by the count so the billboard picks its starting pitch again once the list arrives. */}
+        <PitchSlot key={pitches.length} pitches={pitches} rotateSeconds={rotateSeconds} now={now} />
         <NewsRail details={details} />
         <Board jobs={jobs} signing={signing} />
       </div>
@@ -220,8 +225,17 @@ export const FrontPageView = ({ appName, data, now = new Date(), pitch = null, o
 
 export const FrontPage = ({ appName }: { appName: string }) => {
   const { data, error } = useFrontPage();
+  // Pitches load on their own: a failure leaves the billboard empty instead of blanking the page.
+  const pitches = useResource((signal): Promise<PitchList> => api.listPitches({ signal }), []);
   if (data === null) {
     return error === null ? <LoadingLine label="Setting the type" /> : <ErrorLine message={describeError(error)} />;
   }
-  return <FrontPageView appName={appName} data={data} />;
+  return (
+    <FrontPageView
+      appName={appName}
+      data={data}
+      pitches={pitches.data === null ? [] : billboardPitches(pitches.data.pitches)}
+      rotateSeconds={pitches.data?.settings.rotateSeconds ?? NO_ROTATION}
+    />
+  );
 };

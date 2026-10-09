@@ -18,6 +18,7 @@ import (
 	"github.com/bretperry/hussla/internal/app/auth"
 	"github.com/bretperry/hussla/internal/app/mailbox"
 	"github.com/bretperry/hussla/internal/app/storeerr"
+	"github.com/bretperry/hussla/internal/app/tracker"
 	"github.com/bretperry/hussla/internal/app/wire"
 	"github.com/bretperry/hussla/internal/config"
 	"github.com/bretperry/hussla/internal/domain"
@@ -75,6 +76,10 @@ func statusFor(err error) (int, errorBody) {
 		return http.StatusForbidden, errorBody{Error: auth.ErrNotEnrolled.Error(), Code: codeSetupRequired}
 	case errors.Is(err, auth.ErrStepUpRequired):
 		return http.StatusForbidden, errorBody{Error: auth.ErrStepUpRequired.Error(), Code: codePasskeyRequired}
+	case errors.Is(err, domain.ErrOwnerOnly):
+		return http.StatusForbidden, errorBody{Error: auth.ErrNotOwner.Error()}
+	case errors.Is(err, tracker.ErrNoFreePitchSlot):
+		return http.StatusConflict, errorBody{Error: tracker.ErrNoFreePitchSlot.Error()}
 	case errors.Is(err, auth.ErrNotOwner), errors.Is(err, mailbox.ErrAgentMayNot),
 		errors.Is(err, auth.ErrPasskeyRejected), errors.Is(err, auth.ErrWrongSetupCode), errors.Is(err, auth.ErrSetupCodeLocked):
 		return http.StatusForbidden, errorBody{Error: rootMessage(err)}

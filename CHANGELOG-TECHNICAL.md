@@ -15,6 +15,10 @@ Internal record of how Hussla was built, newest first. Every entry says **what**
 
 ## [Unreleased — dev only]
 
+### Phase 5b Pitches
+
+- **Pitches.** Ten slots, each with a version history; one live version per pitch. Agents (HTTP and MCP `list_pitches` / `add_pitch_version`) only add versions; start/edit are owner-only, live and delete also need a passkey step-up. Domain rules in `internal/domain/pitch.go`, knobs in `internal/config/pitches.go`, migration `0003_pitches.sql` (`lastVersion` so a deleted version's number is never reused). Seed import takes `pitches: [{slot, title, when, text}]` as version 1, never overwriting. UI: Pitches page (history, writer, LCS word diff, word count and speaking time) and the front-page billboard (cross-fade, pauses on hover/focus, no fade under reduced motion). *Why:* Phase 5b of `docs/plans/hussla-v1.md`.
+
 ### Phase 5 UI
 
 - **Gazette React UI.** Pages: jobs front page, job, companies, compare, company, outbox, answers, activity, settings. Tokens in `src/shared/ui/tokens.css`, knobs in `src/config/ui.ts`, one sanitizing Markdown renderer for untrusted text, passkey step-up for owner-only actions, small History API router, `useResource` fetch hook (no client store). Evidence: `pnpm ui:evidence` (screenshots at 1280 and 390, grid and column-end DOM check) writes `docs/screenshots/phase-5/`. *Why:* Phase 5 of `docs/plans/hussla-v1.md`.

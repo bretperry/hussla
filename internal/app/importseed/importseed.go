@@ -1,4 +1,4 @@
-// Seed import: loads the prototype's seed bundle (config, companies, jobs, answers, events) into the store.
+// Seed import: loads the prototype's seed bundle (config, companies, jobs, answers, events, pitches) into the store.
 // In the app: the setup wizard's "import a seed file" step and the one-time move from the prototype.
 // Used by: the setup use-case and `hussla import` (Phases 3 and 6).
 // Uses: internal/app/store (one unit of work), internal/app/wire (the bundle's JSON), internal/domain (the rules a new record must pass).
@@ -49,6 +49,7 @@ type Count struct {
 // Report says what an import did.
 type Report struct {
 	Companies, Jobs, Answers, Events Count
+	Pitches                          Count
 	// ConfigStored is true when the search configuration was written; false when one was already stored or the file had none.
 	ConfigStored bool
 	Warnings     []string
@@ -61,10 +62,11 @@ type bundle struct {
 	Jobs      []json.RawMessage `json:"jobs"`
 	Answers   []json.RawMessage `json:"answers"`
 	Events    []json.RawMessage `json:"events"`
+	Pitches   []json.RawMessage `json:"pitches"`
 }
 
 // knownSections are the keys a bundle may have; others are reported, not stored.
-var knownSections = map[string]bool{"config": true, "companies": true, "jobs": true, "answers": true, "events": true}
+var knownSections = map[string]bool{"config": true, "companies": true, "jobs": true, "answers": true, "events": true, "pitches": true}
 
 // Import reads a bundle from input and stores what is new, in one unit of work. `now` stamps
 // records the file gave no time for.
@@ -131,6 +133,11 @@ func (i *importer) run(ctx context.Context, tx store.Tx, parsed bundle, raw []by
 	}
 	for index, record := range parsed.Events {
 		if err := i.importEvent(ctx, tx, index, record); err != nil {
+			return err
+		}
+	}
+	for index, record := range parsed.Pitches {
+		if err := i.importPitch(ctx, tx, index, record); err != nil {
 			return err
 		}
 	}
@@ -371,10 +378,14 @@ func (i *importer) importEvent(ctx context.Context, tx store.Tx, index int, reco
 // digest, so importing the same file again (which adds nothing) adds no second line either.
 func (i *importer) logImport(ctx context.Context, tx store.Tx, raw []byte) error {
 	created := i.report.Companies.Created + i.report.Jobs.Created + i.report.Answers.Created + i.report.Events.Created
+	created += i.report.Pitches.Created
 	if created == 0 && !i.report.ConfigStored {
 		return nil
 	}
 	detail := fmt.Sprintf("%d companies, %d jobs, %d answers, %d events", i.report.Companies.Created, i.report.Jobs.Created, i.report.Answers.Created, i.report.Events.Created)
+	if i.report.Pitches.Created > 0 {
+		detail += fmt.Sprintf(", %d pitches", i.report.Pitches.Created)
+	}
 	event, err := domain.NewEvent("", domain.ActorImport, "Imported a seed file", detail, i.now)
 	if err != nil {
 		return fmt.Errorf("build import event: %w", err)

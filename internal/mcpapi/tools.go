@@ -79,6 +79,7 @@ func catalog() []tool {
 	entries = append(entries, companyTools()...)
 	entries = append(entries, mailTools()...)
 	entries = append(entries, answerTools()...)
+	entries = append(entries, pitchTools()...)
 	return entries
 }
 
@@ -130,6 +131,8 @@ func describe(err error) (message string, expected bool) {
 		return "changed since you read it: read it again and resend", true
 	case errors.Is(err, domain.ErrTransitionNotAllowed):
 		return rootMessage(err), true
+	case errors.Is(err, domain.ErrOwnerOnly):
+		return "only the owner can do this, on the site", true
 	case errors.Is(err, storeerr.ErrNotFound):
 		return "not found", true
 	case errors.Is(err, storeerr.ErrExists):

@@ -9,12 +9,13 @@
 // The motto under the dateline; customer-facing copy.
 export const MOTTO = "All the leads fit to chase.";
 
-// The nav, left to right. "Pitches" joins in Phase 5b. Activity is reached from the agent wire link.
+// The nav, left to right. Activity is reached from the agent wire link.
 export const NAV_ITEMS = [
   { path: "/jobs", label: "Jobs" },
   { path: "/companies", label: "Companies" },
   { path: "/outbox", label: "Outbox" },
   { path: "/answers", label: "Answers" },
+  { path: "/pitches", label: "Pitches" },
   { path: "/settings", label: "Settings" },
 ] as const;
 
@@ -80,6 +81,12 @@ export const ACTIVITY_LIMIT = 300;
 
 // Pause after the last keystroke before "My notes" saves itself.
 export const NOTES_AUTOSAVE_MS = 700;
+
+// The billboard's cross-fade, in step with --animate-pitch-in / -out in tokens.css; the outgoing pitch is dropped after it.
+export const PITCH_FADE_MS = 900;
+
+// A pitch longer than this many characters shows at the smaller quote size (tokens.css → --text-quote-long), so the longest fits the box.
+export const PITCH_LONG_CHARACTERS = 200;
 
 // Companies the compare view takes.
 export const COMPARE_MIN = 2;

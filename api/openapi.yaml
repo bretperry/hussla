@@ -44,6 +44,7 @@ tags:
   - name: files
   - name: events
   - name: answers
+  - name: pitches
   - name: settings
   - name: keys
   - name: mail
@@ -570,6 +571,145 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /api/pitches:
+    get:
+      tags: [pitches]
+      operationId: listPitches
+      summary: The owner's pitches by slot, each with every version (oldest first), and the pitch knobs the UI uses.
+      responses:
+        "200":
+          description: The pitches.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PitchList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [pitches]
+      operationId: createPitch
+      summary: Owner only. Starts a pitch in a slot (the lowest free one when `slot` is left out) with its first version, which is live.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PitchCreate" }
+      responses:
+        "201":
+          description: The pitch.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pitch" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/pitches/{slot}:
+    parameters:
+      - $ref: "#/components/parameters/PitchSlot"
+    patch:
+      tags: [pitches]
+      operationId: patchPitch
+      summary: Owner only. Changes a pitch's title or "when to use it" cue (null clears the cue).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PitchPatch" }
+      responses:
+        "200":
+          description: The pitch.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pitch" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [pitches]
+      operationId: deletePitch
+      summary: Owner only, with a passkey tap. Deletes a pitch and its history (the activity log keeps its live words); `ok` is false when the slot was empty.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
+      responses:
+        "200":
+          description: Done.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/pitches/{slot}/versions:
+    parameters:
+      - $ref: "#/components/parameters/PitchSlot"
+    post:
+      tags: [pitches]
+      operationId: addPitchVersion
+      summary: Adds a version to a pitch (owner or agent). The live version doesn't move; only the owner picks it. Sending the newest version's words again adds nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PitchVersionCreate" }
+      responses:
+        "201":
+          description: The pitch, with the new version last.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pitch" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/pitches/{slot}/versions/{version}:
+    parameters:
+      - $ref: "#/components/parameters/PitchSlot"
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    delete:
+      tags: [pitches]
+      operationId: deletePitchVersion
+      summary: Owner only, with a passkey tap. Deletes one version; the live one can't be deleted (400). `ok` is false when there was no such version.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
+      responses:
+        "200":
+          description: Done.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/pitches/{slot}/live:
+    parameters:
+      - $ref: "#/components/parameters/PitchSlot"
+    post:
+      tags: [pitches]
+      operationId: setLivePitch
+      summary: Owner only, with a passkey tap. Puts one version of a pitch on the billboard.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PitchLive" }
+      responses:
+        "200":
+          description: The pitch.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pitch" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/config:
     get:
       tags: [settings]
@@ -1047,6 +1187,12 @@ components:
       in: path
       required: true
       schema: { type: string }
+    PitchSlot:
+      name: slot
+      in: path
+      required: true
+      description: A pitch's slot, 1 to `settings.slots` (10).
+      schema: { type: integer, minimum: 1 }
     EmailId:
       name: emailId
       in: path
@@ -1738,6 +1884,71 @@ components:
           required: [question]
           properties:
             id: { type: string, pattern: "^[a-z0-9-]{1,120}$", description: Defaults to the question's slug. }
+    PitchVersion:
+      type: object
+      required: [version, text, note, author, writer, createdAt]
+      properties:
+        version: { type: integer, minimum: 1, description: "Numbered 1, 2, 3 … in the order written; a deleted number is never reused." }
+        text: { type: string, description: Plain text, never markup. }
+        note: { type: string, description: Why this version changed; empty when none. }
+        author: { type: string, description: 'Who wrote it, as the activity log names them ("agent:laptop", "import").' }
+        writer: { type: string, enum: [owner, agent] }
+        createdAt: { type: string, format: date-time }
+    Pitch:
+      type: object
+      required: [slot, title, when, liveVersion, versions, createdAt, updatedAt]
+      properties:
+        slot: { type: integer, minimum: 1 }
+        title: { type: string }
+        when: { type: string, description: The "when to use it" cue; empty when none. }
+        liveVersion: { type: integer, description: The number of the version on the billboard; always one of `versions`. }
+        versions: { type: array, items: { $ref: "#/components/schemas/PitchVersion" }, description: Oldest first. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PitchSettings:
+      type: object
+      description: The pitch knobs (internal/config/pitches.go), so the page and the server use the same numbers.
+      required: [slots, maxCharacters, rotateSeconds, wordsPerMinute]
+      properties:
+        slots: { type: integer, description: How many pitches the owner keeps. }
+        maxCharacters: { type: integer, description: The longest a version may be. }
+        rotateSeconds: { type: integer, description: How long the billboard shows one pitch. }
+        wordsPerMinute: { type: integer, description: Speaking pace for the speaking-time estimate. }
+    PitchList:
+      type: object
+      required: [pitches, settings]
+      properties:
+        pitches: { type: array, items: { $ref: "#/components/schemas/Pitch" }, description: By slot. }
+        settings: { $ref: "#/components/schemas/PitchSettings" }
+    PitchVersionCreate:
+      type: object
+      required: [text]
+      additionalProperties: false
+      properties:
+        text: { type: string, minLength: 1 }
+        note: { type: string }
+    PitchCreate:
+      type: object
+      required: [title, text]
+      additionalProperties: false
+      properties:
+        slot: { type: integer, minimum: 1, description: Defaults to the lowest free slot (409 when all are taken). }
+        title: { type: string, minLength: 1 }
+        when: { type: string }
+        text: { type: string, minLength: 1 }
+        note: { type: string }
+    PitchPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 1 }
+        when: { type: [string, "null"] }
+    PitchLive:
+      type: object
+      required: [version]
+      additionalProperties: false
+      properties:
+        version: { type: integer, minimum: 1 }
     SearchConfig:
       type: object
       description: The search settings agents follow. Free-form beyond `paused`; PATCH merges top-level keys.

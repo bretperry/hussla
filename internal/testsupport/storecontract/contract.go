@@ -48,6 +48,7 @@ func Run(t *testing.T, newStore NewStore) {
 		{"EventsAppendOnceAndList", eventsAppendOnceAndList},
 		{"EventsSurviveTheirJob", eventsSurviveTheirJob},
 		{"AnswersRoundTripAndOrder", answersRoundTrip},
+		{"PitchesRoundTripVersionsAndSlots", pitchesRoundTrip},
 		{"FilesRoundTrip", filesRoundTrip},
 		{"TokensUniqueRevokeTouch", tokensBehaviour},
 		{"SettingsSetGetAll", settingsBehaviour},

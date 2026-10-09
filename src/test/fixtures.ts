@@ -1,11 +1,11 @@
 /*
-  Synthetic data for tests and the browser evidence run: fictional companies, people, pitches-free, and addresses on example.com.
+  Synthetic data for tests and the browser evidence run: fictional companies, people, pitches and addresses on example.com.
   In the app: nothing at runtime; component tests, the front-page tests and src/test/ui-evidence.mjs read it.
   Used by: the component tests (*.test.tsx), src/test/ui-evidence.mjs (imported straight as TypeScript by Node).
 
-  The repository is public: every name below is invented. Never paste real jobs, contacts or résumé text here.
+  The repository is public: every name below is invented. Never paste real jobs, contacts, pitches or résumé text here.
 */
-import type { CompanyDetail, CompanySummary, Contact, Email, Event, JobDetail, JobListItem, MailStatus } from "@/shared/api";
+import type { CompanyDetail, CompanySummary, Contact, Email, Event, JobDetail, JobListItem, MailStatus, Pitch, PitchList, PitchVersion } from "@/shared/api";
 import type { components } from "@/shared/api-types";
 
 type Job = components["schemas"]["Job"];
@@ -269,4 +269,58 @@ export const mailStatus: MailStatus = {
   nextSendAt: null,
   queued: 1,
   bccSelf: true,
+};
+
+// Pitches: invented wording for an invented person. The fourth is near the server's character limit, to size the billboard box.
+export const makePitchVersion = (overrides: Partial<PitchVersion> & Pick<PitchVersion, "version" | "text">): PitchVersion => ({
+  note: "",
+  author: "Jordan Example",
+  writer: "owner",
+  createdAt: hoursAgo(72),
+  ...overrides,
+});
+
+export const makePitch = (overrides: Partial<Pitch> & Pick<Pitch, "slot" | "title" | "versions">): Pitch => ({
+  when: "",
+  liveVersion: 1,
+  createdAt: hoursAgo(96),
+  updatedAt: hoursAgo(2),
+  ...overrides,
+});
+
+const LONGEST_PITCH =
+  "I came up through support, so I learned to read a product from the angry end first. Since then I have led small teams that turned " +
+  "noisy queues into calm ones: we cut first-reply time by two thirds, wrote the playbooks newcomers still use, and built the tools " +
+  "that let one person do the work of three. I want to do that again somewhere the problem is bigger than the team. That is the job I want next, and soon.";
+
+export const pitches: Pitch[] = [
+  makePitch({
+    slot: 1,
+    title: "Who I am",
+    when: "Opening a call, or “tell me about yourself”",
+    liveVersion: 2,
+    versions: [
+      makePitchVersion({ version: 1, text: "I build calm tools for busy support teams, and I like the messy first version best." }),
+      makePitchVersion({ version: 2, text: "I build calm tools for busy teams. I like the messy first version, and I stay for the boring tenth.", note: "warmer ending", createdAt: hoursAgo(30) }),
+      makePitchVersion({ version: 3, text: "I build calm, fast tools for busy teams. I like the messy first version and I stay for the tenth.", note: "tighter", author: "agent:laptop", writer: "agent", createdAt: hoursAgo(3) }),
+    ],
+  }),
+  makePitch({
+    slot: 2,
+    title: "Why now",
+    when: "When they ask about timing",
+    versions: [makePitchVersion({ version: 1, text: "The team I built runs itself now. That is the best moment to go find the next hard problem." })],
+  }),
+  makePitch({
+    slot: 4,
+    title: "Why me",
+    when: "Comparing me to other candidates",
+    versions: [makePitchVersion({ version: 1, text: "You need someone who has shipped this exact kind of tool twice and still likes talking to the people who use it." })],
+  }),
+  makePitch({ slot: 7, title: "The long story", when: "A friendly interviewer with time", versions: [makePitchVersion({ version: 1, text: LONGEST_PITCH })] }),
+];
+
+export const pitchList: PitchList = {
+  pitches,
+  settings: { slots: 10, maxCharacters: 420, rotateSeconds: 180, wordsPerMinute: 150 },
 };

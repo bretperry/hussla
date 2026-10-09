@@ -22,6 +22,7 @@ import (
 	"github.com/bretperry/hussla/internal/app/events"
 	"github.com/bretperry/hussla/internal/app/files"
 	"github.com/bretperry/hussla/internal/app/jobs"
+	"github.com/bretperry/hussla/internal/app/pitches"
 	"github.com/bretperry/hussla/internal/app/settings"
 	"github.com/bretperry/hussla/internal/app/store"
 	"github.com/bretperry/hussla/internal/app/storeerr"
@@ -44,13 +45,14 @@ type data struct {
 	Tokens    map[string]tokens.Token
 	Settings  map[string]string
 	Emails    map[string]domain.Email
+	Pitches   map[int]domain.Pitch
 }
 
 func newData() data {
 	return data{
 		Jobs: map[string]domain.Job{}, Companies: map[string]domain.Company{}, EventKeys: map[string]bool{},
 		Answers: map[string]domain.Answer{}, Files: map[string]files.File{}, Tokens: map[string]tokens.Token{},
-		Settings: map[string]string{}, Emails: map[string]domain.Email{},
+		Settings: map[string]string{}, Emails: map[string]domain.Email{}, Pitches: map[int]domain.Pitch{},
 	}
 }
 
@@ -97,6 +99,7 @@ func (u *unit) Files() files.Repository         { return fileRepository{u} }
 func (u *unit) Tokens() tokens.Repository       { return tokenRepository{u} }
 func (u *unit) Settings() settings.Repository   { return settingRepository{u} }
 func (u *unit) Emails() emails.Repository       { return emailRepository{u} }
+func (u *unit) Pitches() pitches.Repository     { return pitchRepository{u} }
 
 // writable is nil in a Atomically unit and ErrReadOnly in a View.
 func (u *unit) writable() error {
@@ -334,6 +337,60 @@ func (r answerRepository) Delete(_ context.Context, id string) error {
 		return storeerr.ErrNotFound
 	}
 	delete(r.u.state.Answers, id)
+	return nil
+}
+
+// ---- pitches
+
+type pitchRepository struct{ u *unit }
+
+func (r pitchRepository) Get(_ context.Context, slot int) (domain.Pitch, error) {
+	pitch, found := r.u.state.Pitches[slot]
+	if !found {
+		return domain.Pitch{}, storeerr.ErrNotFound
+	}
+	return deepCopy(pitch), nil
+}
+
+func (r pitchRepository) List(_ context.Context) ([]domain.Pitch, error) {
+	var found []domain.Pitch
+	for _, pitch := range r.u.state.Pitches {
+		found = append(found, deepCopy(pitch))
+	}
+	sort.Slice(found, func(i, j int) bool { return found[i].Slot < found[j].Slot })
+	return found, nil
+}
+
+func (r pitchRepository) Create(_ context.Context, pitch domain.Pitch) error {
+	if err := r.u.writable(); err != nil {
+		return err
+	}
+	if _, taken := r.u.state.Pitches[pitch.Slot]; taken {
+		return storeerr.ErrExists
+	}
+	r.u.state.Pitches[pitch.Slot] = deepCopy(pitch)
+	return nil
+}
+
+func (r pitchRepository) Update(_ context.Context, pitch domain.Pitch) error {
+	if err := r.u.writable(); err != nil {
+		return err
+	}
+	if _, found := r.u.state.Pitches[pitch.Slot]; !found {
+		return storeerr.ErrNotFound
+	}
+	r.u.state.Pitches[pitch.Slot] = deepCopy(pitch)
+	return nil
+}
+
+func (r pitchRepository) Delete(_ context.Context, slot int) error {
+	if err := r.u.writable(); err != nil {
+		return err
+	}
+	if _, found := r.u.state.Pitches[slot]; !found {
+		return storeerr.ErrNotFound
+	}
+	delete(r.u.state.Pitches, slot)
 	return nil
 }
 

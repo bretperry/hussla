@@ -157,9 +157,13 @@ Company emails not tied to a job: `POST /api/companies/:slug/emails {to, subject
 - `GET /api/config`, `GET /api/resumes` (files at `/resumes/<name>.pdf`), `GET /api/stats`
 - `GET /api/events?limit=200`, `GET /api/export` (full JSON backup)
 - `GET /api/files/:id`
+- Pitches: `GET /api/pitches` (each pitch with `liveVersion` and every version, plus `settings`:
+  slots, `maxCharacters`, `rotateSeconds`, `wordsPerMinute`), and `POST /api/pitches/:slot/versions
+  {text, note}` to suggest a wording. It goes into the history; only the owner makes a version live.
 - MCP: `POST /mcp` (see above)
 
-Agent keys can't approve or send email, delete anything, change settings, import, or manage keys:
+Agent keys can't approve or send email, delete anything, change settings, import, manage keys, or
+start, edit or pick the live version of a pitch:
 those are the owner's, on the site, each confirmed with a passkey. A route that refuses an agent
 answers `403`.
 
@@ -218,6 +222,8 @@ Cursor and other clients that read a JSON file (`~/.cursor/mcp.json`):
 | `list_answers` | saved form answers | `GET /api/answers` |
 | `ask_for_answer` | record a form question that has no answer yet | `POST /api/answers` |
 | `get_search_config` | the owner's search settings (`paused`: only read) | `GET /api/config` |
+| `list_pitches` | the owner's pitches with every version, and the limits | `GET /api/pitches` |
+| `add_pitch_version` | suggest a wording for a pitch (`slot`, `text`, optional `note`) | `POST /api/pitches/:slot/versions` |
 
 Files (upload and download), the activity feed, résumés, the export and the rest of the HTTP routes
 stay HTTP-only; the rules above apply to them the same way.

@@ -19,7 +19,7 @@ import (
 
 // TestEveryToolThroughTheClient walks one agent's job: every tool runs, over MCP, and the work lands.
 func TestEveryToolThroughTheClient(t *testing.T) {
-	forEachEra(t, func(t *testing.T, _ *rig, c *client) {
+	forEachEra(t, func(t *testing.T, r *rig, c *client) {
 		created := c.ok("create_job", map[string]any{
 			"company": "Example Co", "title": "Staff Engineer", "url": "https://example.com/jobs/1", "workType": "remote",
 			"score": 80, "reasons": []string{"TypeScript match"},
@@ -101,6 +101,23 @@ func TestEveryToolThroughTheClient(t *testing.T) {
 		}
 		c.ok("get_search_config", nil)
 
+		// Pitches: the owner starts one; the agent reads it and adds a version, which doesn't go live.
+		if started := r.httpAsOwner(http.MethodPost, "/api/pitches", map[string]any{"slot": 2, "title": "Why now", "text": "The timing is right."}); started.status != http.StatusCreated {
+			t.Fatalf("owner starts a pitch: %d %s", started.status, started.body)
+		}
+		if pitches := c.ok("list_pitches", nil); len(pitches["pitches"].([]any)) != 1 || pitches["settings"].(map[string]any)["slots"] != float64(10) {
+			t.Fatalf("list_pitches: %v", pitches)
+		}
+		suggested := c.ok("add_pitch_version", map[string]any{"slot": 2, "text": "Now is the moment.", "note": "punchier"})
+		versions := suggested["versions"].([]any)
+		newest := versions[len(versions)-1].(map[string]any)
+		if len(versions) != 2 || suggested["liveVersion"] != float64(1) || newest["author"] != "agent:laptop" || newest["writer"] != "agent" {
+			t.Fatalf("add_pitch_version should add a version that isn't live: %v", suggested)
+		}
+		if message := c.refused("add_pitch_version", map[string]any{"slot": 2, "text": "x", "live": true}); !strings.Contains(message, "live") {
+			t.Errorf("an agent can't ask for live: %s", message)
+		}
+
 		// Every tool the server lists was just run.
 		for _, name := range c.toolNames() {
 			if !c.called[name] {
@@ -140,6 +157,10 @@ func TestToolsReturnWhatTheAPIReturns(t *testing.T) {
 		same("list_outbox", c.ok("list_outbox", nil)["emails"], "/api/emails")
 		same("list_answers", c.ok("list_answers", nil)["answers"], "/api/answers")
 		same("get_search_config", c.ok("get_search_config", nil), "/api/config")
+		if started := r.httpAsOwner(http.MethodPost, "/api/pitches", map[string]any{"title": "Who I am", "text": "A maker."}); started.status != http.StatusCreated {
+			t.Fatalf("owner starts a pitch: %d %s", started.status, started.body)
+		}
+		same("list_pitches", c.ok("list_pitches", nil), "/api/pitches")
 	})
 }
 
@@ -207,6 +228,7 @@ func TestToolListIsTheDocumentedSet(t *testing.T) {
 			"find_jobs", "get_job", "create_job", "update_job", "add_job_event", "add_contact",
 			"list_companies", "get_company", "upsert_company_profile", "add_company_news", "add_company_review",
 			"draft_job_email", "draft_company_email", "list_outbox", "list_answers", "ask_for_answer", "get_search_config",
+			"list_pitches", "add_pitch_version",
 		}
 		if !slices.Equal(names, want) {
 			t.Errorf("tools/list = %v\n want %v", names, want)
