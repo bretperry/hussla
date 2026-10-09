@@ -25,6 +25,11 @@ reason, then deleted).
 
 What. **Why deferred:** … **Where:** … **If we take it:** … -->
 
+## command-guard test: wall-clock asserts flake on loaded CI runners
+`open` · recorded 2026-10-09 · from the ship dynamite test fixes (`fix/ship-findings`)
+
+`scripts/command-guard.test.mjs` fails on busy CI runners: four times so far, in the 50 ms bound in "asks, without parsing, for a line over the size budget" and in "looks nothing up for a line of plain commands after a cd", which hits the default 250 ms budget and then gets an ask instead of no verdict. **Why deferred:** the file is harness-owned (`harness.json`), so the fix belongs upstream in whippletree, not in this project. **Where:** the proposed patch is `/mnt/project-files/hussla/command-guard-timing.patch` (`git apply -p1`; the first test keeps its `character budget` reason check and gets `BOUND_MS`, the second counts lookups with the budgets lifted). In a scratch copy with the patch applied, all 1313 of the file's other tests passed. **If we take it:** apply it in whippletree (or here, then `pnpm harness:push`), and `pnpm harness:pull` the release here; then delete this entry.
+
 ## Mail: OAuth2 sign-in for Outlook.com and Microsoft 365 (and Gmail without app passwords)
 `open` · recorded 2026-10-08 · from `docs/plans/hussla-v1.md` Phase 4
 
@@ -335,12 +340,6 @@ The front page fetches one company detail per open job (N+1, capped by `FRONT_PA
 
 Activity is reachable by link only (Pitches got its nav item in Phase 5b). Tests stub `fetch` and spy on `api` instead of using MSW. **Why deferred:** out of Phase 5's scope. **Where:** `src/config/ui.ts` (`NAV_ITEMS`). **If we take it:** add the nav item (the phone nav already wraps to a second row); adopt MSW only if the stubs get unwieldy.
 
-
-## Import result doesn't count pitches on the wire
-
-`open` · recorded 2026-10-09 · from Phase 5b (`docs/plans/hussla-v1.md`)
-
-The seed import creates pitches and its activity line counts them, but the HTTP `ImportResult` and the Settings import summary don't show a pitches count. **Why deferred:** PR #9 (`feat/import-prototype`) reshapes the same result and Settings code; adding a field here would conflict. **Where:** `internal/app/importseed/importseed.go` (`Report.Pitches`), `internal/httpapi` import route, `src/features/settings/SettingsPage.tsx`. **If we take it:** add `pitches` to the result schema in `api/openapi.yaml` after #9 lands.
 
 ## MCP tools for the HTTP-only agent routes
 

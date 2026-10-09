@@ -1,16 +1,24 @@
 // The home-network page: http://<NAS address>:8484, the first thing a headless install shows, before anything is set up.
 // In the app: Container Manager → Project → Create, then this page in a browser on the home network: Connect to Tailscale, flip HTTPS on if needed, "Make it mine", the address and QR code.
 // Used by: cmd/hussla (one listener on HUSSLA_HOME_PORT, all interfaces; off by default for the plain binary, on in the Docker image).
-// Uses: setup.Service (Home, StartOver), qr.go. Server-rendered HTML, no script, so the CSP is the strictest one.
+// Uses: setup.Service (Home, MakeItMine, StartOver, Reconnect), qr.go. Server-rendered HTML, no script, so the CSP is the strictest one.
 //
-// It never grants identity and reads no session: everything it shows is safe for anyone on the
-// home network. Two checks run on every request, on the connection itself:
+// It never grants identity and reads no session: everything a GET shows is safe for anyone on the
+// home network. The first-run link is never in a GET: "Make it mine" is a form whose POST mints a
+// one-use link and redirects the browser to it (decision 0015). Two checks run on every request,
+// on the connection itself:
 //   - the source address must be private (RFC 1918, ULA, link-local, loopback); a page that holds
 //     the Tailscale login link must not answer the internet if a router forwards the port;
 //   - the Host must be a private IP, a bare name ("nas", "localhost") or a ".local" name, so a
 //     public name pointed at a private address (DNS rebinding) is refused before anything runs.
 // Behind Docker's port publishing the source can read as the bridge gateway (private) for any
 // client, so the install guides publish no port on a cloud server (the cloud compose file has none).
+// The NAS compose files publish the port on IPv4 only ("0.0.0.0:8484:8484"): an IPv6 client from
+// the internet, which docker-proxy would forward with the bridge gateway as its source, has no
+// published port to reach. Residual risk: a router that forwards IPv4 8484 to the NAS, or a host
+// whose Docker rewrites IPv4 sources the same way, still reaches the page with a private-looking
+// source; the page then shows only what anyone on the home network may see, and its POSTs need
+// this page's own Origin.
 
 package httpapi
 
@@ -40,12 +48,24 @@ type home struct {
 	setup *setup.Service
 }
 
+// homeCSP is the page's policy; extraFormTarget ("https://<ts.net name>") is where "Make it mine" redirects.
+func homeCSP(extraFormTarget string) string {
+	formAction := "'self'"
+	if extraFormTarget != "" {
+		formAction += " " + extraFormTarget
+	}
+	return "default-src 'none'; style-src 'self'; img-src 'self'; form-action " + formAction + "; frame-ancestors 'none'; base-uri 'none'"
+}
+
+// homeCSPSource is a host[:port] safe to put in a CSP source list (no spaces, quotes or semicolons).
+var homeCSPSource = regexp.MustCompile(`^[A-Za-z0-9.-]+(:[0-9]+)?$`)
+
 // homeLabel is one DNS label: what a bare name ("nas") or each part of a ".local" name may be.
 var homeLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 func (page *home) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	header := w.Header()
-	header.Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
+	header.Set("Content-Security-Policy", homeCSP(""))
 	header.Set("X-Content-Type-Options", "nosniff")
 	header.Set("Referrer-Policy", "no-referrer")
 	header.Set("X-Frame-Options", "DENY")
@@ -71,6 +91,10 @@ func (page *home) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	case r.URL.Path == "/start-over" && r.Method == http.MethodPost:
 		page.startOver(w, r)
+	case r.URL.Path == "/make-it-mine" && r.Method == http.MethodPost:
+		page.makeItMine(w, r)
+	case r.URL.Path == "/reconnect" && r.Method == http.MethodPost:
+		page.reconnect(w, r)
 	default:
 		http.Error(w, "Nothing here. Open / for setup.", http.StatusNotFound)
 	}
@@ -111,13 +135,49 @@ func homeHost(hostHeader string) bool {
 	return false
 }
 
-func (page *home) startOver(w http.ResponseWriter, r *http.Request) {
-	// A form post from this page carries this page's own Origin; anything else is another site.
+// fromThisPage reports whether a POST is a form post from this page: it carries this page's own
+// Origin; anything else (no Origin, or another site's) is refused.
+func fromThisPage(w http.ResponseWriter, r *http.Request) bool {
 	if r.Header.Get("Origin") != "http://"+r.Host {
-		http.Error(w, "Start over only from this page.", http.StatusForbidden)
+		http.Error(w, "Only from this page.", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+func (page *home) startOver(w http.ResponseWriter, r *http.Request) {
+	if !fromThisPage(w, r) {
 		return
 	}
 	if err := page.setup.StartOver(r.Context()); err != nil {
+		_, body := statusFor(err)
+		page.render(w, r, body.Error)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// makeItMine mints the one-use first-run link and sends the browser to it on the tailnet address.
+// The link is only ever in this POST's Location header, never in a page.
+func (page *home) makeItMine(w http.ResponseWriter, r *http.Request) {
+	if !fromThisPage(w, r) {
+		return
+	}
+	address, secret, err := page.setup.MakeItMine(r.Context())
+	if err != nil {
+		_, body := statusFor(err)
+		page.render(w, r, body.Error)
+		return
+	}
+	http.Redirect(w, r, address+"/setup?link="+url.QueryEscape(secret), http.StatusSeeOther)
+}
+
+// reconnect logs the node out when it is signed in to Tailscale as someone other than the owner.
+func (page *home) reconnect(w http.ResponseWriter, r *http.Request) {
+	if !fromThisPage(w, r) {
+		return
+	}
+	if err := page.setup.Reconnect(r.Context()); err != nil {
 		_, body := statusFor(err)
 		page.render(w, r, body.Error)
 		return
@@ -136,8 +196,9 @@ type homeView struct {
 	QR           template.HTML
 	OwnerLogin   string
 	CanStartOver bool
-	MakeItMine   string // the full https link with the first-run secret
+	MakeItMine   bool // the first-run window is open: show the button (its POST mints the link)
 	MinutesLeft  int
+	Mismatch     bool // the node is logged in to Tailscale as someone other than the owner
 	LinkExpired  bool
 	SetupDone    bool
 	KeyWarning   string
@@ -169,9 +230,14 @@ func (page *home) render(w http.ResponseWriter, r *http.Request, problem string)
 			view.QR = template.HTML(svg) //nolint:gosec // our own generator's markup; the address inside is escaped
 		}
 	}
-	if state.FirstRunLink != "" && state.Address != "" {
-		view.MakeItMine = state.Address + "/setup?link=" + url.QueryEscape(state.FirstRunLink)
+	view.Mismatch = state.OwnerMismatch
+	if state.CanMakeItMine && state.Address != "" {
+		view.MakeItMine = true
 		view.MinutesLeft = state.MinutesLeft
+		// The form's POST redirects to the tailnet address; form-action covers redirects, so allow that origin too.
+		if target, err := url.Parse(state.Address); err == nil && target.Host != "" && homeCSPSource.MatchString(target.Host) {
+			w.Header().Set("Content-Security-Policy", homeCSP(target.Scheme+"://"+target.Host))
+		}
 	}
 	if state.KeyExpiry.Warn {
 		view.KeyWarning = "Hussla's Tailscale sign-in expires in " + strconv.Itoa(state.KeyExpiry.DaysLeft) + " days."
@@ -252,6 +318,13 @@ const homeHTML = `<!doctype html>
 <h2>One switch to flip</h2>
 <p>Tailscale is connected, but HTTPS is off in your tailnet. Open <a class="button" id="admin-dns" href="{{.AdminDNS}}" target="_blank" rel="noopener">Tailscale DNS settings</a>, turn on <b>MagicDNS</b> if it is off, then turn on <b>HTTPS Certificates</b>.</p>
 <p>This page notices by itself. Nothing needs restarting.</p>
+{{else if .Mismatch}}
+<h2>Signed in to someone else's Tailscale</h2>
+<p>This Hussla is signed in to a Tailscale account that isn't its owner's, so it is refusing everything on the tailnet until its owner signs it in again.</p>
+<form method="post" action="/reconnect">
+<p><button type="submit" id="reconnect">Sign out of that account</button></p>
+<p class="small">Then press <b>Connect to Tailscale</b> here and sign in as the owner. Nothing you added is lost.</p>
+</form>
 {{else}}
 <h2>{{if .SetupDone}}Hussla is ready{{else}}Step 2 · Make it yours{{end}}</h2>
 <p class="address"><a id="address" href="{{.Address}}">{{.Address}}</a></p>
@@ -259,15 +332,19 @@ const homeHTML = `<!doctype html>
 <p>Open this address on any device that has Tailscale turned on and is signed in as <b>{{if .OwnerLogin}}{{.OwnerLogin}}{{else}}the owner{{end}}</b>. No Tailscale on this device yet? <a href="{{.Download}}" target="_blank" rel="noopener">Get Tailscale</a>, sign in the same way, and turn it on.</p>
 {{if not .SetupDone}}
 {{if .MakeItMine}}
-<p><a class="button" id="make-it-mine" href="{{.MakeItMine}}">Make it mine</a></p>
-<p class="small">This button works for about {{.MinutesLeft}} more minutes, and only for {{.OwnerLogin}}. It adds your passkey (Face ID, Touch ID or your phone).</p>
+<form method="post" action="/make-it-mine">
+<p><button type="submit" id="make-it-mine">Make it mine</button></p>
+</form>
+<p class="small">This button works for about {{.MinutesLeft}} more minutes, once per install, and only for {{.OwnerLogin}}. It adds your passkey (Face ID, Touch ID or your phone).</p>
 {{else if .LinkExpired}}
-<p class="problem">The setup button has timed out. Restart Hussla (Container Manager → Container → hussla → Action → Restart) and reload this page to get it back for 15 minutes.</p>
+<p class="problem">The setup button has timed out, and it doesn't come back. Use the setup code from Hussla's log instead: Container Manager → Container → hussla → Log, the newest line that starts with "Setup code".</p>
+{{else}}
+<p>Open the address above and use the setup code from Hussla's log: Container Manager → Container → hussla → Log, the newest line that starts with "Setup code".</p>
 {{end}}
 {{end}}
 {{end}}
 
-{{if and (not .SetupDone) .OwnerLogin}}
+{{if and (not .SetupDone) .OwnerLogin (not .Mismatch)}}
 <section class="owner">
 <p>Owner: <b id="owner">{{.OwnerLogin}}</b></p>
 {{if .CanStartOver}}

@@ -15,6 +15,15 @@ Internal record of how Hussla was built, newest first. Every entry says **what**
 
 ## [Unreleased — dev only]
 
+### Ship dynamite-test fixes (PR #12 findings)
+
+- **Auth & security: "Make it mine" is a POST, once per install.** The home page's GET never carries the first-run link: its button's form POST (Origin-checked) mints a one-use, in-memory secret and redirects to it, and a newer press replaces the old one. The window opens when the node's owner is first adopted and is stored (`auth.firstRunStartedAt`), so a restart doesn't reopen it. Passkeys added through the link are marked `FirstRun` (inherited by taps of them) and can't authorize removing a setup-code passkey, so the log's code wins a raced claim. `register/begin` now spends its own step-up to carry that mark. *Why:* a local agent with the owner's tailnet identity could read the link from the GET page and claim; restarts reopened the window (`docs/decisions/0015-first-run-window.md`, revised).
+- **Auth & security: someone else's Tailscale fails closed.** Once an owner is recorded, a node logged in as a different untagged user makes the whole tailnet door (API, UI and `/mcp`) answer only "belongs to someone else" (`httpapi.GuardNodeOwner`), and the home page offers "Sign out of that account" (only in that state) so the owner can re-login from the LAN. *Why:* after a key expiry any LAN device could re-login the node, with no recovery without a shell.
+- **Infra & deploy: home port published on IPv4 only** (`0.0.0.0:8484:8484` in `docker-compose.yml` and the NAS guide). *Why:* docker-proxy hands IPv6 clients over with the bridge gateway as source, which `privateSource` reads as private *(inferred from Docker's userland-proxy behavior; not reproduced on a NAS)*.
+- **API & contracts: import.** A malformed file is a `domain.ValidationError` (400 with the reason), not a 500; `ImportResult` gains `pitches`, shown in Settings and the wizard; one import writes one activity line (the tracker's duplicate line is gone). *Why:* dynamite-test medium and lows.
+- **Auth & security: lows.** A new setup code no longer clears wrong-guess lockouts; Start over checks "no passkey", writes the release and logs out in one unit of work. *Why:* dynamite-test lows.
+- **CI & tooling: command-guard timing flake.** The harness-owned test isn't edited here; the proposed patch is in `docs/deferred.md`. *Why:* 4 CI failures from wall-clock asserts.
+
 ### Phase 6 setup and packaging
 
 - **First run without a terminal.** A home-network page (`HUSSLA_HOME_PORT`, 8484 in the image) shows Tailscale's state (Connect, approval, the HTTPS switch, running), the ts.net address with a QR, the owner, Start over, and a 15-minute "Make it mine" link for the node's owner; the setup code stays as the fallback and can be reprinted from the setup screen; a lost-every-passkey owner recovers the same way. The tailnet is re-read every 15 s (rename, key expiry, logout), and `:80` redirects to the https name. *Why:* `reviews/first-run-claude.md` blockers 1–4; Bret picked "Both" (`docs/decisions/0015-first-run-window.md`).

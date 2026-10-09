@@ -27,8 +27,9 @@ It downloads Hussla and starts it. The page it serves answers this computer only
 
 ## 3. Make it yours
 
-1. Click **Make it mine** (it works for 15 minutes after Hussla starts; if it timed out, run
-   `docker restart hussla` and reload).
+1. Click **Make it mine** (it works once, for 15 minutes after Hussla first connects to
+   Tailscale; if it timed out, use the setup code from `docker logs hussla`, the newest
+   `Setup code` line).
 2. Make your passkey with Touch ID, Windows Hello or your phone.
 3. Follow the setup steps; each can be skipped.
 

@@ -28,7 +28,7 @@ Tailscale is what lets your phone reach Hussla from anywhere, and nobody else.
        container_name: hussla
        restart: unless-stopped
        ports:
-         - "8484:8484"
+         - "0.0.0.0:8484:8484"
        volumes:
          - hussla-data:/data
        environment:
@@ -59,15 +59,17 @@ Tailscale is what lets your phone reach Hussla from anywhere, and nobody else.
 1. The page shows your Hussla address (`https://hussla.<something>.ts.net`) and a **Make it mine**
    button. It names the owner: if that's not you, press **Start over** and let the right person
    click Connect.
-2. Click **Make it mine** (it works for 15 minutes after Hussla starts; if it timed out, Container
-   Manager → Container → hussla → Action → Restart, then reload the page).
+2. Click **Make it mine**. It works once per install, for 15 minutes after Hussla first connects
+   to Tailscale; a restart doesn't bring it back. If it timed out, use the setup code below.
 3. Make your passkey with Face ID, Touch ID or your phone.
 4. The setup steps follow: email, importing jobs, an agent key, your phone, staying signed in,
    and a spare passkey. Each can be skipped and done later.
 
-Can't use the button (it timed out and restarting isn't an option)? The page also takes the
-**setup code** from the log: Container Manager → Container → hussla → **Log**, the line that
-starts with `Setup code`. Lost it? **Print a new code** on the setup screen.
+Can't use the button (it timed out)? The setup screen also takes the **setup code** from the
+log: Container Manager → Container → hussla → **Log**, the newest line that starts with
+`Setup code`. Lost it? **Print a new code** on the setup screen. The code also takes the install
+back if someone else pressed Make it mine first: add your passkey with it, then remove theirs on
+`https://hussla.<something>.ts.net/setup/passkeys`.
 
 ## 5. Open it on your phone
 

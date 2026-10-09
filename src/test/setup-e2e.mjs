@@ -81,16 +81,16 @@ try {
   await page.goto(HOME, { waitUntil: "domcontentloaded" });
   await page.waitForSelector("#make-it-mine", { timeout: 30_000 });
   await page.screenshot({ path: join(shots, "home-make-it-mine-390.png"), fullPage: true });
-  const claimHref = await page.locator("#make-it-mine").getAttribute("href");
-  check(claimHref?.includes("/setup?link=") === true, "the page offers the first-run link");
+  check(!(await page.content()).includes("link="), "the home page's GET holds no first-run link");
 
-  // 3. "Make it mine" with a virtual authenticator standing in for Face ID.
+  // 3. "Make it mine" (a form POST that redirects to the one-use link) with a virtual authenticator standing in for Face ID.
   const cdp = await context.newCDPSession(page);
   await cdp.send("WebAuthn.enable");
   await cdp.send("WebAuthn.addVirtualAuthenticator", {
     options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
   });
-  await page.goto(claimHref ?? "", { waitUntil: "domcontentloaded" });
+  await Promise.all([page.waitForURL(/\/setup\?link=/, { timeout: 15_000 }), page.locator("#make-it-mine").click()]);
+  check(true, "the button's POST sends the browser to the first-run link");
   await page.getByRole("button", { name: "Make it mine" }).click();
   await page.getByText(/Step 2 of 7/).waitFor({ timeout: 15_000 });
   check(true, "the first passkey was made from the link; the wizard is at step 2");

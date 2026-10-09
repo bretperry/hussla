@@ -1,4 +1,4 @@
-// The first run without the log: the setup code across a cancelled prompt and a restart, the first-run window's link, a new code on request, Start over, and removing a passkey.
+// The first run without the log: the setup code across a cancelled prompt and a restart, the first-run window's one-use link (once per install), the code overriding a raced link claim, a new code on request, Start over, and removing a passkey.
 // In the app: a NAS owner adding the first passkey from the home-network page; a lost log; a lost phone.
 // Used by: `go test ./internal/app/auth/...` (the plan's Phase 6 Done-when).
 // Uses: the auth use-case over the in-memory store, the real WebAuthn ceremony with a virtual authenticator, a fake clock.
@@ -70,23 +70,49 @@ func (in *install) principal(peer auth.TailnetPeer) auth.Principal {
 // register spends a register step-up on a passkey; cancel stops before the browser answers.
 func (in *install) register(owner auth.Principal, stepUp string, cancel bool) error {
 	in.t.Helper()
+	_, err := in.registerWith(in.key, owner, stepUp, cancel)
+	return err
+}
+
+// registerWith is register with a given authenticator; it returns the stored passkey.
+func (in *install) registerWith(key *virtualauthn.Authenticator, owner auth.Principal, stepUp string, cancel bool) (auth.StoredPasskey, error) {
+	in.t.Helper()
 	ctx := in.t.Context()
-	if err := in.service.ConsumeStepUp(owner, auth.PurposeRegisterPasskey, stepUp); err != nil {
-		return err
+	challenge, options, err := in.service.BeginRegistration(ctx, owner, site, stepUp)
+	if err != nil || cancel {
+		return auth.StoredPasskey{}, err
 	}
-	challenge, options, err := in.service.BeginRegistration(ctx, owner, site)
-	if err != nil {
-		return err
-	}
-	if cancel {
-		return nil
-	}
-	response, err := in.key.Register(options, site.Origin)
+	response, err := key.Register(options, site.Origin)
 	if err != nil {
 		in.t.Fatal(err)
 	}
-	_, err = in.service.FinishRegistration(ctx, owner, site, challenge, "Phone", response)
-	return err
+	return in.service.FinishRegistration(ctx, owner, site, challenge, "Phone", response)
+}
+
+// tap is a passkey tap with key for one action; it returns the step-up token or the refusal.
+func (in *install) tap(key *virtualauthn.Authenticator, owner auth.Principal, purpose string) (string, error) {
+	in.t.Helper()
+	ctx := in.t.Context()
+	challenge, options, err := in.service.BeginStepUp(ctx, owner, site, purpose)
+	if err != nil {
+		in.t.Fatal(err)
+	}
+	response, err := key.Assert(options, site.Origin)
+	if err != nil {
+		in.t.Fatal(err)
+	}
+	token, _, err := in.service.FinishStepUp(ctx, owner, site, challenge, response)
+	return token, err
+}
+
+// mint presses "Make it mine" on the home-network page (its POST) and returns the link's secret.
+func (in *install) mint() string {
+	in.t.Helper()
+	link, err := in.service.MintFirstRunLink(in.t.Context())
+	if err != nil {
+		in.t.Fatal(err)
+	}
+	return link
 }
 
 func TestCancelledPromptAndRestartKeepTheSameCode(t *testing.T) {
@@ -126,63 +152,178 @@ func TestCancelledPromptAndRestartKeepTheSameCode(t *testing.T) {
 	}
 }
 
-func TestFirstRunLinkWorksOnlyForTheNodeOwnerInsideTheWindow(t *testing.T) {
+func TestFirstRunLinkWorksOnlyForTheNodeOwnerOnce(t *testing.T) {
 	in := newInstall(t)
 	ctx := t.Context()
 	state, err := in.service.FirstRunState(ctx)
-	if err != nil || !state.Open || state.Link == "" {
+	if err != nil || !state.Open {
 		t.Fatalf("a fresh install's window: %+v %v", state, err)
 	}
 	owner := in.principal(nodeOwner)
+	link := in.mint()
 
 	// Someone else on the tailnet, with the link, gets nothing; nor does a wrong link.
-	if _, _, err := in.service.ClaimWithLink(ctx, in.principal(neighbor), state.Link); !errors.Is(err, auth.ErrNotOwner) {
+	if _, _, err := in.service.ClaimWithLink(ctx, in.principal(neighbor), link); !errors.Is(err, auth.ErrNotOwner) {
 		t.Fatalf("neighbor: %v", err)
 	}
 	if _, _, err := in.service.ClaimWithLink(ctx, owner, "not-the-link"); !errors.Is(err, auth.ErrWrongLink) {
 		t.Fatalf("wrong link: %v", err)
 	}
-	// The owner: a cancelled prompt, then the same link again, then a passkey.
-	_, stepUp, err := in.service.ClaimWithLink(ctx, owner, state.Link)
+	// The owner claims once; the same link never works twice, a cancelled prompt included.
+	_, stepUp, err := in.service.ClaimWithLink(ctx, owner, link)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := in.register(owner, stepUp, true); err != nil {
 		t.Fatal(err)
 	}
-	_, stepUp, err = in.service.ClaimWithLink(ctx, owner, state.Link)
-	if err != nil {
-		t.Fatalf("the link after a cancelled prompt: %v", err)
+	if _, _, err := in.service.ClaimWithLink(ctx, owner, link); !errors.Is(err, auth.ErrWrongLink) {
+		t.Fatalf("the same link twice: %v, want ErrWrongLink", err)
 	}
-	if err := in.register(owner, stepUp, false); err != nil {
+	// A new press replaces an older, unused link.
+	older := in.mint()
+	newer := in.mint()
+	if _, _, err := in.service.ClaimWithLink(ctx, owner, older); !errors.Is(err, auth.ErrWrongLink) {
+		t.Fatalf("a replaced link: %v, want ErrWrongLink", err)
+	}
+	_, stepUp, err = in.service.ClaimWithLink(ctx, owner, newer)
+	if err != nil {
+		t.Fatalf("the newest link: %v", err)
+	}
+	stored, err := in.registerWith(in.key, owner, stepUp, false)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if !stored.FirstRun {
+		t.Fatal("a passkey from the first-run link isn't marked FirstRun")
 	}
 	// Owned now: closed for good, a restart inside the window included.
 	in.restart()
 	if state, err := in.service.FirstRunState(ctx); err != nil || state.Open {
 		t.Fatalf("after a passkey, restarted: %+v %v", state, err)
 	}
+	if _, err := in.service.MintFirstRunLink(ctx); !errors.Is(err, auth.ErrFirstRunClosed) {
+		t.Fatalf("a link after a passkey: %v", err)
+	}
 }
 
-func TestFirstRunWindowCloses(t *testing.T) {
+func TestFirstRunWindowOpensOncePerInstall(t *testing.T) {
 	in := newInstall(t)
 	ctx := t.Context()
-	state, err := in.service.FirstRunState(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
+	link := in.mint()
 	in.clock.Advance(config.FirstRunWindow)
-	if _, _, err := in.service.ClaimWithLink(ctx, in.principal(nodeOwner), state.Link); !errors.Is(err, auth.ErrFirstRunClosed) {
+	if _, _, err := in.service.ClaimWithLink(ctx, in.principal(nodeOwner), link); !errors.Is(err, auth.ErrFirstRunClosed) {
 		t.Fatalf("after the window: %v", err)
 	}
-	// The setup code still works, and a restart opens a new window with a new link.
+	if _, err := in.service.MintFirstRunLink(ctx); !errors.Is(err, auth.ErrFirstRunClosed) {
+		t.Fatalf("a press after the window: %v", err)
+	}
+	// The setup code still works; a restart doesn't open the window again.
 	if _, _, err := in.service.Claim(ctx, in.principal(nodeOwner), in.code); err != nil {
 		t.Fatalf("the code after the window: %v", err)
 	}
 	in.restart()
 	again, err := in.service.FirstRunState(ctx)
-	if err != nil || !again.Open || again.Link == state.Link {
-		t.Fatalf("after a restart: %+v %v", again, err)
+	if err != nil || again.Open || !again.Started {
+		t.Fatalf("after a restart: %+v %v, want closed (started earlier)", again, err)
+	}
+	if _, err := in.service.MintFirstRunLink(ctx); !errors.Is(err, auth.ErrFirstRunClosed) {
+		t.Fatalf("a press after a restart: %v", err)
+	}
+}
+
+func TestFirstRunWindowStartsWhenTheOwnerIsFirstAdopted(t *testing.T) {
+	ctx := t.Context()
+	store := fakes.New()
+	clock := fakeauth.NewClock(time.Date(2026, 10, 9, 9, 0, 0, 0, time.UTC))
+	service := auth.New(auth.Options{Store: store, Ceremony: passkey.Ceremony{}, Now: clock.Now})
+	// Tailscale took a while (a login, HTTPS switched on): the window hasn't started.
+	clock.Advance(2 * config.FirstRunWindow)
+	if state, err := service.FirstRunState(ctx); err != nil || state.Open || state.Started {
+		t.Fatalf("before an owner: %+v %v", state, err)
+	}
+	if _, err := service.AdoptNodeOwner(ctx, nodeOwner); err != nil {
+		t.Fatal(err)
+	}
+	if state, err := service.FirstRunState(ctx); err != nil || !state.Open || !state.ClosesAt.Equal(clock.Now().Add(config.FirstRunWindow)) {
+		t.Fatalf("after the owner is adopted: %+v %v", state, err)
+	}
+}
+
+// TestTheSetupCodeOverridesARacedFirstRunClaim: an agent with the owner's tailnet identity takes
+// the first-run link first; whoever reads the log takes the install back, and the agent's passkey
+// can't undo that.
+func TestTheSetupCodeOverridesARacedFirstRunClaim(t *testing.T) {
+	in := newInstall(t)
+	ctx := t.Context()
+	owner := in.principal(nodeOwner) // the agent and the owner look the same to the tailnet
+	agentKey, ownerKey := virtualauthn.New(), virtualauthn.New()
+
+	_, stepUp, err := in.service.ClaimWithLink(ctx, owner, in.mint())
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentPasskey, err := in.registerWith(agentKey, owner, stepUp, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A second passkey added with a tap of the first is FirstRun too: the mark can't be laundered.
+	stepUp, err = in.tap(agentKey, owner, auth.PurposeRegisterPasskey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	laundered, err := in.registerWith(virtualauthn.New(), owner, stepUp, false)
+	if err != nil || !laundered.FirstRun {
+		t.Fatalf("a passkey added with a FirstRun tap: FirstRun %v, %v", laundered.FirstRun, err)
+	}
+
+	// The owner, with the log: a new code, a claim, a passkey of their own.
+	if err := in.service.RequestSetupCode(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+	_, stepUp, err = in.service.Claim(ctx, owner, in.code)
+	if err != nil {
+		t.Fatalf("the code after a raced link claim: %v", err)
+	}
+	ownerPasskey, err := in.registerWith(ownerKey, owner, stepUp, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ownerPasskey.FirstRun {
+		t.Fatal("a passkey from the setup code is marked FirstRun")
+	}
+	// The agent's passkey can't remove the owner's; the owner's removes the agent's.
+	if _, err := in.tap(agentKey, owner, auth.PurposeRemovePasskeyPrefix+ownerPasskey.ID); !errors.Is(err, auth.ErrFirstRunPasskeyLimited) {
+		t.Fatalf("a FirstRun passkey removing a code passkey: %v, want ErrFirstRunPasskeyLimited", err)
+	}
+	for _, id := range []string{agentPasskey.ID, laundered.ID} {
+		if _, err := in.tap(ownerKey, owner, auth.PurposeRemovePasskeyPrefix+id); err != nil {
+			t.Fatalf("the code passkey removing a FirstRun one: %v", err)
+		}
+		if err := in.service.RemovePasskey(ctx, owner, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestANewCodeDoesNotLiftALockout(t *testing.T) {
+	in := newInstall(t)
+	ctx := t.Context()
+	owner := in.principal(nodeOwner)
+	for range config.SetupCodeAttempts {
+		if _, _, err := in.service.Claim(ctx, owner, "WRONG-WRONG-WRON"); err == nil {
+			t.Fatal("a wrong code was taken")
+		}
+	}
+	if err := in.service.RequestSetupCode(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := in.service.Claim(ctx, owner, in.code); !errors.Is(err, auth.ErrSetupCodeLocked) {
+		t.Fatalf("a locked-out caller with a new code: %v, want ErrSetupCodeLocked", err)
+	}
+	in.clock.Advance(config.SetupCodeLockout)
+	if _, _, err := in.service.Claim(ctx, owner, in.code); err != nil {
+		t.Fatalf("after the lockout: %v", err)
 	}
 }
 
@@ -268,8 +409,10 @@ func TestStartOverOnlyBeforeAnyPasskey(t *testing.T) {
 	if login, err := in.service.OwnerLogin(ctx); err != nil || login != nodeOwner.Login {
 		t.Fatalf("owner login %q %v", login, err)
 	}
-	if err := in.service.StartOver(ctx); err != nil {
-		t.Fatal(err)
+	logouts := 0
+	logout := func(context.Context) error { logouts++; return nil }
+	if err := in.service.StartOver(ctx, logout); err != nil || logouts != 1 {
+		t.Fatalf("start over: %v, %d logouts", err, logouts)
 	}
 	if enrolled, err := in.service.Enrolled(ctx); err != nil || enrolled {
 		t.Fatalf("after start over, enrolled = %v %v", enrolled, err)
@@ -289,8 +432,8 @@ func TestStartOverOnlyBeforeAnyPasskey(t *testing.T) {
 	if err := in.register(newOwner, stepUp, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := in.service.StartOver(ctx); !errors.Is(err, auth.ErrStartOverClosed) {
-		t.Fatalf("start over after a passkey: %v", err)
+	if err := in.service.StartOver(ctx, logout); !errors.Is(err, auth.ErrStartOverClosed) || logouts != 1 {
+		t.Fatalf("start over after a passkey: %v, %d logouts", err, logouts)
 	}
 	if allowed, err := in.service.CanStartOver(context.Background()); err != nil || allowed {
 		t.Fatalf("can start over after a passkey: %v %v", allowed, err)

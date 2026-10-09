@@ -171,8 +171,9 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 			}
 			handler := &renamingHandler{current: node.Domain, build: func(name string) http.Handler {
 				hosts := []string{name}
-				return withMCP(httpapi.New(httpapi.Config{Listener: httpapi.ListenerTailnet, Hosts: hosts, Peers: node, PlainHTTP: !tailnetHTTPS}, services),
-					mcpapi.New(mcpapi.Config{Hosts: hosts, Secure: tailnetHTTPS}, mcpDeps(services)))
+				// Fails closed while the node is logged in as someone other than the owner (API and /mcp alike).
+				return httpapi.GuardNodeOwner(services.Setup, withMCP(httpapi.New(httpapi.Config{Listener: httpapi.ListenerTailnet, Hosts: hosts, Peers: node, PlainHTTP: !tailnetHTTPS}, services),
+					mcpapi.New(mcpapi.Config{Hosts: hosts, Secure: tailnetHTTPS}, mcpDeps(services))))
 			}}
 			tailnetMutex.Lock()
 			if ctx.Err() != nil { // stopping already: don't start a server nobody will shut down

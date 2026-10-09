@@ -136,12 +136,32 @@ func (s *Service) AdoptNodeOwner(ctx context.Context, nodeOwner TailnetPeer) (ad
 		if err := writeJSON(ctx, tx, settingOwner, record); err != nil {
 			return err
 		}
+		// The first adoption on an install with no passkey is when "Make it mine" can first work.
+		if err := s.startFirstRunTx(ctx, tx); err != nil {
+			return err
+		}
 		return appendEvent(ctx, tx, domain.ActorSystem, "Owner set", "The tailnet user who owns this node: "+nodeOwner.Login, s.now())
 	})
 	if err != nil {
 		return false, fmt.Errorf("adopt node owner: %w", err)
 	}
 	return adopted, nil
+}
+
+// NodeOwnerMismatch reports whether the node is logged in to Tailscale as a user other than the
+// recorded owner: someone signed it in again (after a key expiry, say) with their own account.
+// The server then fails closed on the tailnet and the home-network page offers to log the node
+// out so the owner can connect again. Only an untagged node's user can be compared: a tagged node
+// has no owning user, so it never reads as a mismatch.
+func (s *Service) NodeOwnerMismatch(ctx context.Context, nodeOwner TailnetPeer) (bool, error) {
+	if nodeOwner.Tagged || nodeOwner.UserID == "" {
+		return false, nil
+	}
+	record, found, err := s.readOwner(ctx)
+	if err != nil || !found || record.TailnetUserID == "" {
+		return false, err
+	}
+	return !sameSecret(nodeOwner.UserID, record.TailnetUserID), nil
 }
 
 // PinRefuses reports whether HUSSLA_OWNER_LOGIN keeps the untagged user who owns this node from
@@ -365,7 +385,7 @@ func (s *Service) Claim(ctx context.Context, caller Principal, typed string) (Pr
 	if !owner.IsOwner() {
 		return Principal{}, "", ErrNotOwner
 	}
-	return owner, s.grantStepUp(owner, PurposeRegisterPasskey), nil
+	return owner, s.grantStepUp(owner, PurposeRegisterPasskey, false), nil
 }
 
 // setupGuesser is whose wrong guesses a claim counts against: the tailnet user, or the local

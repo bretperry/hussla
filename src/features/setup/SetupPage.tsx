@@ -50,7 +50,7 @@ const ImportStep = ({ onDone }: { onDone: () => void }) => {
       </Field>
       {result === null ? null : (
         <p role="status">
-          Imported {result.jobs} jobs, {result.companies} companies, {result.answers} answers and {result.events} events.
+          Imported {result.jobs} jobs, {result.companies} companies, {result.answers} answers, {result.pitches} pitches and {result.events} events.
         </p>
       )}
       {result === null ? null : (

@@ -105,6 +105,9 @@ type StoredPasskey struct {
 	Credential []byte    `json:"credential"`
 	CreatedAt  time.Time `json:"createdAt"`
 	LastUsedAt time.Time `json:"lastUsedAt"`
+	// FirstRun marks a passkey added through the first-run link (or with a tap of one that was):
+	// it can't remove a passkey added with the setup code, so the code wins a raced claim.
+	FirstRun bool `json:"firstRun,omitempty"`
 }
 
 // Ceremony runs the WebAuthn halves. Begin* return the options for navigator.credentials and a

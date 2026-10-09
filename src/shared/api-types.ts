@@ -1580,6 +1580,8 @@ export interface components {
             answers: number;
             events: number;
             emails: number;
+            /** @description Pitches added (a slot that already holds one is left as it is). */
+            pitches: number;
             /** @description Imported emails that never went out; each waits, unapproved, for the owner's approval. */
             needApproval: number;
             /** @description File records in the file; their contents aren't in it, so none are stored. */
@@ -1716,7 +1718,7 @@ export interface components {
         SetupClaim: {
             /** @description As printed (XXXX-XXXX-XXXX); case and dashes don't matter. */
             code?: string;
-            /** @description The secret from the home-network page's "Make it mine" link. */
+            /** @description The one-use secret that the home-network page's "Make it mine" button redirects to; spent by the first claim with it. */
             link?: string;
         };
         SetupClaimed: {

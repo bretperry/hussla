@@ -207,7 +207,7 @@ func (server *api) importBundle(w http.ResponseWriter, r *http.Request, caller a
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"jobs": report.Jobs.Created, "companies": report.Companies.Created, "answers": report.Answers.Created, "events": report.Events.Created,
-		"emails": report.Emails.Created, "needApproval": report.NeedApproval, "filesNotImported": report.FilesNotImported,
+		"emails": report.Emails.Created, "pitches": report.Pitches.Created, "needApproval": report.NeedApproval, "filesNotImported": report.FilesNotImported,
 		"warnings": append([]string{}, report.Warnings...), "notices": append([]string{}, report.Notices...),
 	})
 	return nil

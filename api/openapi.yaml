@@ -2150,13 +2150,14 @@ components:
     ImportResult:
       type: object
       description: How many of each were added (records already here are left as they are), and what the owner should know.
-      required: [jobs, companies, answers, events, emails, needApproval, filesNotImported, warnings, notices]
+      required: [jobs, companies, answers, events, emails, pitches, needApproval, filesNotImported, warnings, notices]
       properties:
         jobs: { type: integer }
         companies: { type: integer }
         answers: { type: integer }
         events: { type: integer }
         emails: { type: integer }
+        pitches: { type: integer, description: "Pitches added (a slot that already holds one is left as it is)." }
         needApproval: { type: integer, description: "Imported emails that never went out; each waits, unapproved, for the owner's approval." }
         filesNotImported: { type: integer, description: "File records in the file; their contents aren't in it, so none are stored." }
         warnings: { type: array, items: { type: string }, description: "Each record or field skipped, dropped or mapped to something else (an unknown job status, say)." }
@@ -2293,7 +2294,7 @@ components:
       description: The setup code from the log, or the home-network page's first-run link (`link`), one of the two.
       properties:
         code: { type: string, description: 'As printed (XXXX-XXXX-XXXX); case and dashes don''t matter.' }
-        link: { type: string, description: The secret from the home-network page's "Make it mine" link. }
+        link: { type: string, description: "The one-use secret that the home-network page's \"Make it mine\" button redirects to; spent by the first claim with it." }
     SetupClaimed:
       type: object
       required: [stepUp, next]

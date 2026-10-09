@@ -4,10 +4,16 @@
 // Uses: the Tailnet port below (the tailnet adapter), auth.Service (owner, first-run window), settings (wizard progress), domain.KeyExpiryAt.
 //
 // The home-network page never grants identity: it reports the tailnet's progress, the ts.net
-// address once there is one, and (inside the first-run window) the link that lets the node's owner
-// add the first passkey on the tailnet address. Everything it offers is safe for anyone on the home
-// network to see; "Start over" works only before any passkey was ever stored, and is loud about
-// who owns the install, so a neighbor can't take it silently.
+// address once there is one, and (inside the first-run window) a "Make it mine" button whose POST
+// mints the one-use link that lets the node's owner add the first passkey on the tailnet address.
+// Nothing a GET shows is secret; "Start over" works only before any passkey was ever stored, and
+// is loud about who owns the install, so a neighbor can't take it silently.
+//
+// Once an owner is recorded, a node logged in to Tailscale as anyone else (a key expired and
+// someone else signed it in) fails closed: the tailnet door serves only "belongs to someone else"
+// (OwnerMismatch), and the home-network page offers Reconnect, which logs the node out so the
+// owner can sign it in again from the home network. Reconnect works only in that state, so it
+// can't knock a healthy install off the tailnet.
 
 package setup
 
@@ -33,6 +39,8 @@ type Tailnet interface {
 	State() auth.TailnetState
 	// Logout signs the node out and asks for a new login link.
 	Logout(ctx context.Context) error
+	// NodeOwner is the Tailscale user the node is logged in as (empty while logged out).
+	NodeOwner() auth.TailnetPeer
 }
 
 // Phase is how far the tailnet is, as the home-network page words it.
@@ -53,8 +61,14 @@ const (
 	PhaseNeedsApproval
 )
 
-// ErrNoTailnet: Hussla runs without Tailscale, so there is nothing to start over (409).
-var ErrNoTailnet = errors.New("this Hussla runs without Tailscale")
+var (
+	// ErrNoTailnet: Hussla runs without Tailscale, so there is nothing to start over (409).
+	ErrNoTailnet = errors.New("this Hussla runs without Tailscale")
+	// ErrNotMismatched: the node is logged in as its owner (or not at all), so Reconnect has nothing to fix (409).
+	ErrNotMismatched = errors.New("this Hussla is signed in to its owner's Tailscale account: there is nothing to reconnect")
+	// ErrNotReady: "Make it mine" needs the tailnet address and the node's owner first (409).
+	ErrNotReady = errors.New("this Hussla isn't on the tailnet with its owner yet: reload this page in a moment")
+)
 
 // settingWizard holds the wizard's progress: which steps are done or skipped.
 const settingWizard = "setup.wizard"
@@ -106,22 +120,29 @@ type Home struct {
 	// OwnerLogin is the tailnet login the install belongs to, while no passkey was ever stored.
 	OwnerLogin   string
 	CanStartOver bool
-	// FirstRunLink is the secret for "Make it mine" (the first-run window is open and the node's owner is known).
-	FirstRunLink    string
+	// CanMakeItMine: the first-run window is open and the node's owner is known, so the page shows
+	// the button (its POST mints the link; no GET ever carries it).
+	CanMakeItMine   bool
 	FirstRunUntil   time.Time
-	MinutesLeft     int  // whole minutes the link still works (at least 1 while it does)
-	FirstRunExpired bool // the window has closed without a passkey: restart, or use the log's code
+	MinutesLeft     int  // whole minutes the button still works (at least 1 while it does)
+	FirstRunExpired bool // the window opened and closed without a passkey: use the log's code
 	SetupDone       bool // a passkey exists: the page only points at the address
-	KeyExpiry       domain.KeyExpiry
+	// OwnerMismatch: the node is logged in to Tailscale as someone other than the recorded owner.
+	OwnerMismatch bool
+	KeyExpiry     domain.KeyExpiry
 }
 
 // Home reads what the home-network page shows right now.
 func (s *Service) Home(ctx context.Context) (Home, error) {
 	state := s.TailnetState()
 	home := Home{Phase: phaseOf(state, s.tailnet != nil), KeyExpiry: domain.KeyExpiryAt(s.now(), state.KeyExpiry)}
+	var err error
 	home.Address = s.Address()
 	if home.Phase == PhaseNeedsLogin {
 		home.LoginURL = state.AuthURL
+	}
+	if home.OwnerMismatch, err = s.OwnerMismatch(ctx); err != nil {
+		return Home{}, err
 	}
 	canStartOver, err := s.auth.CanStartOver(ctx)
 	if err != nil {
@@ -140,12 +161,62 @@ func (s *Service) Home(ctx context.Context) (Home, error) {
 		return Home{}, err //nolint:wrapcheck // auth wraps its own
 	}
 	home.FirstRunUntil = firstRun.ClosesAt
-	home.FirstRunExpired = !firstRun.Open
-	if firstRun.Open && home.Phase == PhaseRunning && home.OwnerLogin != "" {
-		home.FirstRunLink = firstRun.Link
+	home.FirstRunExpired = firstRun.Started && !firstRun.Open
+	if firstRun.Open && home.Phase == PhaseRunning && home.OwnerLogin != "" && !home.OwnerMismatch {
+		home.CanMakeItMine = true
 		home.MinutesLeft = max(1, int(firstRun.ClosesAt.Sub(s.now())/time.Minute))
 	}
 	return home, nil
+}
+
+// MakeItMine mints the first-run link's secret (replacing any earlier one) and returns it with
+// the tailnet address the browser goes to. Only the home-network page's form POST calls it.
+func (s *Service) MakeItMine(ctx context.Context) (address, secret string, err error) {
+	home, err := s.Home(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	if home.SetupDone || home.FirstRunExpired {
+		return "", "", auth.ErrFirstRunClosed
+	}
+	if !home.CanMakeItMine || home.Address == "" {
+		return "", "", ErrNotReady
+	}
+	secret, err = s.auth.MintFirstRunLink(ctx)
+	if err != nil {
+		return "", "", err //nolint:wrapcheck // auth wraps its own
+	}
+	return home.Address, secret, nil
+}
+
+// OwnerMismatch reports whether the node is logged in to Tailscale as someone other than the
+// recorded owner (false without Tailscale, while logged out, or before there is an owner).
+func (s *Service) OwnerMismatch(ctx context.Context) (bool, error) {
+	if s.tailnet == nil {
+		return false, nil
+	}
+	mismatch, err := s.auth.NodeOwnerMismatch(ctx, s.tailnet.NodeOwner())
+	if err != nil {
+		return false, fmt.Errorf("node owner: %w", err)
+	}
+	return mismatch, nil
+}
+
+// Reconnect logs the node out of Tailscale so the owner can sign it in again from the home
+// network. Only while the node is logged in as someone other than the owner; the owner record,
+// passkeys and data are untouched.
+func (s *Service) Reconnect(ctx context.Context) error {
+	mismatch, err := s.OwnerMismatch(ctx)
+	if err != nil {
+		return err
+	}
+	if !mismatch {
+		return ErrNotMismatched
+	}
+	if err := s.tailnet.Logout(ctx); err != nil {
+		return fmt.Errorf("reconnect: %w", err)
+	}
+	return nil
 }
 
 func phaseOf(state auth.TailnetState, on bool) Phase {
@@ -195,17 +266,8 @@ func (s *Service) StartOver(ctx context.Context) error {
 	if s.tailnet == nil {
 		return ErrNoTailnet
 	}
-	allowed, err := s.auth.CanStartOver(ctx)
-	if err != nil {
-		return err //nolint:wrapcheck // auth wraps its own
-	}
-	if !allowed {
-		return auth.ErrStartOverClosed
-	}
-	if err := s.tailnet.Logout(ctx); err != nil {
-		return fmt.Errorf("start over: %w", err)
-	}
-	return s.auth.StartOver(ctx) //nolint:wrapcheck // auth wraps its own
+	// auth re-checks "no passkey yet" and runs the logout inside one unit of work.
+	return s.auth.StartOver(ctx, s.tailnet.Logout) //nolint:wrapcheck // auth wraps its own
 }
 
 // Wizard is the wizard's progress: each step's state ("done", "skipped", or absent).
