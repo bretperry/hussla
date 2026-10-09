@@ -1,11 +1,12 @@
-# Publishes Hussla on a version tag: the multi-arch image to GHCR and the plain binaries to a GitHub release.
-# In the app: what makes `ghcr.io/bretperry/hussla:latest` (docker-compose.yml) and the release downloads (docs/install/laptop.md) exist.
-# Used by: GitHub Actions on a `v*` tag push; on a PR that touches the Dockerfile, it builds both arches without pushing.
+# Publishes a Hussla version: the multi-arch image to GHCR and the plain binaries on its GitHub release.
+# In the app: what makes `ghcr.io/bretperry/hussla:<version>` (docker-compose.yml) and the release downloads (docs/install/laptop.md) exist.
+# Used by: release.yml (workflow_call, after each ship to main); a `v*` tag a person pushes; a PR that touches the Dockerfile (build only).
 # Uses: Dockerfile, scripts/release-binaries.sh, docker/* actions, the built-in GITHUB_TOKEN (packages: write, contents: write).
 #
-# A person pushes the tag (`git tag v1.0.0 && git push origin v1.0.0`); nothing here runs on a
-# schedule or on dev pushes. The first publish creates the GHCR package as private: a person makes
-# it public once (Package settings → Change visibility), or a NAS pull asks for a login.
+# Normally release.yml calls this with the tag it just made (a GITHUB_TOKEN tag push starts no
+# workflow). A person can still push a tag by hand (`git tag v1.0.0 && git push origin v1.0.0`).
+# Nothing here runs on a schedule or on dev pushes. The first publish creates the GHCR package as
+# private: a person makes it public once (Package settings → Change visibility), or a NAS pull asks for a login.
 # The PR run is the only proof the Dockerfile still builds for arm64 before a tag needs it; it runs
 # only when the Dockerfile, .dockerignore or this file change.
 
@@ -17,13 +18,25 @@ on:
   pull_request:
     branches: [dev, main]
     paths: [Dockerfile, .dockerignore, .github/workflows/publish-image.yml]
+  workflow_call:
+    inputs:
+      tag:
+        description: The version tag to publish (vX.Y.Z); it and its release already exist.
+        required: true
+        type: string
 
+# Keyed by the version, not github.ref: a call from release.yml runs with ref refs/heads/main.
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 permissions:
   contents: read
+
+# The version being published (empty on a PR). Under workflow_call, github.event_name is the
+# caller's (`push` to main) and github.ref_name is `main`, so neither names the version.
+env:
+  TAG: ${{ inputs.tag || (github.event_name == 'push' && github.ref_name) || '' }}
 
 jobs:
   image:
@@ -34,26 +47,30 @@ jobs:
       contents: read
       packages: write
     steps:
+      # The tagged commit; on a PR, the PR's merge commit as before.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       # No QEMU: the Dockerfile cross-compiles on the runner's own platform.
       - uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
-        if: github.event_name == 'push'
+        if: env.TAG != ''
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       # v1.2.3 → 1.2.3, 1.2, latest; a PR gets a throwaway tag it never pushes.
+      # `value=` because a workflow_call runs on refs/heads/main, where semver finds no tag in the ref.
       - name: Tags
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{version}},value=${{ env.TAG }},enable=${{ env.TAG != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.TAG }},enable=${{ env.TAG != '' }}
+            type=raw,value=latest,enable=${{ env.TAG != '' }}
             type=ref,event=pr
       - name: Build (and push on a tag)
         uses: docker/build-push-action@v6
@@ -61,30 +78,38 @@ jobs:
           context: .
           target: release
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name == 'push' }}
+          push: ${{ env.TAG != '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ github.ref_name }}
+          build-args: VERSION=${{ env.TAG || github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   binaries:
     name: Binaries
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - uses: ./.github/actions/setup-node-pnpm
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: Build every platform
-        run: bash scripts/release-binaries.sh "${{ github.ref_name }}"
-      # A draft release: a person reads it and presses Publish (signing and notarizing are theirs too).
-      - name: Draft the release
+        run: bash scripts/release-binaries.sh "$TAG"
+      # Onto the published release: release.yml made it already; a hand-pushed tag has none yet.
+      # --clobber so a re-run of this job replaces its own files. Binaries are unsigned (laptop.md).
+      - name: Attach to the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${{ github.ref_name }}" --draft --generate-notes release/*
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber release/*
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes release/*
+          fi

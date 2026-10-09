@@ -16,3 +16,13 @@ const TailnetRetryFirst = 5 * time.Second
 
 // TailnetRetryMax caps the wait between retries (the wait doubles from TailnetRetryFirst up to it).
 const TailnetRetryMax = time.Minute
+
+// AgentFunnelEnv turns on the agent door on Tailscale Funnel when set to "1" (off by default):
+// the agent-key API, and nothing else, on the public internet at https://<name>.<tailnet>.ts.net:8443,
+// for agents that can't join the tailnet (a scheduled Claude routine in the cloud). The site stays
+// tailnet-only. Why opt-in: it is the one internet-facing door (docs/decisions/0016-agent-api-on-funnel.md).
+const AgentFunnelEnv = "HUSSLA_AGENT_FUNNEL"
+
+// AgentFunnelPort is the Funnel port of the agent door; Funnel allows only 443, 8443 and 10000,
+// and 443 is the tailnet site's.
+const AgentFunnelPort = "8443"

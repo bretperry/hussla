@@ -41,11 +41,13 @@ const (
 	tailnetOrigin = "https://" + tailnetHost
 	localHost     = "localhost:8484"
 	localOrigin   = "http://" + localHost
+	funnelHost    = tailnetHost + ":8443" // the agent door on Tailscale Funnel
 
-	ownerAddr  = "100.64.0.1:40001" // the owner's laptop
-	otherAddr  = "100.64.0.2:40002" // someone else on the tailnet (a shared-in node, a family member)
-	taggedAddr = "100.64.0.3:40003" // a tagged server under the owner's account
-	offAddr    = "127.0.0.1:50000"  // not a tailnet address: loopback
+	ownerAddr  = "100.64.0.1:40001"  // the owner's laptop
+	otherAddr  = "100.64.0.2:40002"  // someone else on the tailnet (a shared-in node, a family member)
+	taggedAddr = "100.64.0.3:40003"  // a tagged server under the owner's account
+	offAddr    = "127.0.0.1:50000"   // not a tailnet address: loopback
+	publicAddr = "203.0.113.7:50000" // someone on the internet, through Funnel
 )
 
 var (
@@ -70,6 +72,7 @@ type rig struct {
 	deps      httpapi.Deps
 	tailnetUI http.Handler
 	localUI   http.Handler
+	funnelUI  http.Handler // the agent door (ListenerFunnel)
 	key       *virtualauthn.Authenticator
 }
 
@@ -124,6 +127,7 @@ func (r *rig) restart() *rig {
 	r.deps.Setup = setup.New(setup.Options{Auth: r.auth, Tailnet: r.node, Store: r.store, Now: r.clock.Now})
 	r.tailnetUI = httpapi.New(httpapi.Config{Listener: httpapi.ListenerTailnet, Hosts: []string{tailnetHost}, Peers: r.tailnet}, r.deps)
 	r.localUI = httpapi.New(httpapi.Config{Listener: httpapi.ListenerLocal, Hosts: []string{localHost, "127.0.0.1:8484"}}, r.deps)
+	r.funnelUI = httpapi.New(httpapi.Config{Listener: httpapi.ListenerFunnel, Hosts: []string{funnelHost}}, r.deps)
 	if err := r.auth.IssueSetupCode(context.Background()); err != nil {
 		r.t.Fatal(err)
 	}
@@ -182,6 +186,7 @@ type call struct {
 	origin  string
 	headers map[string]string
 	local   bool   // send to the local listener
+	funnel  bool   // send to the agent door on Funnel, from publicAddr
 	cookie  string // the local session cookie's value
 }
 
@@ -233,6 +238,10 @@ func (r *rig) do(c call) reply {
 	if c.local {
 		handler = r.localUI
 		request.Host, request.RemoteAddr = localHost, offAddr
+	}
+	if c.funnel {
+		handler = r.funnelUI
+		request.Host, request.RemoteAddr = funnelHost, publicAddr
 	}
 	if c.host != "" {
 		request.Host = c.host

@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # Builds the plain Hussla binaries for every platform, with the web app inside, into ./release with checksums.
 # In the app: the downloads for a laptop without Docker (docs/install/laptop.md); the image is built by the Dockerfile instead.
-# Used by: .github/workflows/publish-image.yml (Binaries job, on a v* tag); a person can run it locally too.
+# Used by: .github/workflows/publish-image.yml (Binaries job, for each release); a person can run it locally too.
 # Uses: pnpm (the Vite build), go (cgo off, so one static binary per target), sha256sum or shasum.
 #
 #   bash scripts/release-binaries.sh v1.2.3
 #
 # The Go sources are copied to a scratch folder with the Vite build where the placeholder page
-# was, so the working tree is never touched. Signing and notarizing (macOS, Windows) are a
-# person's step on the draft release; unsigned macOS binaries need right-click → Open once.
+# was, so the working tree is never touched. The release is published unsigned (macOS, Windows);
+# signing and notarizing are not set up yet, so macOS binaries need right-click → Open once.
 
 # Stop on the first failure, an unset variable, or a failed pipe stage.
 set -euo pipefail
 
-# The version recorded in the binary (and in each migration); "dev" when none is given.
+# The version recorded in the binary (shown on Settings, kept with each migration); "dev" when none is given.
 VERSION="${1:-dev}"
 # Run from the repo root wherever the script is called from.
 cd "$(dirname "$0")/.."
@@ -48,7 +48,7 @@ for target in "${TARGETS[@]}"; do
   # Windows needs the .exe suffix to run on a double-click.
   if [ "$os" = "windows" ]; then name="${name}.exe"; fi
   echo "building $name"
-  (cd "$SCRATCH" && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.appVersion=${VERSION}" -o "$OUT/$name" ./cmd/hussla)
+  (cd "$SCRATCH" && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w -X github.com/bretperry/hussla/internal/config.Version=${VERSION}" -o "$OUT/$name" ./cmd/hussla)
 done
 
 # Checksums, so a download can be checked against the release page.

@@ -79,7 +79,7 @@ export const startFixtureServer = async ({ distDir, port = 0 }) => {
         const steps = { mail: "done", import: "done", agent: "done", phone: "done", expiry: "done", "second-passkey": "done" };
         return json({ enrolled: true, passkeys: 1, codeInLog: false, listener: "tailnet", isOwner: true, ownerLogin: "jordan@example.com", canStartOver: false, seenLogin: "jordan@example.com", firstRunOpen: false, address: "https://hussla.example.ts.net", wizard: { steps, finished: true } });
       }
-      if (path === "/api/me") return json({ kind: "user", name: "Jordan Example", login: "jordan@example.com", appName: "Hussla" });
+      if (path === "/api/me") return json({ kind: "user", name: "Jordan Example", login: "jordan@example.com", appName: "Hussla", version: "dev" });
       if (path === "/api/stats") return json({ total: data.jobs.length, byStatus: {}, unanswered: data.answers.filter((a) => a.answer === "").length, drafts: data.emails.filter((e) => e.status === "draft").length });
       if (path === "/api/jobs") return json(data.jobs);
       if (path.startsWith("/api/jobs/")) {

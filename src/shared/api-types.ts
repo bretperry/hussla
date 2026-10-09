@@ -997,6 +997,8 @@ export interface components {
             /** @description The owner's Tailscale login (the owner on the tailnet only). */
             login?: string;
             appName: string;
+            /** @description The release this server was built from (`v0.1.1`); `dev` for an untagged build. */
+            version: string;
         };
         /** @enum {string} */
         JobStatus: "review" | "queued" | "waiting" | "applied" | "screening" | "interviewing" | "offer" | "rejected" | "withdrawn" | "skipped" | "filtered" | "failed";

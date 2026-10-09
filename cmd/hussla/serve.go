@@ -6,7 +6,8 @@
 // Start order is for speed and safety: lock first (a second process stops before touching
 // anything), then storage, then the local and home-network listeners (serving in well under a
 // second), then the tailnet in the background (joining can wait on a login, and retries until it
-// works; once joined it is re-read every config.TailnetRefresh), and the outbox dispatcher. Stop
+// works; once joined it is re-read every config.TailnetRefresh, and, when config.AgentFunnelEnv is
+// on, the agent door on Funnel opens after it), and the outbox dispatcher. Stop
 // order is the reverse: stop taking requests, let the ones in flight finish (config.ShutdownGrace),
 // let the dispatcher and a backup finish, close the tailnet, close storage, release the lock.
 
@@ -49,9 +50,6 @@ import (
 	"github.com/bretperry/hussla/internal/mcpapi"
 )
 
-// appVersion is recorded with each migration; the release build sets it with -ldflags.
-var appVersion = "dev"
-
 // localAddressFile records the local listener's address, so `hussla open` finds the port.
 const localAddressFile = "local-address"
 
@@ -64,10 +62,12 @@ type settings struct {
 	localPort  string // "" for none
 	homePort   string // the home-network page's port on every interface; "" for none
 	ownerLogin string // pins the owner's tailnet login; "" for anyone eligible
+	// agentFunnel opens the agent door on Tailscale Funnel (config.AgentFunnelEnv=1); off by default.
+	agentFunnel bool
 }
 
 func settingsFrom(getenv func(string) string) settings {
-	result := settings{dataDir: getenv("DATA_DIR"), hostname: getenv("HUSSLA_HOSTNAME"), authKey: getenv("TS_AUTHKEY"), tailnet: getenv("HUSSLA_TAILNET") != "off", localPort: getenv("HUSSLA_LOCAL_PORT"), homePort: getenv("HUSSLA_HOME_PORT"), ownerLogin: getenv("HUSSLA_OWNER_LOGIN")}
+	result := settings{dataDir: getenv("DATA_DIR"), hostname: getenv("HUSSLA_HOSTNAME"), authKey: getenv("TS_AUTHKEY"), tailnet: getenv("HUSSLA_TAILNET") != "off", localPort: getenv("HUSSLA_LOCAL_PORT"), homePort: getenv("HUSSLA_HOME_PORT"), ownerLogin: getenv("HUSSLA_OWNER_LOGIN"), agentFunnel: getenv(config.AgentFunnelEnv) == "1"}
 	if result.homePort == "off" {
 		result.homePort = ""
 	}
@@ -99,7 +99,7 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 	}
 	defer func() { _ = lock.Release() }()
 
-	storage, err := sqlite.Open(ctx, sqlite.Options{Dir: dataDir, AppVersion: appVersion})
+	storage, err := sqlite.Open(ctx, sqlite.Options{Dir: dataDir, AppVersion: config.Version})
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
 	}
@@ -189,6 +189,17 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 			}
 			tailnetMutex.Unlock()
 			logger.Info("Hussla is running: open this address on a device with Tailscale turned on", "url", services.Setup.Address())
+			if env.agentFunnel {
+				go openAgentFunnel(ctx, node, services, logger, func(server *http.Server, listener net.Listener) bool {
+					tailnetMutex.Lock()
+					defer tailnetMutex.Unlock()
+					if ctx.Err() != nil { // stopping already: don't start a server nobody will shut down
+						return false
+					}
+					start("agent-funnel", server, listener)
+					return true
+				})
+			}
 			superviseTailnet(ctx, node, services.Auth, logger)
 		}()
 	}
@@ -250,12 +261,56 @@ func newServer(handler http.Handler) *http.Server {
 	return &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 }
 
+// funnelHint is the one line a headless owner needs when Funnel refuses the agent door.
+const funnelHint = "Agent door on Funnel: not open yet. Turn on HTTPS Certificates, and grant this node the \"funnel\" node attribute in the tailnet policy (nodeAttrs; see docs/install/nas.md). Hussla keeps retrying."
+
+// openAgentFunnel opens the agent door (config.AgentFunnelEnv) on Funnel port config.AgentFunnelPort,
+// retrying with the join loop's backoff until it works or ctx ends (a policy change needs no
+// restart), then hands the server to serve. Its handler is httpapi's agent door plus /mcp, behind
+// the same node-owner guard as the site, answering only to <name>:<port>.
+func openAgentFunnel(ctx context.Context, node tailnetNode, services httpapi.Deps, logger *slog.Logger, serve func(*http.Server, net.Listener) bool) {
+	wait := config.TailnetRetryFirst
+	lastProblem := ""
+	for {
+		listener, err := node.FunnelListener(config.AgentFunnelPort)
+		if err == nil {
+			handler := &renamingHandler{current: node.Domain, build: func(name string) http.Handler {
+				return httpapi.GuardNodeOwner(services.Setup, agentFunnelHandler(name, services))
+			}}
+			if !serve(newServer(handler), listener) {
+				_ = listener.Close()
+				return
+			}
+			logger.Info("agent door open on Tailscale Funnel (agent keys only)", "url", "https://"+node.Domain()+":"+config.AgentFunnelPort)
+			return
+		}
+		if problem := err.Error(); problem != lastProblem {
+			lastProblem = problem
+			logger.Warn(funnelHint, "error", err, "retryIn", wait.String())
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		wait = min(wait*2, config.TailnetRetryMax)
+	}
+}
+
+// agentFunnelHandler is the agent door for the node named name: the agent-key API and /mcp, nothing else.
+func agentFunnelHandler(name string, services httpapi.Deps) http.Handler {
+	hosts := []string{name + ":" + config.AgentFunnelPort}
+	return withMCP(httpapi.New(httpapi.Config{Listener: httpapi.ListenerFunnel, Hosts: hosts}, services),
+		mcpapi.New(mcpapi.Config{Hosts: hosts, Secure: true}, mcpDeps(services)))
+}
+
 // tailnetNode is the server's tailnet node: tailnet.Node, or the end-to-end build's fake (tailnet_fake.go).
 type tailnetNode interface {
 	tailnetJoiner
 	auth.PeerIdentifier
 	auth.TailnetStatus
 	RedirectListener() (net.Listener, error)
+	FunnelListener(port string) (net.Listener, error)
 	Refresh(ctx context.Context) error
 	Logout(ctx context.Context) error
 	Domain() string

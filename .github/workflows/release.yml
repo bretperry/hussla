@@ -1,0 +1,99 @@
+# Cuts a release on every push to main: next version tag, a published GitHub release, then the image and binaries.
+# In the app: what makes a new `ghcr.io/bretperry/hussla:<version>` and its downloads exist after a ship, with no one opening GitHub.
+# Used by: GitHub Actions on a push to main (the dev → main ship merge, ship.mdc).
+# Uses: git tags, gh (the built-in GITHUB_TOKEN), .github/workflows/publish-image.yml (workflow_call).
+#
+# Version: the newest vX.Y.Z tag, patch bumped. The ship PR's title opts into a bigger bump with
+# `release:minor` or `release:major` (a merge commit's message carries the PR title); the
+# convention is in .cursor/rules/ship.project.mdc. No tag yet → v0.1.0.
+# A tag made with GITHUB_TOKEN starts no other workflow, so the tag trigger in publish-image.yml
+# never fires for these: this calls it directly instead.
+# Idempotent: when main's head already carries a vX.Y.Z tag, nothing runs. A failed image or
+# binaries job is retried with "Re-run failed jobs" (the tag and release already exist).
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+# One release at a time, never cancelled: two quick ships tag in order, each from the tags before it.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  tag:
+    name: Tag and release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    outputs:
+      # Empty when main's head was already released; the publish job then skips.
+      tag: ${{ steps.next.outputs.tag }}
+    steps:
+      # Full history and every tag, to find the newest version and what main's head carries.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Next version
+        id: next
+        env:
+          # Through env, not inline `${{ }}`, so a PR title can't inject shell.
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          # Stop on the first failure, an unset variable, or a failed pipe stage.
+          set -euo pipefail
+          # Only plain vX.Y.Z tags count; a prerelease like v1.0.0-rc1 is neither latest nor a skip.
+          strict='^v([0-9]+)\.([0-9]+)\.([0-9]+)$'
+          # Already released (a rerun, or a tag a person pushed): do nothing.
+          for t in $(git tag --points-at HEAD 'v*'); do
+            if [[ "$t" =~ $strict ]]; then
+              echo "HEAD is already $t; nothing to release."
+              exit 0
+            fi
+          done
+          # Newest plain tag by version order, not by date.
+          latest=""
+          for t in $(git tag -l 'v*' --sort=-v:refname); do
+            if [[ "$t" =~ $strict ]]; then latest="$t"; break; fi
+          done
+          if [ -z "$latest" ]; then
+            next="v0.1.0"
+          else
+            [[ "$latest" =~ $strict ]]
+            major="${BASH_REMATCH[1]}"; minor="${BASH_REMATCH[2]}"; patch="${BASH_REMATCH[3]}"
+            # The marker is read from the head commit only: the ship merge, whose message holds the PR title.
+            if grep -q 'release:major' <<<"$MESSAGE"; then
+              next="v$((major + 1)).0.0"
+            elif grep -q 'release:minor' <<<"$MESSAGE"; then
+              next="v${major}.$((minor + 1)).0"
+            else
+              next="v${major}.${minor}.$((patch + 1))"
+            fi
+          fi
+          echo "Releasing $next (previous: ${latest:-none})."
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+      # gh creates the tag on this exact commit and publishes the release (notes from merged PRs).
+      # The binaries job attaches its files to this release once they are built.
+      - name: Create tag and release
+        if: steps.next.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.next.outputs.tag }}
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+
+  publish:
+    name: Publish
+    needs: [tag]
+    if: needs.tag.outputs.tag != ''
+    # The called workflow's jobs can hold no more than this.
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/publish-image.yml
+    with:
+      tag: ${{ needs.tag.outputs.tag }}

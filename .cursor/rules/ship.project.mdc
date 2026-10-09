@@ -1,0 +1,24 @@
+---
+description: Ship — Hussla additions: every ship to main cuts a release (version tag, GitHub release, GHCR image, binaries); how to pick the version bump
+alwaysApply: false
+---
+
+# Ship: Hussla additions
+
+Where this differs from `ship.mdc`, this wins for this project.
+
+- **Shipping releases.** The merge to `main` runs `.github/workflows/release.yml`: it tags the
+  next version, publishes a GitHub release (notes from merged PRs), then pushes the image
+  (`ghcr.io/bretperry/hussla:<X.Y.Z>`, `X.Y`, `latest`) and attaches the binaries. Nobody opens
+  GitHub to tag.
+- **Version bump.** Patch by default (newest `vX.Y.Z` + 1). For a bigger one, put
+  `release:minor` or `release:major` in the **ship PR's title** before merging; the merge commit's
+  message carries the title, and that is all the workflow reads. Use a merge commit (the default),
+  so the title lands in the head commit's message.
+- **After the merge, confirm the release:** the `Release` run on `main` is green and
+  `https://github.com/bretperry/hussla/releases` shows the new version with its binaries. Name
+  the version when you say it shipped.
+- **A failed image or binaries job:** `gh run rerun <id> --failed` (`branching.mdc`). A full
+  rerun does nothing: main's head already carries the tag.
+- **Updating the NAS is still a separate step:** bump the pinned `image:` tag
+  (`docs/install/nas.md` → Updating).
