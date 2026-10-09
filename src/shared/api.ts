@@ -44,8 +44,6 @@ export type KeyExpiry = Schemas["KeyExpiry"];
 export type MailProvider = Schemas["MailProvider"];
 export type MailSettings = Schemas["MailSettings"];
 export type MailSettingsSave = Schemas["MailSettingsSave"];
-export type Bundle = Schemas["Bundle"];
-export type ImportResult = Schemas["ImportResult"];
 
 const JOB_STATUSES: readonly JobStatus[] = ["review", "queued", "waiting", "applied", "screening", "interviewing", "offer", "rejected", "withdrawn", "skipped", "filtered", "failed"];
 
