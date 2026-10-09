@@ -40,6 +40,16 @@ The plan's Done-when runs `TestSecretsNeverLeave` through the Phase 3 router. Ph
 
 SMTP mail carries the deterministic `hussla.<id>.v<version>@domain` Message-ID; Resend, Postmark, SendGrid and Mailgun assign their own, and Hussla sends `X-Hussla-Message-Id` instead. **Why deferred:** none of the four documents overriding Message-ID, and a request a provider rejects would block every send; only a live account can confirm. **Where:** `internal/adapters/{resend,postmark,sendgrid,mailgun}`. **If we take it:** try `Message-ID` (Mailgun `h:Message-Id`) against a test account per provider and keep it where it sticks.
 
+## Import: attached files' contents from the prototype
+`open` · recorded 2026-10-09 · from the import-from-the-prototype PR
+
+The prototype's `GET /api/export` lists file records (name, kind, size) but not their bytes, so `importseed` counts them (`FilesNotImported`) and stores none; the owner re-attaches them by hand. **Why deferred:** the bytes live only in the prototype's `data/files` folder on the NAS, and reaching it needs a terminal or a second upload format; a file record with no bytes would show a broken download. **Where:** `internal/app/importseed/importseed.go` (`files` section), `internal/app/attachments`. **If we take it:** accept a zip of the export plus `data/files`, and store each file through the attachments use-case under its old id.
+
+## Import: the prototype's outbox is a second file
+`open` · recorded 2026-10-09 · same PR
+
+The prototype's `exportAll()` has no `emails` section, so the outbox comes over only from a second, optional file (`/api/emails` saved from the browser). **Why deferred:** the prototype is frozen (no changes to it from v1 work), and sent follow-ups already survive as job events and `followup.emailSentAt`. **Where:** `docs/install/move-from-the-old-tracker.md` (optional step), `internal/app/importseed/emails.go`. **If we take it:** add `emails: listEmails()` to the prototype's `exportAll()`; v1 already reads that section.
+
 <!-- [stack:typescript] -->
 ## Drop dependency-cruiser's swc parser once it supports TypeScript 7
 

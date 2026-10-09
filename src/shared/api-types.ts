@@ -478,7 +478,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Owner only, with a passkey tap. Imports a backup or seed bundle; records merge by id, so importing twice changes nothing. */
+        /** Owner only, with a passkey tap. Imports a backup, a seed bundle, or the old tracker's export (or its GET /api/emails list); records already here win, so importing twice changes nothing, and no imported email is approved. */
         post: operations["importBundle"];
         delete?: never;
         options?: never;
@@ -1302,12 +1302,24 @@ export interface components {
                 detail?: string;
             }[];
             files?: components["schemas"]["FileRecord"][];
+            /** @description The old tracker's outbox, on import only. None lands approved. */
+            emails?: components["schemas"]["Email"][];
         };
+        /** @description How many of each were added (records already here are left as they are), and what the owner should know. */
         ImportResult: {
             jobs: number;
             companies: number;
             answers: number;
             events: number;
+            emails: number;
+            /** @description Imported emails that never went out; each waits, unapproved, for the owner's approval. */
+            needApproval: number;
+            /** @description File records in the file; their contents aren't in it, so none are stored. */
+            filesNotImported: number;
+            /** @description Each record or field skipped, dropped or mapped to something else (an unknown job status, say). */
+            warnings: string[];
+            /** @description What an import never brings over (agent keys, mail passwords), always present. */
+            notices: string[];
         };
         /**
          * @description draft → approved → sending → sent | failed; draft, approved and failed can be canceled.

@@ -35,6 +35,7 @@ export type Passkey = Schemas["Passkey"];
 export type Resume = Schemas["Resume"];
 export type FileRecord = Schemas["FileRecord"];
 export type SearchConfig = Schemas["SearchConfig"];
+export type ImportResult = Schemas["ImportResult"];
 export type JobStatus = Schemas["JobStatus"];
 
 const JOB_STATUSES: readonly JobStatus[] = ["review", "queued", "waiting", "applied", "screening", "interviewing", "offer", "rejected", "withdrawn", "skipped", "filtered", "failed"];
@@ -164,6 +165,8 @@ export const api = {
   revokeAgentKey: (keyId: string): Promise<Schemas["Ok"]> => send("DELETE", `/api/tokens/${id(keyId)}`, { stepUp: true }),
   listPasskeys: (): Promise<Passkey[]> => send("GET", "/api/passkeys"),
   signOutEverywhere: (): Promise<Schemas["Ok"]> => send("POST", "/api/sessions/revoke-all", { stepUp: true }),
+  // The old tracker's export (or a seed or backup file), sent as the file's own bytes.
+  importBundle: (file: File): Promise<ImportResult> => send("POST", "/api/import", { file, stepUp: true }),
 };
 
 // A message for a failed call that a person can act on.

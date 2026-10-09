@@ -703,7 +703,7 @@ paths:
     post:
       tags: [settings]
       operationId: importBundle
-      summary: Owner only, with a passkey tap. Imports a backup or seed bundle; records merge by id, so importing twice changes nothing.
+      summary: Owner only, with a passkey tap. Imports a backup, a seed bundle, or the old tracker's export (or its GET /api/emails list); records already here win, so importing twice changes nothing, and no imported email is approved.
       parameters:
         - $ref: "#/components/parameters/StepUp"
       requestBody:
@@ -1801,14 +1801,21 @@ components:
               action: { type: string }
               detail: { type: string }
         files: { type: array, items: { $ref: "#/components/schemas/FileRecord" } }
+        emails: { type: array, description: "The old tracker's outbox, on import only. None lands approved.", items: { $ref: "#/components/schemas/Email" } }
     ImportResult:
       type: object
-      required: [jobs, companies, answers, events]
+      description: How many of each were added (records already here are left as they are), and what the owner should know.
+      required: [jobs, companies, answers, events, emails, needApproval, filesNotImported, warnings, notices]
       properties:
         jobs: { type: integer }
         companies: { type: integer }
         answers: { type: integer }
         events: { type: integer }
+        emails: { type: integer }
+        needApproval: { type: integer, description: "Imported emails that never went out; each waits, unapproved, for the owner's approval." }
+        filesNotImported: { type: integer, description: "File records in the file; their contents aren't in it, so none are stored." }
+        warnings: { type: array, items: { type: string }, description: "Each record or field skipped, dropped or mapped to something else (an unknown job status, say)." }
+        notices: { type: array, items: { type: string }, description: "What an import never brings over (agent keys, mail passwords), always present." }
 
     # ---------- mail
     EmailStatus:
