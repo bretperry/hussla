@@ -4,6 +4,10 @@
   Used by: src/features/setup/SetupPage.tsx, src/app/App.tsx (the "/setup/mail" route).
   Uses: api.mailProviders / mailSettings / saveMailSettings / sendTestEmail (the catalog lives in internal/config on the server).
 
+  Save and the test are two buttons, one passkey tap each: a browser only shows a passkey prompt
+  shortly after a click, so a second prompt chained after the first one's network round trips is
+  refused (Firefox measured it as "cancelled or timed out").
+
   The password never comes back from the server: a saved one shows as "stored", and leaving the
   field empty keeps it. The test goes to your own From address only; nothing else is ever sent
   from here.
@@ -74,6 +78,7 @@ export const MailStep = ({ onDone }: { onDone: () => void }) => {
   const [chosenId, setChosenId] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
+  const [savedAs, setSavedAs] = useState("");
   const [sentTo, setSentTo] = useState("");
 
   if (loaded.error !== null) return <ErrorLine message={describeError(loaded.error)} />;
@@ -91,8 +96,22 @@ export const MailStep = ({ onDone }: { onDone: () => void }) => {
     setProblem("");
     try {
       await api.saveMailSettings(body);
+      setSavedAs(body.fromAddress);
+      setSentTo("");
+    } catch (failure) {
+      setProblem(describeError(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Its own click, so its passkey prompt starts from a fresh user gesture.
+  const sendTest = async () => {
+    setBusy(true);
+    setProblem("");
+    try {
       await api.sendTestEmail();
-      setSentTo(body.fromAddress);
+      setSentTo(savedAs);
     } catch (failure) {
       setProblem(describeError(failure));
     } finally {
@@ -167,14 +186,20 @@ export const MailStep = ({ onDone }: { onDone: () => void }) => {
         </>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button type="submit" variant="primary" disabled={busy || provider === undefined}>
-          Save and send me a test
+        <Button type="submit" variant={savedAs === "" ? "primary" : "secondary"} disabled={busy || provider === undefined}>
+          Save
         </Button>
+        {savedAs === "" ? null : (
+          <Button variant={sentTo === "" ? "primary" : "secondary"} disabled={busy} onClick={() => void sendTest()}>
+            Send me a test
+          </Button>
+        )}
         {sentTo === "" ? null : (
-          <Button onClick={onDone}>It arrived: next</Button>
+          <Button variant="primary" onClick={onDone}>It arrived: next</Button>
         )}
       </div>
-      {sentTo === "" ? null : <p role="status">Saved. A test is on its way to {sentTo}; check that inbox (and spam).</p>}
+      {savedAs === "" || sentTo !== "" ? null : <p role="status">Saved. Now send yourself a test.</p>}
+      {sentTo === "" ? null : <p role="status">A test is on its way to {sentTo}; check that inbox (and spam).</p>}
       {problem === "" ? null : <ErrorLine message={problem} />}
     </form>
   );

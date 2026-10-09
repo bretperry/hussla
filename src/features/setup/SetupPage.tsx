@@ -14,6 +14,7 @@ import { Button, LinkButton } from "@/shared/ui/Button";
 import { ErrorLine } from "@/shared/ui/Feedback";
 import { Field, TextInput } from "@/shared/ui/Form";
 import { PageHead, Section } from "@/shared/ui/Section";
+import { AddSparePasskey } from "./AddSparePasskey";
 import { MailStep } from "./MailStep";
 import { PasskeyStep } from "./PasskeyStep";
 import { stepsLeft, visibleSteps } from "./setup-steps";
@@ -146,31 +147,16 @@ const ExpiryStep = ({ status, onDone }: { status: SetupStatus; onDone: () => voi
   </div>
 );
 
-const SecondPasskeyStep = ({ onDone }: { onDone: () => void }) => {
-  const [problem, setProblem] = useState("");
-  const add = async () => {
-    setProblem("");
-    try {
-      await api.registerPasskey("Spare passkey");
-      onDone();
-    } catch (failure) {
-      setProblem(describeError(failure));
-    }
-  };
-  return (
-    <div className="flex max-w-prose flex-col gap-4">
-      <h2 className="font-display text-lead-phone font-black">Add a spare passkey</h2>
-      <p>
-        If this phone is lost, a second passkey (your laptop, a security key) still gets you in. You tap your current passkey once, then make
-        the new one; choose “use another device” in the prompt to make it on a different one.
-      </p>
-      <Button variant="primary" className="self-start" onClick={() => void add()}>
-        Add a spare passkey
-      </Button>
-      {problem === "" ? null : <ErrorLine message={problem} />}
-    </div>
-  );
-};
+const SecondPasskeyStep = ({ onDone }: { onDone: () => void }) => (
+  <div className="flex max-w-prose flex-col gap-4">
+    <h2 className="font-display text-lead-phone font-black">Add a spare passkey</h2>
+    <p>
+      If this phone is lost, a second passkey (your laptop, a security key) still gets you in. First confirm with the passkey you have, then
+      make the new one.
+    </p>
+    <AddSparePasskey onAdded={onDone} />
+  </div>
+);
 
 // Each step's page; a Record so a new step name fails the typecheck until it has one.
 const StepBody = ({ step, status, onDone }: { step: SetupStep; status: SetupStatus; onDone: () => void }): ReactNode => {

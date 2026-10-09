@@ -44,12 +44,14 @@ func raw(value any) json.RawMessage {
 
 func jobJSON(job domain.Job) wire.Object {
 	object := wire.JobObject(job)
+	wire.EmptyListsForNull(object, wire.JobListFields)
 	object["writers"] = wire.WritersObject(job.Writers)
 	return object
 }
 
 func companyJSON(company domain.Company) wire.Object {
 	object := wire.CompanyObject(company)
+	wire.EmptyCompanyListsForNull(object)
 	object["writers"] = wire.WritersObject(company.Writers)
 	return object
 }

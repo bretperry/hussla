@@ -25,6 +25,11 @@ reason, then deleted).
 
 What. **Why deferred:** … **Where:** … **If we take it:** … -->
 
+## A review PATCHed without `fetchedAt` answers `null`
+`open` · recorded 2026-10-09 · from the response-contract test (`test/contract-responses`)
+
+`PATCH /api/companies/{slug}` with `reviews: [{"source": "Glassdoor"}]` stores the review with no fetch time, and every answer then sends `"fetchedAt": null`, where `Review` requires a string and `ReviewInput` says it "defaults to now" (only `POST .../reviews` defaults it, in `domain.UpsertReview`). Rows already stored that way also answer `null`. **Why deferred:** either fix changes behavior: default it to now on PATCH (and decide what old rows answer), or make `Review.fetchedAt` nullable (the UI's `formatWhen` and the front page's overnight count read it). **Where:** `internal/app/wire/company.go` `parseReviews`, `internal/app/tracker/companies.go`, `api/openapi.yaml` `Review`/`ReviewInput`. **If we take it:** add a PATCH-without-`fetchedAt` read to `internal/httpapi/empty_state_test.go`; the rig's contract check then proves it.
+
 ## command-guard test timing fix isn't upstream yet
 `open` · recorded 2026-10-09 · from the ship dynamite test fixes (`fix/ship-findings`)
 
