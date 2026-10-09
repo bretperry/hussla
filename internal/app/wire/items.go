@@ -92,3 +92,12 @@ func Text(raw json.RawMessage) (string, bool) {
 	text, err := parseText(raw)
 	return text, err == nil
 }
+
+// WholeNumber reads a JSON whole number (3 or 3.0); ok is false for anything else.
+func WholeNumber(raw json.RawMessage) (int, bool) {
+	number, err := parseWholeNumber(raw)
+	if err != nil {
+		return 0, false
+	}
+	return *number, true
+}

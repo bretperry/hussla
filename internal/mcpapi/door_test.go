@@ -211,6 +211,10 @@ var ownerActions = []string{
 	"PATCH /api/config", "POST /api/import",
 	"GET /api/tokens", "POST /api/tokens", "DELETE /api/tokens/{keyId}",
 	"POST /api/mail/test", "POST /api/emails/{emailId}/approve",
+	"POST /api/pitches", "PATCH /api/pitches/{slot}", "DELETE /api/pitches/{slot}",
+	"POST /api/pitches/{slot}/live", "DELETE /api/pitches/{slot}/versions/{version}",
+	"DELETE /api/passkeys/{passkeyId}", "POST /api/setup/code", "PATCH /api/setup/wizard", "GET /api/setup/qr",
+	"GET /api/mail/providers", "GET /api/mail/settings", "PUT /api/mail/settings",
 }
 
 // notAsTools are routes an agent may call over HTTP that have no MCP tool, and why.
@@ -298,7 +302,8 @@ func TestToolListMatchesTheHTTPAPI(t *testing.T) {
 // TestNoToolReachesAnOwnerAction: by name, by argument and by the owner's own fields.
 func TestNoToolReachesAnOwnerAction(t *testing.T) {
 	forEachEra(t, func(t *testing.T, r *rig, c *client) {
-		forbidden := regexp.MustCompile(`approve|send|delete|remove|cancel|revoke|import|export|passkey|pitch|token|key|session|edit_email|set_|patch_config|update_config`)
+		// "live" rather than "pitch": agents may read pitches and add versions, never pick the live one.
+		forbidden := regexp.MustCompile(`approve|send|delete|remove|cancel|revoke|import|export|passkey|live|token|key|session|edit_email|set_|patch_config|update_config`)
 		for _, name := range c.toolNames() {
 			if forbidden.MatchString(name) {
 				t.Errorf("tool %q sounds like an owner action", name)
@@ -306,7 +311,8 @@ func TestNoToolReachesAnOwnerAction(t *testing.T) {
 		}
 		for _, name := range []string{
 			"approve_email", "send_email", "delete_job", "delete_file", "delete_answer", "cancel_email", "edit_email", "update_config",
-			"patch_config", "create_agent_key", "revoke_agent_key", "import_data", "set_live_pitch", "upload_file", "sign_out_everywhere",
+			"patch_config", "create_agent_key", "revoke_agent_key", "import_data", "set_live_pitch", "make_pitch_live", "delete_pitch", "delete_pitch_version", "create_pitch", "update_pitch",
+			"upload_file", "sign_out_everywhere",
 		} {
 			got := c.rpc("tools/call", map[string]any{"name": name, "arguments": map[string]any{"id": "x"}})
 			if got.Error == nil || got.Error.Code != -32602 {

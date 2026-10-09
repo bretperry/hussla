@@ -6,14 +6,17 @@
 package tailnet
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tailcfg"
+	"tailscale.com/types/views"
 
 	"github.com/bretperry/hussla/internal/app/auth"
 )
@@ -92,5 +95,87 @@ func TestHTTPSOffIsReportedUntilTheTailnetGivesACertificateName(t *testing.T) {
 	}
 	if owner := node.NodeOwner(); owner.UserID != "7" || owner.Login != "owner@example.com" || owner.Tagged {
 		t.Fatalf("owner: %+v", owner)
+	}
+}
+
+// loginCounter stands in for tsnet's local client when Refresh asks for a login link.
+type loginCounter struct{ calls int }
+
+func (counter *loginCounter) StartLoginInteractive(context.Context) error {
+	counter.calls++
+	return nil
+}
+
+func TestRefreshFollowsRenameKeyExpiryAndLogout(t *testing.T) {
+	node, lines := recordingNode()
+	node.listening = true // Up and Listener already ran
+	expiry := time.Date(2027, 4, 1, 0, 0, 0, 0, time.UTC)
+	status := &ipnstate.Status{
+		BackendState:   ipn.Running.String(),
+		CurrentTailnet: &ipnstate.TailnetStatus{MagicDNSEnabled: true},
+		CertDomains:    []string{"hussla.tail0000.ts.net"},
+		Self:           &ipnstate.PeerStatus{UserID: 7, KeyExpiry: &expiry},
+		User:           map[tailcfg.UserID]tailcfg.UserProfile{7: {LoginName: "owner@example.com"}},
+	}
+	counter := &loginCounter{}
+	if err := node.refreshed(t.Context(), counter, status); err != nil {
+		t.Fatal(err)
+	}
+	if state := node.State(); state.Phase != auth.TailnetRunning || !state.KeyExpiry.Equal(expiry) {
+		t.Fatalf("running: %+v", state)
+	}
+
+	// Renamed in the admin console: the new name is the domain.
+	status.CertDomains = []string{"jobs.tail0000.ts.net"}
+	if err := node.refreshed(t.Context(), counter, status); err != nil || node.Domain() != "jobs.tail0000.ts.net" {
+		t.Fatalf("rename: %q %v", node.Domain(), err)
+	}
+
+	// A tailnet with device approval: waiting for an admin, then running again on the next refresh.
+	if err := node.refreshed(t.Context(), counter, &ipnstate.Status{BackendState: ipn.NeedsMachineAuth.String()}); err != nil || node.State().Phase != auth.TailnetNeedsApproval {
+		t.Fatalf("needs approval: %+v %v", node.State(), err)
+	}
+
+	// The key expired: no link yet, so one is asked for; then the link is offered and logged once.
+	status = &ipnstate.Status{BackendState: ipn.NeedsLogin.String()}
+	if err := node.refreshed(t.Context(), counter, status); err != nil || counter.calls != 1 {
+		t.Fatalf("needs login: %d calls, %v", counter.calls, err)
+	}
+	status.AuthURL = "https://login.example/a/3333"
+	for range 2 {
+		if err := node.refreshed(t.Context(), counter, status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if state := node.State(); state.Phase != auth.TailnetNeedsLogin || state.AuthURL != status.AuthURL || counter.calls != 1 {
+		t.Fatalf("login link: %+v, %d calls", state, counter.calls)
+	}
+	if len(*lines) != 1 || !strings.Contains((*lines)[0], "3333") {
+		t.Fatalf("want one log line for the new link, got %q", *lines)
+	}
+}
+
+// The node's tailnet rides along with its owner, tagged or not, so the owner check can tell a node
+// moved to someone else's tailnet: the stable id when there is one, else the tailnet's name.
+func TestTheNodeOwnerCarriesItsTailnet(t *testing.T) {
+	node, _ := recordingNode()
+	tags := views.SliceOf([]string{"tag:server"})
+	status := &ipnstate.Status{
+		CertDomains:    []string{"hussla.tail0000.ts.net"},
+		CurrentTailnet: &ipnstate.TailnetStatus{MagicDNSEnabled: true, StableID: "Tnet1234", Name: "example.com"},
+		Self:           &ipnstate.PeerStatus{UserID: 7, Tags: &tags},
+	}
+	if err := node.running(status); err != nil {
+		t.Fatal(err)
+	}
+	if owner := node.NodeOwner(); !owner.Tagged || owner.Tailnet != "id:Tnet1234" {
+		t.Fatalf("tagged owner: %+v", owner)
+	}
+	status.CurrentTailnet.StableID = ""
+	if err := node.running(status); err != nil {
+		t.Fatal(err)
+	}
+	if owner := node.NodeOwner(); owner.Tailnet != "name:example.com" {
+		t.Fatalf("owner with no stable id: %+v", owner)
 	}
 }

@@ -44,7 +44,9 @@
     "api:types": "openapi-typescript api/openapi.yaml --output src/shared/api-types.ts",
     "dev": "vite",
     "build": "vite build",
-    "ui:evidence": "node src/test/ui-evidence.mjs"
+    "ui:evidence": "node src/test/ui-evidence.mjs",
+    "e2e:setup": "node src/test/setup-e2e.mjs",
+    "smoke:container": "bash scripts/container-smoke.sh"
   },
   "devDependencies": {
     "@swc/core": "1.16.12",

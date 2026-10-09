@@ -17,6 +17,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/bretperry/hussla/internal/app/attachments"
 	"github.com/bretperry/hussla/internal/app/auth"
 	"github.com/bretperry/hussla/internal/app/mailbox"
+	"github.com/bretperry/hussla/internal/app/setup"
 	"github.com/bretperry/hussla/internal/app/tracker"
 	"github.com/bretperry/hussla/internal/config"
 	"github.com/bretperry/hussla/internal/httpapi"
@@ -57,6 +59,7 @@ type rig struct {
 	store     *fakes.Store
 	auth      *auth.Service
 	tailnet   *fakeauth.Tailnet
+	node      *fakeNode // the server's own tailnet node, for the setup pages
 	signIn    *fakeauth.SignInTokens
 	clock     *fakeauth.Clock
 	setupCode string
@@ -76,6 +79,7 @@ func newRigPinned(t *testing.T, ownerLogin string) *rig {
 	t.Helper()
 	r := &rig{
 		t: t, store: fakes.New(), tailnet: fakeauth.NewTailnet(), signIn: &fakeauth.SignInTokens{},
+		node:  &fakeNode{state: auth.TailnetState{Phase: auth.TailnetRunning, Domain: tailnetHost}},
 		clock: fakeauth.NewClock(time.Date(2026, 10, 8, 15, 0, 0, 0, time.UTC)),
 	}
 	r.tailnet.Add(ownerAddr, ownerPeer)
@@ -113,14 +117,58 @@ func (r *rig) restart() *rig {
 		AnnounceSetupCode: func(code string) { r.setupCode = code; r.announced++ },
 		RemindSetupCode:   func(issuedAt time.Time) { r.reminded = append(r.reminded, issuedAt) },
 		OwnerLogin:        r.ownerPin,
+		Node:              r.node,
 	})
 	r.deps.Auth = r.auth
+	r.deps.Setup = setup.New(setup.Options{Auth: r.auth, Tailnet: r.node, Store: r.store, Now: r.clock.Now})
 	r.tailnetUI = httpapi.New(httpapi.Config{Listener: httpapi.ListenerTailnet, Hosts: []string{tailnetHost}, Peers: r.tailnet}, r.deps)
 	r.localUI = httpapi.New(httpapi.Config{Listener: httpapi.ListenerLocal, Hosts: []string{localHost, "127.0.0.1:8484"}}, r.deps)
 	if err := r.auth.IssueSetupCode(context.Background()); err != nil {
 		r.t.Fatal(err)
 	}
 	return r
+}
+
+// fakeNode is the server's own tailnet node as the setup pages see it: a settable state and
+// owner (none unless a test sets one), and a Logout that records itself.
+type fakeNode struct {
+	mutex   sync.Mutex
+	state   auth.TailnetState
+	owner   auth.TailnetPeer
+	logouts int
+}
+
+func (node *fakeNode) NodeOwner() auth.TailnetPeer {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	return node.owner
+}
+
+func (node *fakeNode) setOwner(owner auth.TailnetPeer) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	node.owner = owner
+}
+
+func (node *fakeNode) State() auth.TailnetState {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	return node.state
+}
+
+func (node *fakeNode) set(state auth.TailnetState) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	node.state = state
+}
+
+func (node *fakeNode) Logout(context.Context) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	node.logouts++
+	node.owner = auth.TailnetPeer{}
+	node.state = auth.TailnetState{Phase: auth.TailnetNeedsLogin, AuthURL: "https://login.example/a/next"}
+	return nil
 }
 
 // call is one request; the zero value is a GET from the owner's laptop on the tailnet with no Origin.

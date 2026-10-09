@@ -44,6 +44,7 @@ tags:
   - name: files
   - name: events
   - name: answers
+  - name: pitches
   - name: settings
   - name: keys
   - name: mail
@@ -570,6 +571,145 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /api/pitches:
+    get:
+      tags: [pitches]
+      operationId: listPitches
+      summary: The owner's pitches by slot, each with every version (oldest first), and the pitch knobs the UI uses.
+      responses:
+        "200":
+          description: The pitches.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PitchList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [pitches]
+      operationId: createPitch
+      summary: Owner only. Starts a pitch in a slot (the lowest free one when `slot` is left out) with its first version, which is live.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PitchCreate" }
+      responses:
+        "201":
+          description: The pitch.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pitch" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /api/pitches/{slot}:
+    parameters:
+      - $ref: "#/components/parameters/PitchSlot"
+    patch:
+      tags: [pitches]
+      operationId: patchPitch
+      summary: Owner only. Changes a pitch's title or "when to use it" cue (null clears the cue).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PitchPatch" }
+      responses:
+        "200":
+          description: The pitch.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pitch" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [pitches]
+      operationId: deletePitch
+      summary: Owner only, with a passkey tap. Deletes a pitch and its history (the activity log keeps its live words); `ok` is false when the slot was empty.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
+      responses:
+        "200":
+          description: Done.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/pitches/{slot}/versions:
+    parameters:
+      - $ref: "#/components/parameters/PitchSlot"
+    post:
+      tags: [pitches]
+      operationId: addPitchVersion
+      summary: Adds a version to a pitch (owner or agent). The live version doesn't move; only the owner picks it. Sending the newest version's words again adds nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PitchVersionCreate" }
+      responses:
+        "201":
+          description: The pitch, with the new version last.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pitch" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/pitches/{slot}/versions/{version}:
+    parameters:
+      - $ref: "#/components/parameters/PitchSlot"
+      - name: version
+        in: path
+        required: true
+        schema: { type: integer, minimum: 1 }
+    delete:
+      tags: [pitches]
+      operationId: deletePitchVersion
+      summary: Owner only, with a passkey tap. Deletes one version; the live one can't be deleted (400). `ok` is false when there was no such version.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
+      responses:
+        "200":
+          description: Done.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/pitches/{slot}/live:
+    parameters:
+      - $ref: "#/components/parameters/PitchSlot"
+    post:
+      tags: [pitches]
+      operationId: setLivePitch
+      summary: Owner only, with a passkey tap. Puts one version of a pitch on the billboard.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PitchLive" }
+      responses:
+        "200":
+          description: The pitch.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pitch" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /api/config:
     get:
       tags: [settings]
@@ -703,7 +843,7 @@ paths:
     post:
       tags: [settings]
       operationId: importBundle
-      summary: Owner only, with a passkey tap. Imports a backup or seed bundle; records merge by id, so importing twice changes nothing.
+      summary: Owner only, with a passkey tap. Imports a backup, a seed bundle, or the old tracker's export (or its GET /api/emails list); records already here win, so importing twice changes nothing, and no imported email is approved.
       parameters:
         - $ref: "#/components/parameters/StepUp"
       requestBody:
@@ -751,6 +891,58 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "502": { $ref: "#/components/responses/BadGateway" }
+
+  /api/mail/providers:
+    get:
+      tags: [mail]
+      operationId: listMailProviders
+      summary: Owner only. The mail provider catalog, with each provider's steps and the page where its app password or API key is made.
+      responses:
+        "200":
+          description: The catalog, in display order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/MailProvider" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/mail/settings:
+    get:
+      tags: [mail]
+      operationId: getMailSettings
+      summary: Owner only. The saved mail setup; `hasSecret` says whether a password or key is stored, never what it is.
+      responses:
+        "200":
+          description: The setup (all empty when none is saved).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailSettings" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      tags: [mail]
+      operationId: saveMailSettings
+      summary: >-
+        Owner only, with a passkey tap. Saves the mail setup. `secret` is the app password or API key;
+        leave it out to keep the stored one (same provider only). It is stored encrypted and never returned.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MailSettingsSave" }
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailSettings" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
 
   /api/emails:
     get:
@@ -886,6 +1078,61 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /api/setup/code:
+    post:
+      tags: [setup]
+      operationId: requestSetupCode
+      summary: >-
+        Prints a new setup code to the server log, beside the live ones: codes printed earlier keep
+        working until a passkey is stored (a lost log, or a lost passkey). The owner may ask; before
+        there is an owner, so may anyone who could claim with it. At most once a minute, and at most
+        ten codes live at once (429).
+      security: []
+      responses:
+        "200":
+          description: Printed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooSoon" }
+
+  /api/setup/wizard:
+    patch:
+      tags: [setup]
+      operationId: markSetupStep
+      summary: Owner only. Marks one first-run wizard step done or skipped; the others keep their state. A repeat is a no-op.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetupStepMark" }
+      responses:
+        "200":
+          description: The wizard's progress.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SetupWizard" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/setup/qr:
+    get:
+      tags: [setup]
+      operationId: getAddressQR
+      summary: Owner only. The tailnet address as a QR code (SVG), for the phone step.
+      responses:
+        "200":
+          description: The QR code.
+          content:
+            image/svg+xml:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /signin:
     get:
       tags: [setup]
@@ -934,6 +1181,29 @@ paths:
                 items: { $ref: "#/components/schemas/Passkey" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/passkeys/{passkeyId}:
+    parameters:
+      - name: passkeyId
+        in: path
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [setup]
+      operationId: removePasskey
+      summary: Owner only, with a passkey tap. Removes a passkey (a lost phone's). The last passkey for an address can't be removed (409).
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Ok" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /api/passkeys/register/begin:
     post:
@@ -1047,6 +1317,12 @@ components:
       in: path
       required: true
       schema: { type: string }
+    PitchSlot:
+      name: slot
+      in: path
+      required: true
+      description: A pitch's slot, 1 to `settings.slots` (10).
+      schema: { type: integer, minimum: 1 }
     EmailId:
       name: emailId
       in: path
@@ -1081,6 +1357,11 @@ components:
           schema: { $ref: "#/components/schemas/Error" }
     TooLarge:
       description: The body is over the size limit.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooSoon:
+      description: Asked again too soon; wait a minute.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -1738,6 +2019,71 @@ components:
           required: [question]
           properties:
             id: { type: string, pattern: "^[a-z0-9-]{1,120}$", description: Defaults to the question's slug. }
+    PitchVersion:
+      type: object
+      required: [version, text, note, author, writer, createdAt]
+      properties:
+        version: { type: integer, minimum: 1, description: "Numbered 1, 2, 3 … in the order written; a deleted number is never reused." }
+        text: { type: string, description: Plain text, never markup. }
+        note: { type: string, description: Why this version changed; empty when none. }
+        author: { type: string, description: 'Who wrote it, as the activity log names them ("agent:laptop", "import").' }
+        writer: { type: string, enum: [owner, agent] }
+        createdAt: { type: string, format: date-time }
+    Pitch:
+      type: object
+      required: [slot, title, when, liveVersion, versions, createdAt, updatedAt]
+      properties:
+        slot: { type: integer, minimum: 1 }
+        title: { type: string }
+        when: { type: string, description: The "when to use it" cue; empty when none. }
+        liveVersion: { type: integer, description: The number of the version on the billboard; always one of `versions`. }
+        versions: { type: array, items: { $ref: "#/components/schemas/PitchVersion" }, description: Oldest first. }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PitchSettings:
+      type: object
+      description: The pitch knobs (internal/config/pitches.go), so the page and the server use the same numbers.
+      required: [slots, maxCharacters, rotateSeconds, wordsPerMinute]
+      properties:
+        slots: { type: integer, description: How many pitches the owner keeps. }
+        maxCharacters: { type: integer, description: The longest a version may be. }
+        rotateSeconds: { type: integer, description: How long the billboard shows one pitch. }
+        wordsPerMinute: { type: integer, description: Speaking pace for the speaking-time estimate. }
+    PitchList:
+      type: object
+      required: [pitches, settings]
+      properties:
+        pitches: { type: array, items: { $ref: "#/components/schemas/Pitch" }, description: By slot. }
+        settings: { $ref: "#/components/schemas/PitchSettings" }
+    PitchVersionCreate:
+      type: object
+      required: [text]
+      additionalProperties: false
+      properties:
+        text: { type: string, minLength: 1 }
+        note: { type: string }
+    PitchCreate:
+      type: object
+      required: [title, text]
+      additionalProperties: false
+      properties:
+        slot: { type: integer, minimum: 1, description: Defaults to the lowest free slot (409 when all are taken). }
+        title: { type: string, minLength: 1 }
+        when: { type: string }
+        text: { type: string, minLength: 1 }
+        note: { type: string }
+    PitchPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 1 }
+        when: { type: [string, "null"] }
+    PitchLive:
+      type: object
+      required: [version]
+      additionalProperties: false
+      properties:
+        version: { type: integer, minimum: 1 }
     SearchConfig:
       type: object
       description: The search settings agents follow. Free-form beyond `paused`; PATCH merges top-level keys.
@@ -1801,14 +2147,22 @@ components:
               action: { type: string }
               detail: { type: string }
         files: { type: array, items: { $ref: "#/components/schemas/FileRecord" } }
+        emails: { type: array, description: "The old tracker's outbox, on import only. None lands approved.", items: { $ref: "#/components/schemas/Email" } }
     ImportResult:
       type: object
-      required: [jobs, companies, answers, events]
+      description: How many of each were added (records already here are left as they are), and what the owner should know.
+      required: [jobs, companies, answers, events, emails, pitches, needApproval, filesNotImported, warnings, notices]
       properties:
         jobs: { type: integer }
         companies: { type: integer }
         answers: { type: integer }
         events: { type: integer }
+        emails: { type: integer }
+        pitches: { type: integer, description: "Pitches added (a slot that already holds one is left as it is)." }
+        needApproval: { type: integer, description: "Imported emails that never went out; each waits, unapproved, for the owner's approval." }
+        filesNotImported: { type: integer, description: "File records in the file; their contents aren't in it, so none are stored." }
+        warnings: { type: array, items: { type: string }, description: "Each record or field skipped, dropped or mapped to something else (an unknown job status, say)." }
+        notices: { type: array, items: { type: string }, description: "What an import never brings over (agent keys, mail passwords), always present." }
 
     # ---------- mail
     EmailStatus:
@@ -1898,24 +2252,108 @@ components:
     # ---------- setup and passkeys
     SetupStatus:
       type: object
-      required: [enrolled, passkeys, codeInLog, listener, isOwner]
+      required: [enrolled, passkeys, codeInLog, listener, isOwner, ownerLogin, seenLogin, canStartOver, firstRunOpen, address]
       properties:
         enrolled: { type: boolean, description: An owner is recorded. }
         passkeys: { type: integer, description: Passkeys registered for this address. }
         codeInLog: { type: boolean, description: A setup code is waiting in the server log. }
         listener: { type: string, enum: [tailnet, local] }
         isOwner: { type: boolean }
+        ownerLogin: { type: string, description: 'The owner''s Tailscale login ("Owner: X"), for a caller on the tailnet or the owner; empty otherwise or before there is one.' }
+        canStartOver: { type: boolean, description: 'No passkey was ever stored, so the home-network page''s "Start over" still works.' }
+        seenLogin: { type: string, description: The Tailscale login this request came from (empty off the tailnet). }
+        firstRunOpen: { type: boolean, description: The first-run window is open, so the home-network page's link works. }
+        address: { type: string, description: The tailnet address (https://<name>.ts.net), or empty before there is one. }
+        wizard: { $ref: "#/components/schemas/SetupWizard" }
+        keyExpiry: { $ref: "#/components/schemas/KeyExpiry" }
+    SetupWizard:
+      type: object
+      description: The owner only. Each first-run step's state; a step not listed is still to do.
+      required: [steps, finished]
+      properties:
+        steps:
+          type: object
+          additionalProperties: { type: string, enum: [done, skipped] }
+        finished: { type: boolean }
+    SetupStepMark:
+      type: object
+      required: [step, state]
+      properties:
+        step: { type: string, enum: [mail, import, agent, phone, expiry, second-passkey] }
+        state: { type: string, enum: [done, skipped] }
+    KeyExpiry:
+      type: object
+      description: The owner only. When this machine's Tailscale sign-in expires; absent when it never does.
+      required: [at, daysLeft, warn, expired]
+      properties:
+        at: { $ref: "#/components/schemas/Timestamp" }
+        daysLeft: { type: integer }
+        warn: { type: boolean, description: Close enough to warn the owner. }
+        expired: { type: boolean }
     SetupClaim:
       type: object
-      required: [code]
+      description: The setup code from the log, or the home-network page's first-run link (`link`), one of the two.
       properties:
-        code: { type: string, description: 'As printed (XXXX-XXXX-XXXX); case and dashes don''t matter.' }
+        code: { type: string, description: 'As printed (XXXX-XXXX-XXXX-XXXX); case and dashes don''t matter.' }
+        link: { type: string, description: "The one-use secret that the home-network page's \"Make it mine\" button redirects to; spent by the first claim with it." }
     SetupClaimed:
       type: object
       required: [stepUp, next]
       properties:
         stepUp: { type: string, description: The token for X-Hussla-Step-Up on `next`. }
         next: { type: string, description: 'The action it is good for: "POST /api/passkeys/register/begin".' }
+    MailProvider:
+      type: object
+      required: [id, label, kind, needsServer, needsDomain, usernameHint, secretLabel, helpSteps, credentialUrl, docsUrl, warning, regions]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        kind: { type: string, enum: [smtp, api] }
+        needsServer: { type: boolean, description: The owner types the server, port and security ("Other SMTP"). }
+        needsDomain: { type: boolean, description: The provider sends for a verified domain the owner names. }
+        usernameHint: { type: string }
+        secretLabel: { type: string, description: 'What the owner pastes: "App-specific password", "API key".' }
+        helpSteps: { type: array, items: { type: string } }
+        credentialUrl: { type: string, description: Where the app password or API key is made. }
+        docsUrl: { type: string }
+        warning: { type: string }
+        regions:
+          type: array
+          items:
+            type: object
+            required: [id, label]
+            properties:
+              id: { type: string }
+              label: { type: string }
+    MailSettings:
+      type: object
+      required: [configured, hasSecret, providerId, host, port, security, username, fromAddress, fromName, region, domain]
+      properties:
+        configured: { type: boolean }
+        hasSecret: { type: boolean, description: A password or key is stored (it is never returned). }
+        providerId: { type: string }
+        host: { type: string }
+        port: { type: integer }
+        security: { type: string }
+        username: { type: string }
+        fromAddress: { type: string }
+        fromName: { type: string }
+        region: { type: string }
+        domain: { type: string }
+    MailSettingsSave:
+      type: object
+      required: [providerId, fromAddress]
+      properties:
+        providerId: { type: string }
+        host: { type: string }
+        port: { type: integer }
+        security: { type: string, description: "\"starttls\" or \"tls\"; empty for the provider's own." }
+        username: { type: string }
+        fromAddress: { type: string }
+        fromName: { type: string }
+        region: { type: string }
+        domain: { type: string }
+        secret: { type: string, description: The app password or API key; leave out to keep the stored one. }
     Passkey:
       type: object
       required: [id, name, rpId, createdAt, lastUsedAt]

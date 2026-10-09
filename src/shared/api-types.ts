@@ -363,6 +363,106 @@ export interface paths {
         patch: operations["patchAnswer"];
         trace?: never;
     };
+    "/api/pitches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The owner's pitches by slot, each with every version (oldest first), and the pitch knobs the UI uses. */
+        get: operations["listPitches"];
+        put?: never;
+        /** Owner only. Starts a pitch in a slot (the lowest free one when `slot` is left out) with its first version, which is live. */
+        post: operations["createPitch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pitches/{slot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Owner only, with a passkey tap. Deletes a pitch and its history (the activity log keeps its live words); `ok` is false when the slot was empty. */
+        delete: operations["deletePitch"];
+        options?: never;
+        head?: never;
+        /** Owner only. Changes a pitch's title or "when to use it" cue (null clears the cue). */
+        patch: operations["patchPitch"];
+        trace?: never;
+    };
+    "/api/pitches/{slot}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Adds a version to a pitch (owner or agent). The live version doesn't move; only the owner picks it. Sending the newest version's words again adds nothing. */
+        post: operations["addPitchVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pitches/{slot}/versions/{version}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Owner only, with a passkey tap. Deletes one version; the live one can't be deleted (400). `ok` is false when there was no such version. */
+        delete: operations["deletePitchVersion"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pitches/{slot}/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Owner only, with a passkey tap. Puts one version of a pitch on the billboard. */
+        post: operations["setLivePitch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config": {
         parameters: {
             query?: never;
@@ -478,7 +578,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Owner only, with a passkey tap. Imports a backup or seed bundle; records merge by id, so importing twice changes nothing. */
+        /** Owner only, with a passkey tap. Imports a backup, a seed bundle, or the old tracker's export (or its GET /api/emails list); records already here win, so importing twice changes nothing, and no imported email is approved. */
         post: operations["importBundle"];
         delete?: never;
         options?: never;
@@ -514,6 +614,41 @@ export interface paths {
         put?: never;
         /** Owner only, with a passkey tap. Sends a test email to the owner's own address now (outside pacing). */
         post: operations["sendTestEmail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mail/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Owner only. The mail provider catalog, with each provider's steps and the page where its app password or API key is made. */
+        get: operations["listMailProviders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mail/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Owner only. The saved mail setup; `hasSecret` says whether a password or key is stored, never what it is. */
+        get: operations["getMailSettings"];
+        /** Owner only, with a passkey tap. Saves the mail setup. `secret` is the app password or API key; leave it out to keep the stored one (same provider only). It is stored encrypted and never returned. */
+        put: operations["saveMailSettings"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -628,6 +763,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/setup/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prints a new setup code to the server log, beside the live ones: codes printed earlier keep working until a passkey is stored (a lost log, or a lost passkey). The owner may ask; before there is an owner, so may anyone who could claim with it. At most once a minute, and at most ten codes live at once (429). */
+        post: operations["requestSetupCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/setup/wizard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Owner only. Marks one first-run wizard step done or skipped; the others keep their state. A repeat is a no-op. */
+        patch: operations["markSetupStep"];
+        trace?: never;
+    };
+    "/api/setup/qr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Owner only. The tailnet address as a QR code (SVG), for the phone step. */
+        get: operations["getAddressQR"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/signin": {
         parameters: {
             query?: never;
@@ -674,6 +860,25 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/passkeys/{passkeyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                passkeyId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Owner only, with a passkey tap. Removes a passkey (a lost phone's). The last passkey for an address can't be removed (409). */
+        delete: operations["removePasskey"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1250,6 +1455,69 @@ export interface components {
             /** @description Defaults to the question's slug. */
             id?: string;
         };
+        PitchVersion: {
+            /** @description Numbered 1, 2, 3 … in the order written; a deleted number is never reused. */
+            version: number;
+            /** @description Plain text */
+            text: string;
+            /** @description Why this version changed; empty when none. */
+            note: string;
+            /** @description Who wrote it, as the activity log names them ("agent:laptop", "import"). */
+            author: string;
+            /** @enum {string} */
+            writer: "owner" | "agent";
+            /** Format: date-time */
+            createdAt: string;
+        };
+        Pitch: {
+            slot: number;
+            title: string;
+            /** @description The "when to use it" cue; empty when none. */
+            when: string;
+            /** @description The number of the version on the billboard; always one of `versions`. */
+            liveVersion: number;
+            /** @description Oldest first. */
+            versions: components["schemas"]["PitchVersion"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @description The pitch knobs (internal/config/pitches.go), so the page and the server use the same numbers. */
+        PitchSettings: {
+            /** @description How many pitches the owner keeps. */
+            slots: number;
+            /** @description The longest a version may be. */
+            maxCharacters: number;
+            /** @description How long the billboard shows one pitch. */
+            rotateSeconds: number;
+            /** @description Speaking pace for the speaking-time estimate. */
+            wordsPerMinute: number;
+        };
+        PitchList: {
+            /** @description By slot. */
+            pitches: components["schemas"]["Pitch"][];
+            settings: components["schemas"]["PitchSettings"];
+        };
+        PitchVersionCreate: {
+            text: string;
+            note?: string;
+        };
+        PitchCreate: {
+            /** @description Defaults to the lowest free slot (409 when all are taken). */
+            slot?: number;
+            title: string;
+            when?: string;
+            text: string;
+            note?: string;
+        };
+        PitchPatch: {
+            title?: string;
+            when?: string | null;
+        };
+        PitchLive: {
+            version: number;
+        };
         /** @description The search settings agents follow. Free-form beyond `paused`; PATCH merges top-level keys. */
         SearchConfig: {
             /** @description When true */
@@ -1302,12 +1570,26 @@ export interface components {
                 detail?: string;
             }[];
             files?: components["schemas"]["FileRecord"][];
+            /** @description The old tracker's outbox, on import only. None lands approved. */
+            emails?: components["schemas"]["Email"][];
         };
+        /** @description How many of each were added (records already here are left as they are), and what the owner should know. */
         ImportResult: {
             jobs: number;
             companies: number;
             answers: number;
             events: number;
+            emails: number;
+            /** @description Pitches added (a slot that already holds one is left as it is). */
+            pitches: number;
+            /** @description Imported emails that never went out; each waits, unapproved, for the owner's approval. */
+            needApproval: number;
+            /** @description File records in the file; their contents aren't in it, so none are stored. */
+            filesNotImported: number;
+            /** @description Each record or field skipped, dropped or mapped to something else (an unknown job status, say). */
+            warnings: string[];
+            /** @description What an import never brings over (agent keys, mail passwords), always present. */
+            notices: string[];
         };
         /**
          * @description draft → approved → sending → sent | failed; draft, approved and failed can be canceled.
@@ -1398,16 +1680,102 @@ export interface components {
             /** @enum {string} */
             listener: "tailnet" | "local";
             isOwner: boolean;
+            /** @description The owner's Tailscale login ("Owner: X"), for a caller on the tailnet or the owner; empty otherwise or before there is one. */
+            ownerLogin: string;
+            /** @description No passkey was ever stored, so the home-network page's "Start over" still works. */
+            canStartOver: boolean;
+            /** @description The Tailscale login this request came from (empty off the tailnet). */
+            seenLogin: string;
+            /** @description The first-run window is open */
+            firstRunOpen: boolean;
+            /** @description The tailnet address (https://<name>.ts.net) */
+            address: string;
+            wizard?: components["schemas"]["SetupWizard"];
+            keyExpiry?: components["schemas"]["KeyExpiry"];
         };
+        /** @description The owner only. Each first-run step's state; a step not listed is still to do. */
+        SetupWizard: {
+            steps: {
+                [key: string]: "done" | "skipped";
+            };
+            finished: boolean;
+        };
+        SetupStepMark: {
+            /** @enum {string} */
+            step: "mail" | "import" | "agent" | "phone" | "expiry" | "second-passkey";
+            /** @enum {string} */
+            state: "done" | "skipped";
+        };
+        /** @description The owner only. When this machine's Tailscale sign-in expires; absent when it never does. */
+        KeyExpiry: {
+            at: components["schemas"]["Timestamp"];
+            daysLeft: number;
+            /** @description Close enough to warn the owner. */
+            warn: boolean;
+            expired: boolean;
+        };
+        /** @description The setup code from the log, or the home-network page's first-run link (`link`), one of the two. */
         SetupClaim: {
-            /** @description As printed (XXXX-XXXX-XXXX); case and dashes don't matter. */
-            code: string;
+            /** @description As printed (XXXX-XXXX-XXXX-XXXX); case and dashes don't matter. */
+            code?: string;
+            /** @description The one-use secret that the home-network page's "Make it mine" button redirects to; spent by the first claim with it. */
+            link?: string;
         };
         SetupClaimed: {
             /** @description The token for X-Hussla-Step-Up on `next`. */
             stepUp: string;
             /** @description The action it is good for: "POST /api/passkeys/register/begin". */
             next: string;
+        };
+        MailProvider: {
+            id: string;
+            label: string;
+            /** @enum {string} */
+            kind: "smtp" | "api";
+            /** @description The owner types the server */
+            needsServer: boolean;
+            /** @description The provider sends for a verified domain the owner names. */
+            needsDomain: boolean;
+            usernameHint: string;
+            /** @description What the owner pastes: "App-specific password", "API key". */
+            secretLabel: string;
+            helpSteps: string[];
+            /** @description Where the app password or API key is made. */
+            credentialUrl: string;
+            docsUrl: string;
+            warning: string;
+            regions: {
+                id: string;
+                label: string;
+            }[];
+        };
+        MailSettings: {
+            configured: boolean;
+            /** @description A password or key is stored (it is never returned). */
+            hasSecret: boolean;
+            providerId: string;
+            host: string;
+            port: number;
+            security: string;
+            username: string;
+            fromAddress: string;
+            fromName: string;
+            region: string;
+            domain: string;
+        };
+        MailSettingsSave: {
+            providerId: string;
+            host?: string;
+            port?: number;
+            /** @description "starttls" or "tls"; empty for the provider's own. */
+            security?: string;
+            username?: string;
+            fromAddress: string;
+            fromName?: string;
+            region?: string;
+            domain?: string;
+            /** @description The app password or API key; leave out to keep the stored one. */
+            secret?: string;
         };
         Passkey: {
             id: string;
@@ -1504,6 +1872,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description Asked again too soon; wait a minute. */
+        TooSoon: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The mail provider refused or failed. */
         BadGateway: {
             headers: {
@@ -1520,6 +1897,8 @@ export interface components {
         /** @description A job id, a slug like `acme-senior-software-engineer`. */
         JobId: string;
         CompanySlug: string;
+        /** @description A pitch's slot, 1 to `settings.slots` (10). */
+        PitchSlot: number;
         EmailId: string;
     };
     requestBodies: never;
@@ -2273,6 +2652,208 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    listPitches: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The pitches. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PitchList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createPitch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PitchCreate"];
+            };
+        };
+        responses: {
+            /** @description The pitch. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pitch"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deletePitch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Done. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ok"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    patchPitch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PitchPatch"];
+            };
+        };
+        responses: {
+            /** @description The pitch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pitch"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addPitchVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PitchVersionCreate"];
+            };
+        };
+        responses: {
+            /** @description The pitch, with the new version last. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pitch"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    deletePitchVersion: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Done. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ok"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    setLivePitch: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
+            path: {
+                /** @description A pitch's slot, 1 to `settings.slots` (10). */
+                slot: components["parameters"]["PitchSlot"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PitchLive"];
+            };
+        };
+        responses: {
+            /** @description The pitch. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pitch"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     getSearchConfig: {
         parameters: {
             query?: never;
@@ -2542,6 +3123,80 @@ export interface operations {
             502: components["responses"]["BadGateway"];
         };
     };
+    listMailProviders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The catalog, in display order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailProvider"][];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getMailSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The setup (all empty when none is saved). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailSettings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    saveMailSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MailSettingsSave"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     listEmails: {
         parameters: {
             query?: {
@@ -2706,6 +3361,79 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    requestSetupCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Printed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ok"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooSoon"];
+        };
+    };
+    markSetupStep: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupStepMark"];
+            };
+        };
+        responses: {
+            /** @description The wizard's progress. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupWizard"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getAddressQR: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The QR code. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/svg+xml": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     signIn: {
         parameters: {
             query: {
@@ -2773,6 +3501,35 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    removePasskey: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
+            path: {
+                passkeyId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Ok"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     beginPasskeyRegistration: {

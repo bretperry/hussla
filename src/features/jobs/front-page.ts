@@ -1,12 +1,13 @@
 /*
-  What the front page shows, worked out from the lists the API returns: the lead story, the board, news, signatures and overnight counts.
+  What the front page shows, worked out from the lists the API returns: the lead story, the board, news, signatures, overnight counts and the billboard's pitches.
   In the app: the jobs front page (mockup 8c) calls these on the data it fetched; nothing here touches the network.
   Used by: src/features/jobs/FrontPage.tsx, src/features/jobs/use-front-page.ts.
 
   Pure on purpose: each rule (which job leads, what counts as overnight) has a unit test.
 */
 import { BOARD_ROWS, LEAD_STATUS_ORDER, NEWS_ITEMS, OVERNIGHT_HOURS, STATUS_LABEL } from "@/config/ui";
-import type { CompanyDetail, CompanySummary, Email, JobListItem, NewsItem } from "@/shared/api";
+import type { CompanyDetail, CompanySummary, Email, JobListItem, NewsItem, Pitch } from "@/shared/api";
+import type { BillboardPitch } from "./PitchSlot";
 
 const statusRank = (status: string): number => {
   const index = (LEAD_STATUS_ORDER as readonly string[]).indexOf(status);
@@ -103,3 +104,11 @@ export const glanceFacts = (job: JobListItem, company: CompanyDetail | undefined
   ];
   return rows.filter((row) => row.value !== "");
 };
+
+// Each pitch's live version, by slot, as the billboard shows it.
+export const billboardPitches = (pitches: readonly Pitch[]): BillboardPitch[] =>
+  pitches.flatMap((pitch) => {
+    const live = pitch.versions.find((version) => version.version === pitch.liveVersion);
+    if (live === undefined) return [];
+    return [{ slot: pitch.slot, title: pitch.title, text: live.text, version: live.version, byOwner: live.writer === "owner", author: live.author }];
+  });

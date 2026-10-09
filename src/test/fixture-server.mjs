@@ -20,6 +20,7 @@ import {
   mailStatus,
   makeContact,
   makeJob,
+  pitchList,
 } from "./fixtures.ts";
 
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".woff": "font/woff", ".svg": "image/svg+xml" };
@@ -73,6 +74,11 @@ export const startFixtureServer = async ({ distDir, port = 0 }) => {
     if (url.pathname.startsWith("/api/")) {
       if (request.method !== "GET") return json({ ok: true });
       const path = url.pathname;
+      // The setup gate: an owner who has finished setup, so every page renders.
+      if (path === "/api/setup") {
+        const steps = { mail: "done", import: "done", agent: "done", phone: "done", expiry: "done", "second-passkey": "done" };
+        return json({ enrolled: true, passkeys: 1, codeInLog: false, listener: "tailnet", isOwner: true, ownerLogin: "jordan@example.com", canStartOver: false, seenLogin: "jordan@example.com", firstRunOpen: false, address: "https://hussla.example.ts.net", wizard: { steps, finished: true } });
+      }
       if (path === "/api/me") return json({ kind: "user", name: "Jordan Example", login: "jordan@example.com", appName: "Hussla" });
       if (path === "/api/stats") return json({ total: data.jobs.length, byStatus: {}, unanswered: data.answers.filter((a) => a.answer === "").length, drafts: data.emails.filter((e) => e.status === "draft").length });
       if (path === "/api/jobs") return json(data.jobs);
@@ -93,6 +99,7 @@ export const startFixtureServer = async ({ distDir, port = 0 }) => {
       if (path === "/api/mail") return json(mailStatus);
       if (path === "/api/events") return json(data.events);
       if (path === "/api/answers") return json(data.answers);
+      if (path === "/api/pitches") return json(state.mode === "empty" ? { ...pitchList, pitches: [] } : pitchList);
       if (path === "/api/config") return json({ paused: false, homeMetro: "Remote, US", minScore: 70 });
       if (path === "/api/tokens") return json([{ id: "k1", name: "Laptop agent", createdAt: "2026-09-20T12:00:00.000Z", lastUsedAt: "2026-10-08T11:00:00.000Z", revokedAt: null }, { id: "k2", name: "Old script", createdAt: "2026-08-01T12:00:00.000Z", lastUsedAt: null, revokedAt: "2026-09-01T12:00:00.000Z" }]);
       if (path === "/api/passkeys") return json([{ id: "p1", name: "Phone", rpId: "hussla.example.ts.net", createdAt: "2026-09-20T12:00:00.000Z", lastUsedAt: "2026-10-08T11:00:00.000Z" }]);

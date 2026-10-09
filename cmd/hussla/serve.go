@@ -1,13 +1,14 @@
-// The composition root: takes the data-directory lock, opens storage, builds the use-cases, and serves the two listeners until a signal.
+// The composition root: takes the data-directory lock, opens storage, builds the use-cases, and serves its listeners until a signal.
 // In the app: everything `hussla serve` does between start and stop.
 // Used by: main.go.
-// Uses: every adapter (sqlite, tailnet, passkey, filestore, signinfile, datadir) and every use-case; httpapi for the handlers.
+// Uses: every adapter (sqlite, tailnet, passkey, filestore, signinfile, datadir, secretfile, mailfactory) and every use-case; httpapi for the handlers.
 //
 // Start order is for speed and safety: lock first (a second process stops before touching
-// anything), then storage, then the local listener (serving in well under a second), then the
-// tailnet in the background (joining can wait on a login, and retries until it works). Stop order is the reverse: stop taking
-// requests, let the ones in flight finish (config.ShutdownGrace), close the tailnet, close storage,
-// release the lock.
+// anything), then storage, then the local and home-network listeners (serving in well under a
+// second), then the tailnet in the background (joining can wait on a login, and retries until it
+// works; once joined it is re-read every config.TailnetRefresh), and the outbox dispatcher. Stop
+// order is the reverse: stop taking requests, let the ones in flight finish (config.ShutdownGrace),
+// let the dispatcher and a backup finish, close the tailnet, close storage, release the lock.
 
 package main
 
@@ -29,15 +30,21 @@ import (
 	hussla "github.com/bretperry/hussla"
 	"github.com/bretperry/hussla/internal/adapters/datadir"
 	"github.com/bretperry/hussla/internal/adapters/filestore"
+	"github.com/bretperry/hussla/internal/adapters/mailfactory"
 	"github.com/bretperry/hussla/internal/adapters/passkey"
+	"github.com/bretperry/hussla/internal/adapters/secretfile"
 	"github.com/bretperry/hussla/internal/adapters/signinfile"
 	"github.com/bretperry/hussla/internal/adapters/sqlite"
 	"github.com/bretperry/hussla/internal/adapters/tailnet"
 	"github.com/bretperry/hussla/internal/app/attachments"
 	"github.com/bretperry/hussla/internal/app/auth"
 	"github.com/bretperry/hussla/internal/app/mailbox"
+	"github.com/bretperry/hussla/internal/app/mailsetup"
+	"github.com/bretperry/hussla/internal/app/outbox"
+	"github.com/bretperry/hussla/internal/app/setup"
 	"github.com/bretperry/hussla/internal/app/tracker"
 	"github.com/bretperry/hussla/internal/config"
+	"github.com/bretperry/hussla/internal/domain"
 	"github.com/bretperry/hussla/internal/httpapi"
 	"github.com/bretperry/hussla/internal/mcpapi"
 )
@@ -55,11 +62,15 @@ type settings struct {
 	authKey    string
 	tailnet    bool
 	localPort  string // "" for none
+	homePort   string // the home-network page's port on every interface; "" for none
 	ownerLogin string // pins the owner's tailnet login; "" for anyone eligible
 }
 
 func settingsFrom(getenv func(string) string) settings {
-	result := settings{dataDir: getenv("DATA_DIR"), hostname: getenv("HUSSLA_HOSTNAME"), authKey: getenv("TS_AUTHKEY"), tailnet: getenv("HUSSLA_TAILNET") != "off", localPort: getenv("HUSSLA_LOCAL_PORT"), ownerLogin: getenv("HUSSLA_OWNER_LOGIN")}
+	result := settings{dataDir: getenv("DATA_DIR"), hostname: getenv("HUSSLA_HOSTNAME"), authKey: getenv("TS_AUTHKEY"), tailnet: getenv("HUSSLA_TAILNET") != "off", localPort: getenv("HUSSLA_LOCAL_PORT"), homePort: getenv("HUSSLA_HOME_PORT"), ownerLogin: getenv("HUSSLA_OWNER_LOGIN")}
+	if result.homePort == "off" {
+		result.homePort = ""
+	}
 	if result.dataDir == "" {
 		result.dataDir = "data"
 	}
@@ -94,7 +105,11 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 	}
 	defer func() { _ = storage.Close() }()
 
-	services, err := buildServices(dataDir, storage, logger, env.ownerLogin)
+	var node tailnetNode
+	if env.tailnet {
+		node = newTailnetNode(tailnet.Options{DataDir: dataDir, Hostname: env.hostname, AuthKey: env.authKey, Logf: func(format string, args ...any) { logger.Info(fmt.Sprintf(format, args...)) }})
+	}
+	services, dispatcher, err := buildServices(dataDir, storage, logger, env.ownerLogin, node)
 	if err != nil {
 		return err
 	}
@@ -115,6 +130,9 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 		}()
 	}
 
+	if env.localPort != "" && env.localPort == env.homePort {
+		return fmt.Errorf("HUSSLA_LOCAL_PORT and HUSSLA_HOME_PORT are both %s: give them different ports, or turn one off", env.localPort)
+	}
 	if env.localPort != "" {
 		listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", env.localPort))
 		if err != nil {
@@ -130,12 +148,18 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 		}
 		logger.Info("listening", "url", "http://localhost:"+port, "signin", "run `hussla open`")
 	}
+	if env.homePort != "" {
+		listener, err := net.Listen("tcp", net.JoinHostPort("", env.homePort))
+		if err != nil {
+			return fmt.Errorf("home-network listener: %w", err)
+		}
+		start("home", newServer(httpapi.NewHome(services.Setup)), listener)
+		port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
+		logger.Info("home-network page: open http://<this machine's address>:" + port + " in a browser on the same network to finish setup")
+	}
 
 	var tailnetMutex sync.Mutex
-	var tailnetNode *tailnet.Node
-	if env.tailnet {
-		node := tailnet.New(tailnet.Options{DataDir: dataDir, Hostname: env.hostname, AuthKey: env.authKey, Logf: func(format string, args ...any) { logger.Info(fmt.Sprintf(format, args...)) }})
-		tailnetNode = node
+	if node != nil {
 		go func() {
 			listener, err := joinTailnet(ctx, node, logger)
 			if err != nil {
@@ -145,24 +169,42 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 			if err := services.Auth.IssueSetupCode(ctx); err != nil {
 				logger.Error("setup code", "error", err)
 			}
-			hosts := []string{node.Domain()}
-			handler := withMCP(httpapi.New(httpapi.Config{Listener: httpapi.ListenerTailnet, Hosts: hosts, Peers: node}, services),
-				mcpapi.New(mcpapi.Config{Hosts: hosts, Secure: true}, mcpDeps(services)))
+			handler := &renamingHandler{current: node.Domain, build: func(name string) http.Handler {
+				hosts := []string{name}
+				// Fails closed while the node is logged in as someone other than the owner (API and /mcp alike).
+				return httpapi.GuardNodeOwner(services.Setup, withMCP(httpapi.New(httpapi.Config{Listener: httpapi.ListenerTailnet, Hosts: hosts, Peers: node, PlainHTTP: !tailnetHTTPS}, services),
+					mcpapi.New(mcpapi.Config{Hosts: hosts, Secure: tailnetHTTPS}, mcpDeps(services))))
+			}}
 			tailnetMutex.Lock()
-			defer tailnetMutex.Unlock()
 			if ctx.Err() != nil { // stopping already: don't start a server nobody will shut down
+				tailnetMutex.Unlock()
 				_ = listener.Close()
 				return
 			}
 			start("tailnet", newServer(handler), listener)
-			logger.Info("listening", "url", "https://"+node.Domain())
+			if redirect, err := node.RedirectListener(); err == nil {
+				start("tailnet-redirect", newServer(httpapi.NewRedirect(node.Domain)), redirect)
+			} else {
+				logger.Warn("tailnet: no http:// redirect", "error", err)
+			}
+			tailnetMutex.Unlock()
+			logger.Info("Hussla is running: open this address on a device with Tailscale turned on", "url", services.Setup.Address())
+			superviseTailnet(ctx, node, services.Auth, logger)
 		}()
 	}
 
-	var backups sync.WaitGroup
-	backups.Add(1)
+	var background sync.WaitGroup
+	background.Add(1)
 	go func() {
-		defer backups.Done()
+		defer background.Done()
+		if err := dispatcher.Run(ctx); err != nil {
+			logger.Error("outbox stopped", "error", err)
+		}
+	}()
+
+	background.Add(1)
+	go func() {
+		defer background.Done()
 		dailyBackups(ctx, storage, logger)
 	}()
 
@@ -178,10 +220,10 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 	}
 	tailnetMutex.Unlock()
 	serving.Wait()
-	backups.Wait() // a backup in progress finishes before storage closes
+	background.Wait() // a send or a backup in progress finishes before storage closes
 	tailnetMutex.Lock()
-	if tailnetNode != nil {
-		_ = tailnetNode.Close()
+	if node != nil {
+		_ = node.Close()
 	}
 	tailnetMutex.Unlock()
 	_ = os.Remove(filepath.Join(dataDir, localAddressFile))
@@ -206,6 +248,90 @@ func withMCP(api, mcp http.Handler) http.Handler {
 
 func newServer(handler http.Handler) *http.Server {
 	return &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
+}
+
+// tailnetNode is the server's tailnet node: tailnet.Node, or the end-to-end build's fake (tailnet_fake.go).
+type tailnetNode interface {
+	tailnetJoiner
+	auth.PeerIdentifier
+	auth.TailnetStatus
+	RedirectListener() (net.Listener, error)
+	Refresh(ctx context.Context) error
+	Logout(ctx context.Context) error
+	Domain() string
+	NodeOwner() auth.TailnetPeer
+	Close() error
+}
+
+// renamingHandler is the tailnet door, rebuilt when the node's name changes (a rename in the
+// admin console, or a login into another tailnet after "Start over"), so the Host and Origin checks
+// follow the new name instead of refusing it.
+type renamingHandler struct {
+	current func() string
+	build   func(name string) http.Handler
+
+	mutex   sync.Mutex
+	name    string
+	handler http.Handler
+}
+
+func (door *renamingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	name := door.current()
+	door.mutex.Lock()
+	if door.handler == nil || name != door.name {
+		door.name, door.handler = name, door.build(name)
+	}
+	handler := door.handler
+	door.mutex.Unlock()
+	handler.ServeHTTP(w, r)
+}
+
+// tailnetRefresher is what superviseTailnet needs from the node (a fake in tests).
+type tailnetRefresher interface {
+	Refresh(ctx context.Context) error
+	NodeOwner() auth.TailnetPeer
+}
+
+// superviseTailnet re-reads the joined node every config.TailnetRefresh until ctx ends: it picks
+// up a rename, a key expiry and a new login, and adopts the node's owner when the install has
+// none (after "Start over"). Each new problem is logged once.
+func superviseTailnet(ctx context.Context, node tailnetRefresher, authService *auth.Service, logger *slog.Logger) {
+	ticker := time.NewTicker(config.TailnetRefresh)
+	defer ticker.Stop()
+	lastOwner := node.NodeOwner().UserID
+	lastProblem := ""
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		if err := node.Refresh(ctx); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			if problem := err.Error(); problem != lastProblem {
+				lastProblem = problem
+				logger.Warn("tailnet", "error", err)
+			}
+			continue
+		}
+		lastProblem = ""
+		owner := node.NodeOwner()
+		changed := owner.UserID != lastOwner
+		lastOwner = owner.UserID
+		if owner.UserID == "" {
+			continue
+		}
+		enrolled, err := authService.Enrolled(ctx)
+		if err != nil || enrolled {
+			continue
+		}
+		// A pin that refuses this login is said once per new owner, not every refresh.
+		if _, refuses := authService.PinRefuses(owner); changed || !refuses {
+			adoptNodeOwner(ctx, authService, owner, logger)
+		}
+	}
 }
 
 // tailnetJoiner is what joinTailnet needs from the tailnet node (a fake in tests).
@@ -275,39 +401,63 @@ func adoptNodeOwner(ctx context.Context, authService *auth.Service, nodeOwner au
 	}
 }
 
-func buildServices(dataDir string, storage *sqlite.Store, logger *slog.Logger, ownerLogin string) (httpapi.Deps, error) {
+// authNode is the node as auth sees it: nil without Tailscale (never a typed nil inside the interface).
+func authNode(node tailnetNode) auth.NodeIdentity {
+	if node == nil {
+		return nil
+	}
+	return node
+}
+
+func buildServices(dataDir string, storage *sqlite.Store, logger *slog.Logger, ownerLogin string, node tailnetNode) (httpapi.Deps, *outbox.Dispatcher, error) {
 	blobs, err := filestore.NewBlobs(filepath.Join(dataDir, "files"))
 	if err != nil {
-		return httpapi.Deps{}, fmt.Errorf("files: %w", err)
+		return httpapi.Deps{}, nil, fmt.Errorf("files: %w", err)
 	}
 	resumes, err := filestore.NewResumes(filepath.Join(dataDir, "resumes"))
 	if err != nil {
-		return httpapi.Deps{}, fmt.Errorf("résumés: %w", err)
+		return httpapi.Deps{}, nil, fmt.Errorf("résumés: %w", err)
 	}
 	location, err := time.LoadLocation(config.MailTimeZone)
 	if err != nil {
-		return httpapi.Deps{}, fmt.Errorf("mail time zone: %w", err)
+		return httpapi.Deps{}, nil, fmt.Errorf("mail time zone: %w", err)
 	}
 	ui, err := fs.Sub(webApp, "web")
 	if err != nil {
-		return httpapi.Deps{}, fmt.Errorf("web app: %w", err)
+		return httpapi.Deps{}, nil, fmt.Errorf("web app: %w", err)
+	}
+	secrets, err := secretfile.Open(dataDir)
+	if err != nil {
+		return httpapi.Deps{}, nil, fmt.Errorf("secret store: %w", err)
+	}
+	mailSetup := mailsetup.NewService(mailsetup.Dependencies{Store: storage, Secrets: secrets, Factory: mailfactory.New, Logger: logger})
+	dispatcher := outbox.New(outbox.Dependencies{Store: storage, Senders: mailSetup, Rules: domain.DefaultPacingRules(location), Logger: logger})
+	authService := auth.New(auth.Options{
+		Store: storage, Ceremony: passkey.Ceremony{}, SignIn: signinfile.New(dataDir), OwnerLogin: ownerLogin, Node: authNode(node),
+		AnnounceSetupCode: func(code string) {
+			logger.Warn("Setup code (valid until used): " + code + " (enter it on the setup screen to claim this install and add your passkey; it stays the same across restarts)")
+		},
+		RemindSetupCode: func(issuedAt time.Time) {
+			logger.Warn("Setup code: unchanged; use the last \"Setup code (valid until used)\" line in this log, printed " + issuedAt.UTC().Format(time.RFC3339) + " (lost it? the owner can print a new one from the setup screen)")
+		},
+	})
+	setupOptions := setup.Options{Auth: authService, Store: storage}
+	if node != nil {
+		setupOptions.Tailnet = node
+	}
+	if !tailnetHTTPS {
+		setupOptions.Scheme = "http"
 	}
 	return httpapi.Deps{
-		Auth: auth.New(auth.Options{
-			Store: storage, Ceremony: passkey.Ceremony{}, SignIn: signinfile.New(dataDir), OwnerLogin: ownerLogin,
-			AnnounceSetupCode: func(code string) {
-				logger.Warn("Setup code (valid until used): " + code + " (enter it on the setup screen to claim this install and add your passkey; it stays the same across restarts)")
-			},
-			RemindSetupCode: func(issuedAt time.Time) {
-				logger.Warn("Setup code: unchanged; use the last \"Setup code (valid until used)\" line in this log, printed " + issuedAt.UTC().Format(time.RFC3339))
-			},
-		}),
+		Auth:        authService,
 		Tracker:     tracker.New(storage, nil),
-		Mail:        mailbox.New(mailbox.Options{Store: storage, Location: location}),
+		Mail:        mailbox.New(mailbox.Options{Store: storage, Location: location, Mailer: mailbox.SetupMailer{Setup: mailSetup}, Waker: dispatcher}),
 		Attachments: attachments.New(storage, blobs, resumes, config.UploadMaxBytes, nil),
+		Setup:       setup.New(setupOptions),
+		MailSetup:   mailSetup,
 		AgentsGuide: hussla.AgentsGuide,
 		UI:          ui,
-	}, nil
+	}, dispatcher, nil
 }
 
 // dailyBackups makes the daily backup now and whenever a day has passed, while the server runs.

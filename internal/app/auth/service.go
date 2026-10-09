@@ -50,6 +50,12 @@ type Options struct {
 	// login can claim with the setup code or be adopted as the node's owner; "" allows anyone
 	// eligible. It never replaces an owner already recorded.
 	OwnerLogin string
+	// FirstRunWindow is how long after the node's owner is first adopted the home-network page's
+	// "Make it mine" works on an install that never stored a passkey; zero means
+	// config.FirstRunWindow, negative turns it off.
+	FirstRunWindow time.Duration
+	// Node is the server's own tailnet node (nil without Tailscale).
+	Node NodeIdentity
 }
 
 // Service is the auth use-case. It is safe for concurrent use.
@@ -61,13 +67,21 @@ type Service struct {
 	announce func(code string)
 	remind   func(issuedAt time.Time)
 	pinned   string
+	// firstRunWindow is the first-run window's length (zero or less: off). When it starts is a
+	// settings value (settingFirstRunStarted), so a restart doesn't open it again.
+	firstRunWindow time.Duration
+	node           NodeIdentity
 
 	mu           sync.Mutex
-	setupHash    string // the live setup code's hash ("" when none), mirrored from settings
+	lastReissue  time.Time // the last "print a new setup code", for config.SetupCodeReissueGap
+	setupHashes  []string  // every live setup code's hash (none when setup is done), mirrored from settings
 	setupGuesses map[string]setupGuesses
-	challenges   map[string]challenge
-	stepUps      map[string]stepUp
-	usedSignIn   map[string]time.Time
+	// firstRunLinkHash is the hash of the one live "Make it mine" link ("" when none): minted by a
+	// POST from the home-network page, spent by the first claim with it, never stored.
+	firstRunLinkHash string
+	challenges       map[string]challenge
+	stepUps          map[string]stepUp
+	usedSignIn       map[string]time.Time
 }
 
 // New builds the Service.
@@ -84,11 +98,17 @@ func New(options Options) *Service {
 	if remind == nil {
 		remind = func(time.Time) {}
 	}
+	window := options.FirstRunWindow
+	if window == 0 {
+		window = config.FirstRunWindow
+	}
 	return &Service{
 		store: options.Store, ceremony: options.Ceremony, signIn: options.SignIn, now: now, announce: announce, remind: remind,
-		pinned:       strings.TrimSpace(options.OwnerLogin),
-		setupGuesses: map[string]setupGuesses{},
-		challenges:   map[string]challenge{}, stepUps: map[string]stepUp{}, usedSignIn: map[string]time.Time{},
+		pinned:         strings.TrimSpace(options.OwnerLogin),
+		firstRunWindow: window,
+		node:           options.Node,
+		setupGuesses:   map[string]setupGuesses{},
+		challenges:     map[string]challenge{}, stepUps: map[string]stepUp{}, usedSignIn: map[string]time.Time{},
 	}
 }
 

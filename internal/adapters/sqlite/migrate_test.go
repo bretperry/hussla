@@ -223,7 +223,12 @@ func TestRefusesADatabaseFromANewerBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := raw.Exec(`INSERT INTO schema_migrations (version, name, appliedAt, appVersion) VALUES (3, '0003_future', '2027-01-01T00:00:00.000Z', '9.9.9')`); err != nil {
+	// One past the newest migration this build has, whatever that is when the test runs.
+	var known int
+	if err := raw.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&known); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`INSERT INTO schema_migrations (version, name, appliedAt, appVersion) VALUES (?, 'future', '2027-01-01T00:00:00.000Z', '9.9.9')`, known+1); err != nil {
 		t.Fatal(err)
 	}
 	if err := raw.Close(); err != nil {
@@ -234,7 +239,7 @@ func TestRefusesADatabaseFromANewerBuild(t *testing.T) {
 	if !errors.As(err, &downgrade) {
 		t.Fatalf("want a DowngradeError, got %v", err)
 	}
-	if downgrade.DataVersion != 3 || downgrade.KnownVersion != 2 || downgrade.WrittenBy != "9.9.9" {
+	if downgrade.DataVersion != known+1 || downgrade.KnownVersion != known || downgrade.WrittenBy != "9.9.9" {
 		t.Errorf("downgrade details wrong: %+v", downgrade)
 	}
 	if !strings.Contains(err.Error(), "9.9.9") {

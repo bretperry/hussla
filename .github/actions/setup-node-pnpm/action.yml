@@ -1,6 +1,6 @@
 # Shared setup for every CI job: pnpm, Node, the pnpm store cache (hosted runners only), and a frozen install.
 # In the app: nothing at runtime; CI only.
-# Used by: the Checks and Build jobs in .github/workflows/ci.yml.
+# Used by: the Checks and Build jobs in .github/workflows/ci.yml; the Binaries job in .github/workflows/publish-image.yml.
 # Uses: pnpm/action-setup (version from package.json `packageManager`), actions/setup-node (.nvmrc), actions/cache.
 #
 # setup-node's own `cache: pnpm` saves a fresh copy from every ref that misses, so per-PR copies

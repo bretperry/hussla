@@ -1,7 +1,7 @@
 /*
-  The browser half of a passkey tap: turn the server's options into a WebAuthn assertion, as JSON.
-  In the app: every owner-only button (approve, delete, create a key, settings) waits on this before it calls the API.
-  Used by: src/shared/api.ts (the step-up flow).
+  The browser half of a passkey: a tap (an assertion) and a new passkey (an attestation), both as JSON.
+  In the app: every owner-only button (approve, delete, create a key, settings) waits on a tap; setup and "Add a passkey" make one.
+  Used by: src/shared/api.ts (the step-up flow and passkey registration).
 
   The server speaks WebAuthn's JSON form (base64url strings). Current browsers convert it themselves
   (parseRequestOptionsFromJSON / toJSON); the manual path below covers the ones that don't yet.
@@ -81,5 +81,74 @@ export const getPasskeyAssertion = async (options: Record<string, unknown>): Pro
       throw new PasskeyError("The passkey prompt was cancelled or timed out. Nothing was changed.");
     }
     throw new PasskeyError("The passkey tap didn't work. Nothing was changed.");
+  }
+};
+
+type JsonCreationOptions = {
+  challenge: string;
+  user: { id: string; name: string; displayName: string };
+  rp: PublicKeyCredentialRpEntity;
+  pubKeyCredParams: PublicKeyCredentialParameters[];
+  excludeCredentials?: Array<{ id: string; type: "public-key"; transports?: AuthenticatorTransport[] }>;
+  [key: string]: unknown;
+};
+
+const toCreationOptions = (json: JsonCreationOptions): PublicKeyCredentialCreationOptions => {
+  if (typeof PublicKeyCredential.parseCreationOptionsFromJSON === "function") {
+    return PublicKeyCredential.parseCreationOptionsFromJSON(json);
+  }
+  const { challenge, user, excludeCredentials, ...rest } = json;
+  return {
+    ...rest,
+    challenge: toBytes(challenge),
+    user: { ...user, id: toBytes(user.id) },
+    ...(excludeCredentials === undefined
+      ? {}
+      : { excludeCredentials: excludeCredentials.map((credential) => ({ ...credential, id: toBytes(credential.id) })) }),
+  };
+};
+
+const attestationToJson = (credential: PublicKeyCredential): Record<string, unknown> => {
+  if (typeof credential.toJSON === "function") return { ...credential.toJSON() };
+  const response = credential.response;
+  if (!(response instanceof AuthenticatorAttestationResponse)) throw new PasskeyError("The browser returned an unexpected answer.");
+  return {
+    id: credential.id,
+    rawId: fromBuffer(credential.rawId),
+    type: credential.type,
+    authenticatorAttachment: credential.authenticatorAttachment,
+    clientExtensionResults: credential.getClientExtensionResults(),
+    response: {
+      clientDataJSON: fromBuffer(response.clientDataJSON),
+      attestationObject: fromBuffer(response.attestationObject),
+      transports: typeof response.getTransports === "function" ? response.getTransports() : [],
+    },
+  };
+};
+
+// Whether this browser can make or use a passkey at all (an old browser, or a page that isn't https or localhost, can't).
+export const passkeysSupported = (): boolean =>
+  typeof window !== "undefined" && window.isSecureContext && typeof PublicKeyCredential !== "undefined" && typeof navigator.credentials !== "undefined";
+
+// Asks the person to make a new passkey (Face ID, Touch ID, a phone) and returns it for the server to store.
+export const createPasskey = async (options: Record<string, unknown>): Promise<Record<string, unknown>> => {
+  if (!passkeysSupported()) {
+    throw new PasskeyError("This browser can't make a passkey here. Open Hussla's https address in Safari, Chrome or Edge.");
+  }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- shape is fixed by the server contract
+  const publicKey = (options["publicKey"] ?? options) as JsonCreationOptions;
+  try {
+    const credential = await navigator.credentials.create({ publicKey: toCreationOptions(publicKey) });
+    if (!(credential instanceof PublicKeyCredential)) throw new PasskeyError("No passkey was made.");
+    return attestationToJson(credential);
+  } catch (error) {
+    if (error instanceof PasskeyError) throw error;
+    if (error instanceof DOMException && error.name === "NotAllowedError") {
+      throw new PasskeyError("The passkey prompt was cancelled or timed out. Nothing was saved; try again when you're ready.");
+    }
+    if (error instanceof DOMException && error.name === "InvalidStateError") {
+      throw new PasskeyError("This device already has a passkey for Hussla. Use another device, or carry on.");
+    }
+    throw new PasskeyError("The passkey couldn't be made. Nothing was saved; try again.");
   }
 };

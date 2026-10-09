@@ -100,12 +100,10 @@ func TestSetupCodeLimits(t *testing.T) {
 	if r.setupCode != code || r.announced != 1 {
 		t.Fatal("wrong guesses changed the code")
 	}
-	// Out of tries: even the right code is refused from this account until the lockout passes.
-	r.must(http.StatusForbidden, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": code}))
-	r.clock.Advance(config.SetupCodeLockout - time.Second)
-	r.must(http.StatusForbidden, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": code}))
-	r.clock.Advance(time.Second)
-	// Typed loosely: lower case, no dashes.
+	// Out of tries: more wrong guesses are refused, but the right code never is (an agent sharing
+	// the owner's tailnet identity must not be able to lock the owner out). Typed loosely: lower
+	// case, no dashes.
+	r.must(http.StatusForbidden, wrong)
 	claimed := r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": lowerNoDashes(code)})).json(t)
 	if claimed["next"] != "POST /api/passkeys/register/begin" {
 		t.Fatalf("claim: %v", claimed)
@@ -117,9 +115,9 @@ func TestSetupCodeLimits(t *testing.T) {
 	r.must(http.StatusConflict, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": code}))
 }
 
-// Another tailnet user's wrong guesses lock out only that user: the owner's code stays the same
-// and still works for the owner.
-func TestWrongGuessesLockOnlyTheGuesser(t *testing.T) {
+// Another tailnet user's wrong guesses don't touch the owner's code: it stays the same and still
+// works for the owner.
+func TestWrongGuessesLeaveTheOwnersCode(t *testing.T) {
 	r := newRig(t) // a tagged node: nobody adopted, so any untagged user may try the code
 	code := r.setupCode
 	guess := func(typed string) call {
@@ -128,7 +126,6 @@ func TestWrongGuessesLockOnlyTheGuesser(t *testing.T) {
 	for attempt := 1; attempt <= config.SetupCodeAttempts+3; attempt++ {
 		r.must(http.StatusForbidden, guess("0000-0000-0000"))
 	}
-	r.must(http.StatusForbidden, guess(code)) // locked out, right code or not
 	if r.setupCode != code || r.announced != 1 {
 		t.Fatal("someone else's wrong guesses replaced the owner's code")
 	}

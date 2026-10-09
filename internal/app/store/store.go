@@ -1,7 +1,7 @@
 // The storage port: one unit of work over every repository.
 // In the app: every use-case that writes does its read, its rule and its write inside one Atomically call.
 // Used by: the SQLite adapter and the in-memory fake (both implement Store); use-cases (Phases 3-4) take a Store.
-// Uses: the repository ports in the sibling packages (jobs, companies, events, answers, files, tokens, settings, emails).
+// Uses: the repository ports in the sibling packages (jobs, companies, events, answers, files, tokens, settings, emails, pitches).
 //
 // Why a unit of work and not a transaction per repository: "a write and whatever it implies" (a
 // job patch and its activity line, an email's approval and its event) must land together or not
@@ -19,6 +19,7 @@ import (
 	"github.com/bretperry/hussla/internal/app/events"
 	"github.com/bretperry/hussla/internal/app/files"
 	"github.com/bretperry/hussla/internal/app/jobs"
+	"github.com/bretperry/hussla/internal/app/pitches"
 	"github.com/bretperry/hussla/internal/app/settings"
 	"github.com/bretperry/hussla/internal/app/tokens"
 )
@@ -34,6 +35,7 @@ type Tx interface {
 	Tokens() tokens.Repository
 	Settings() settings.Repository
 	Emails() emails.Repository
+	Pitches() pitches.Repository
 }
 
 // Store runs units of work. Both methods return what the function returned, wrapped only when the

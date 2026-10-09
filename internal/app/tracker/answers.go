@@ -268,14 +268,11 @@ func (s *Service) ExportAll(ctx context.Context) (Export, error) {
 }
 
 // Import loads a backup or seed bundle (existing records win). Owner only: the HTTP layer checks.
-func (s *Service) Import(ctx context.Context, actor Actor, body []byte) (importseed.Report, error) {
+func (s *Service) Import(ctx context.Context, _ Actor, body []byte) (importseed.Report, error) {
+	// importseed logs the one activity line (once per file, pitches included), so nothing is logged here.
 	report, err := importseed.Import(ctx, s.store, bytes.NewReader(body), s.now())
 	if err != nil {
 		return importseed.Report{}, fmt.Errorf("import: %w", err)
-	}
-	detail := fmt.Sprintf("%d jobs, %d companies, %d answers, %d events", report.Jobs.Created, report.Companies.Created, report.Answers.Created, report.Events.Created)
-	if _, err := s.LogEvent(ctx, actor, "", "Imported a bundle", detail); err != nil {
-		return report, err
 	}
 	return report, nil
 }

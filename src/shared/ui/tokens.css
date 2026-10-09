@@ -60,6 +60,11 @@
   --text-quote--line-height: 44px;
   --text-quote-phone: 24px;
   --text-quote-phone--line-height: 32px;
+  /* A long pitch (over PITCH_LONG_CHARACTERS) drops to these so the longest the server allows still fits the box. */
+  --text-quote-long: 24px;
+  --text-quote-long--line-height: 32px;
+  --text-quote-long-phone: 18px;
+  --text-quote-long-phone--line-height: 24px;
   --text-prose: 18px;
   --text-prose--line-height: 28px;
   --text-stat: 32px;
@@ -83,9 +88,9 @@
   --container-page: 1280px;
   /* Touch target for buttons and links on a phone. */
   --spacing-touch: 44px;
-  /* The pitch box is sized to the longest pitch the config allows (3 lines on desktop, 5 on a phone) so rotation never reflows. */
-  --spacing-pitch: 132px;
-  --spacing-pitch-phone: 160px;
+  /* The pitch box is sized to the longest pitch the server allows (internal/config PitchMaxCharacters, at the long type size), so rotation never reflows. */
+  --spacing-pitch: 224px;
+  --spacing-pitch-phone: 360px;
   /* The masthead ears are 120px tall; the 168px nameplate line is trimmed so it sits between them. */
   --spacing-ear: 120px;
   --spacing-nameplate-trim-top: 7px;
@@ -94,6 +99,26 @@
   --spacing-tag-column: 72px;
   /* The lead story's fact box and the rail sit in the gutter's middle: half a gutter back. */
   --spacing-half-gutter: 12px;
+
+  /* The billboard's slow cross-fade between pitches; none under prefers-reduced-motion. PITCH_FADE_MS (src/config/ui.ts) matches the 900ms. */
+  --animate-pitch-in: pitch-in 900ms ease-in-out both;
+  --animate-pitch-out: pitch-out 900ms ease-in-out both;
+  @keyframes pitch-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes pitch-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
 }
 
 @utility kicker {
@@ -155,6 +180,7 @@
   @media (prefers-reduced-motion: reduce) {
     * {
       transition: none !important;
+      animation: none !important;
       scroll-behavior: auto !important;
     }
   }

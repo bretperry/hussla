@@ -14,10 +14,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/bretperry/hussla/internal/app/store"
+	"github.com/bretperry/hussla/internal/app/storeerr"
 	"github.com/bretperry/hussla/internal/config"
 	"github.com/bretperry/hussla/internal/domain"
 )
@@ -25,6 +27,9 @@ import (
 // PurposeRegisterPasskey is the step-up purpose that starts a passkey registration: the setup
 // code grants it once, and afterwards a tap with an existing passkey does.
 const PurposeRegisterPasskey = "POST /api/passkeys/register/begin"
+
+// PurposeRemovePasskeyPrefix starts the step-up purpose that removes one passkey (the id follows).
+const PurposeRemovePasskeyPrefix = "DELETE /api/passkeys/"
 
 // challengeKind says which ceremony a pending challenge belongs to.
 type challengeKind int
@@ -41,12 +46,16 @@ type challenge struct {
 	rpID    string
 	session []byte
 	expires time.Time
+	// firstRun: the registration began from the first-run link (or a FirstRun passkey's tap).
+	firstRun bool
 }
 
 type stepUp struct {
 	binding string
 	purpose string
 	expires time.Time
+	// firstRun: granted by the first-run link, or by a tap with a FirstRun passkey.
+	firstRun bool
 }
 
 func (s *Service) passkeys(ctx context.Context) ([]StoredPasskey, error) {
@@ -117,11 +126,16 @@ func (s *Service) takeChallenge(id string, kind challengeKind, caller Principal,
 	return pending, nil
 }
 
-// BeginRegistration starts adding a passkey. The caller has already spent a step-up token for
-// PurposeRegisterPasskey (from the setup code, or a tap with an existing passkey).
-func (s *Service) BeginRegistration(ctx context.Context, owner Principal, rp RelyingParty) (challengeID string, options []byte, err error) {
+// BeginRegistration starts adding a passkey. It spends a step-up token for PurposeRegisterPasskey
+// (from the setup code, the first-run link, or a tap with an existing passkey); the new passkey is
+// FirstRun when that token was.
+func (s *Service) BeginRegistration(ctx context.Context, owner Principal, rp RelyingParty, stepUpToken string) (challengeID string, options []byte, err error) {
 	if !owner.IsOwner() {
 		return "", nil, ErrNotOwner
+	}
+	granted, err := s.consumeStepUp(owner, PurposeRegisterPasskey, stepUpToken)
+	if err != nil {
+		return "", nil, err
 	}
 	user, err := s.passkeyUser(ctx)
 	if err != nil {
@@ -135,7 +149,7 @@ func (s *Service) BeginRegistration(ctx context.Context, owner Principal, rp Rel
 	if err != nil {
 		return "", nil, fmt.Errorf("begin passkey registration: %w", err)
 	}
-	id := s.remember(challenge{kind: challengeRegister, binding: owner.binding, rpID: rp.ID, session: session, expires: s.now().Add(config.PasskeyChallengeLifetime)})
+	id := s.remember(challenge{kind: challengeRegister, binding: owner.binding, rpID: rp.ID, session: session, expires: s.now().Add(config.PasskeyChallengeLifetime), firstRun: granted.firstRun})
 	return id, options, nil
 }
 
@@ -164,7 +178,7 @@ func (s *Service) FinishRegistration(ctx context.Context, owner Principal, rp Re
 		return StoredPasskey{}, fmt.Errorf("%w: %w", ErrPasskeyRejected, err)
 	}
 	now := domain.NormalizeTime(s.now())
-	stored := StoredPasskey{ID: id, RPID: rp.ID, Name: name, Credential: credential, CreatedAt: now}
+	stored := StoredPasskey{ID: id, RPID: rp.ID, Name: name, Credential: credential, CreatedAt: now, FirstRun: pending.firstRun}
 	err = s.store.Atomically(ctx, func(tx store.Tx) error {
 		var list []StoredPasskey
 		if _, err := readJSON(ctx, tx, settingPasskeys, &list); err != nil {
@@ -182,15 +196,57 @@ func (s *Service) FinishRegistration(ctx context.Context, owner Principal, rp Re
 		if err := writeJSON(ctx, tx, settingSetupCode, setupCodeRecord{}); err != nil {
 			return err
 		}
+		// The first passkey ever closes the first-run window and "Start over" for good.
+		var first time.Time
+		marked, err := readJSON(ctx, tx, settingFirstPasskey, &first)
+		if err != nil {
+			return err
+		}
+		if !marked {
+			if err := writeJSON(ctx, tx, settingFirstPasskey, now); err != nil {
+				return err
+			}
+		}
 		return appendEvent(ctx, tx, owner.Actor(), "Added a passkey", name+" ("+rp.ID+")", now)
 	})
 	if err != nil {
 		return StoredPasskey{}, fmt.Errorf("store passkey: %w", err)
 	}
 	s.mu.Lock()
-	s.setupHash = ""
+	s.setupHashes = nil
 	s.mu.Unlock()
 	return stored, nil
+}
+
+// RemovePasskey removes one passkey (a lost phone's, say). The owner has already tapped another
+// passkey for this exact request; the last passkey for an address can't go, so the owner never
+// locks themselves out of owner-only actions there.
+func (s *Service) RemovePasskey(ctx context.Context, owner Principal, id string) error {
+	if !owner.IsOwner() {
+		return ErrNotOwner
+	}
+	err := s.store.Atomically(ctx, func(tx store.Tx) error {
+		var list []StoredPasskey
+		if _, err := readJSON(ctx, tx, settingPasskeys, &list); err != nil {
+			return err
+		}
+		index := slices.IndexFunc(list, func(passkey StoredPasskey) bool { return passkey.ID == id })
+		if index < 0 {
+			return storeerr.ErrNotFound
+		}
+		removed := list[index]
+		if len(forRelyingParty(list, removed.RPID)) <= 1 {
+			return ErrLastPasskey
+		}
+		if err := writeJSON(ctx, tx, settingPasskeys, slices.Delete(list, index, index+1)); err != nil {
+			return err
+		}
+		return appendEvent(ctx, tx, owner.Actor(), "Removed a passkey", removed.Name+" ("+removed.RPID+")", s.now())
+	})
+	if err != nil {
+		return fmt.Errorf("remove passkey: %w", err)
+	}
+	return nil
 }
 
 // BeginStepUp asks for a passkey tap that will authorize one action (`purpose`).
@@ -242,6 +298,7 @@ func (s *Service) FinishStepUp(ctx context.Context, owner Principal, rp RelyingP
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("%w: %w", ErrPasskeyRejected, err)
 	}
+	firstRun := false
 	err = s.store.Atomically(ctx, func(tx store.Tx) error {
 		var list []StoredPasskey
 		if _, err := readJSON(ctx, tx, settingPasskeys, &list); err != nil {
@@ -249,6 +306,10 @@ func (s *Service) FinishStepUp(ctx context.Context, owner Principal, rp RelyingP
 		}
 		for index := range list {
 			if list[index].ID == id && list[index].RPID == rp.ID {
+				firstRun = list[index].FirstRun
+				if firstRun && removesCodePasskey(list, pending.purpose) {
+					return ErrFirstRunPasskeyLimited
+				}
 				list[index].Credential = credential // the sign count moved on
 				list[index].LastUsedAt = domain.NormalizeTime(s.now())
 				return writeJSON(ctx, tx, settingPasskeys, list)
@@ -259,11 +320,26 @@ func (s *Service) FinishStepUp(ctx context.Context, owner Principal, rp RelyingP
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("record passkey use: %w", err)
 	}
-	token := s.grantStepUp(owner, pending.purpose)
+	token := s.grantStepUp(owner, pending.purpose, firstRun)
 	return token, s.now().Add(config.StepUpLifetime), nil
 }
 
-func (s *Service) grantStepUp(owner Principal, purpose string) string {
+// removesCodePasskey reports whether purpose removes a passkey that isn't FirstRun (one added with
+// the setup code), which a FirstRun passkey's tap may not authorize.
+func removesCodePasskey(list []StoredPasskey, purpose string) bool {
+	target, found := strings.CutPrefix(purpose, PurposeRemovePasskeyPrefix)
+	if !found {
+		return false
+	}
+	for _, passkey := range list {
+		if passkey.ID == target && !passkey.FirstRun {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) grantStepUp(owner Principal, purpose string, firstRun bool) string {
 	token := randomSecret()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -273,7 +349,7 @@ func (s *Service) grantStepUp(owner Principal, purpose string) string {
 			delete(s.stepUps, key)
 		}
 	}
-	s.stepUps[hashSecret(token)] = stepUp{binding: owner.binding, purpose: purpose, expires: now.Add(config.StepUpLifetime)}
+	s.stepUps[hashSecret(token)] = stepUp{binding: owner.binding, purpose: purpose, expires: now.Add(config.StepUpLifetime), firstRun: firstRun}
 	return token
 }
 
@@ -281,11 +357,16 @@ func (s *Service) grantStepUp(owner Principal, purpose string) string {
 // purpose, unexpired and unused; anything else is ErrStepUpRequired. A token offered for the wrong
 // purpose is spent anyway, so a stolen token can't be tried against several actions.
 func (s *Service) ConsumeStepUp(owner Principal, purpose, token string) error {
+	_, err := s.consumeStepUp(owner, purpose, token)
+	return err
+}
+
+func (s *Service) consumeStepUp(owner Principal, purpose, token string) (stepUp, error) {
 	if !owner.IsOwner() {
-		return ErrNotOwner
+		return stepUp{}, ErrNotOwner
 	}
 	if token == "" {
-		return ErrStepUpRequired
+		return stepUp{}, ErrStepUpRequired
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -293,14 +374,14 @@ func (s *Service) ConsumeStepUp(owner Principal, purpose, token string) error {
 	granted, found := s.stepUps[key]
 	delete(s.stepUps, key)
 	if !found || granted.binding != owner.binding || granted.purpose != purpose || s.now().After(granted.expires) {
-		return ErrStepUpRequired
+		return stepUp{}, ErrStepUpRequired
 	}
-	return nil
+	return granted, nil
 }
 
 // IsAuthError reports whether err is one of this package's refusals (for the HTTP layer's mapping).
 func IsAuthError(err error) bool {
-	for _, known := range []error{ErrUnauthorized, ErrNotOwner, ErrNotEnrolled, ErrStepUpRequired, ErrNoPasskey, ErrPasskeyRejected, ErrChallengeUnknown, ErrWrongSetupCode, ErrSetupCodeLocked, ErrSetupClosed, ErrSignInRefused} {
+	for _, known := range []error{ErrUnauthorized, ErrNotOwner, ErrNotEnrolled, ErrStepUpRequired, ErrNoPasskey, ErrPasskeyRejected, ErrChallengeUnknown, ErrWrongSetupCode, ErrSetupCodeLocked, ErrSetupClosed, ErrSignInRefused, ErrFirstRunClosed, ErrStartOverClosed, ErrCodeTooSoon, ErrTooManyCodes, ErrLastPasskey, ErrWrongLink, ErrFirstRunPasskeyLimited} {
 		if errors.Is(err, known) {
 			return true
 		}
