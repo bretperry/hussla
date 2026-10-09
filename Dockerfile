@@ -15,7 +15,9 @@
 #     listener is off, since loopback inside a container reaches no browser.
 
 # ---- UI: the Vite build ------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS ui
+# Base images come through mirror.gcr.io (Google's Docker Hub mirror, same digests): anonymous
+# Docker Hub pulls from shared CI runners hit 429 rate limits and failed the image build.
+FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS ui
 WORKDIR /src
 # pnpm at the version package.json's packageManager names, through corepack (bundled with Node).
 RUN corepack enable
@@ -28,7 +30,7 @@ COPY src ./src
 RUN pnpm build
 
 # ---- Go: one static binary per target ----------------------------------------
-FROM --platform=$BUILDPLATFORM golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS server
+FROM --platform=$BUILDPLATFORM mirror.gcr.io/library/golang:1.27.1-alpine@sha256:8a5910f31396cd4d89662f56c68b3ae31d374308270a1c3bd96672ee5ed43414 AS server
 WORKDIR /src
 ARG TARGETOS
 ARG TARGETARCH

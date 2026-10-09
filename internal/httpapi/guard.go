@@ -47,6 +47,12 @@ func (server *api) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(w, r, err)
 		return
 	}
+	// The agent door has no owner and no anonymous routes: an agent key or nothing.
+	if server.config.Listener == ListenerFunnel && !caller.IsAgent() {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="hussla"`)
+		writeError(w, http.StatusUnauthorized, errorBody{Error: "send an agent key as Authorization: Bearer <key>; the owner makes one in Settings"})
+		return
+	}
 	// A browser always sends Origin on a write; a write with neither an Origin nor an agent key is
 	// a non-browser client riding on the owner's identity (or a very old browser): refused.
 	if !caller.IsAgent() && !isSafeMethod(r.Method) && origin == "" {
@@ -110,6 +116,9 @@ func (server *api) identify(r *http.Request) (auth.Principal, error) {
 			return auth.Principal{}, nil
 		}
 		return caller, err //nolint:wrapcheck // passes through
+	case ListenerFunnel:
+		// The internet: no WhoIs, no cookie. Only the bearer key above can name a caller.
+		return auth.Principal{}, nil
 	}
 	return auth.Principal{}, nil
 }
@@ -173,8 +182,17 @@ func (server *api) wrap(checks func(r *http.Request, caller auth.Principal) erro
 	})
 }
 
+// notOnFunnel is what the owner and anyone wrappers serve on the agent door, whatever funnelRoutes
+// says: the route doesn't exist there.
+var notOnFunnel = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	writeError(w, http.StatusNotFound, errorBody{Error: "no such endpoint; GET /api lists them"})
+})
+
 // anyone: the setup screen and sign-in; the route itself decides.
 func (server *api) anyone(route routeHandler) http.Handler {
+	if server.config.Listener == ListenerFunnel {
+		return notOnFunnel
+	}
 	return server.wrap(func(*http.Request, auth.Principal) error { return nil }, route)
 }
 
@@ -190,6 +208,9 @@ func (server *api) member(route routeHandler) http.Handler {
 
 // owner: the owner only, after enrollment (reads and the passkey ceremony itself).
 func (server *api) owner(route routeHandler) http.Handler {
+	if server.config.Listener == ListenerFunnel {
+		return notOnFunnel
+	}
 	return server.wrap(func(r *http.Request, caller auth.Principal) error {
 		if err := requireOwner(caller); err != nil {
 			return err
@@ -200,6 +221,9 @@ func (server *api) owner(route routeHandler) http.Handler {
 
 // ownerStepUp: the owner only, with a step-up token from a passkey tap for exactly this method and path.
 func (server *api) ownerStepUp(route routeHandler) http.Handler {
+	if server.config.Listener == ListenerFunnel {
+		return notOnFunnel
+	}
 	return server.wrap(func(r *http.Request, caller auth.Principal) error {
 		if err := requireOwner(caller); err != nil {
 			return err

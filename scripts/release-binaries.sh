@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Builds the plain Hussla binaries for every platform, with the web app inside, into ./release with checksums.
 # In the app: the downloads for a laptop without Docker (docs/install/laptop.md); the image is built by the Dockerfile instead.
-# Used by: .github/workflows/publish-image.yml (Binaries job, on a v* tag); a person can run it locally too.
+# Used by: .github/workflows/publish-image.yml (Binaries job, for each release); a person can run it locally too.
 # Uses: pnpm (the Vite build), go (cgo off, so one static binary per target), sha256sum or shasum.
 #
 #   bash scripts/release-binaries.sh v1.2.3
 #
 # The Go sources are copied to a scratch folder with the Vite build where the placeholder page
-# was, so the working tree is never touched. Signing and notarizing (macOS, Windows) are a
-# person's step on the draft release; unsigned macOS binaries need right-click → Open once.
+# was, so the working tree is never touched. The release is published unsigned (macOS, Windows);
+# signing and notarizing are not set up yet, so macOS binaries need right-click → Open once.
 
 # Stop on the first failure, an unset variable, or a failed pipe stage.
 set -euo pipefail

@@ -6,6 +6,12 @@
 // The two listeners differ only in where identity comes from: the tailnet listener asks WhoIs about
 // the connection and ignores cookies; the local listener reads its own session cookie and never
 // asks the tailnet. Neither reads an identity header. Agent bearer keys work on both.
+//
+// A third door, the agent door on Tailscale Funnel (opt-in, docs/decisions/0016-agent-api-on-funnel.md),
+// is the public internet: there is no owner on it at all. Its mux holds only the routes in
+// funnelRoutes (an allowlist, so a route added later stays off the internet until someone adds it
+// there), the owner wrappers serve 404 on it whatever the list says, and a caller without a valid
+// agent key is 401 before any route runs.
 
 package httpapi
 
@@ -30,7 +36,27 @@ const (
 	ListenerTailnet Listener = iota
 	// ListenerLocal: http://localhost on this computer; identity from the session cookie `hussla open` starts.
 	ListenerLocal
+	// ListenerFunnel: the agent door on Tailscale Funnel (the public internet); agent keys only.
+	ListenerFunnel
 )
+
+// funnelRoutes are the only routes the agent door serves: the member routes agents use. Owner,
+// setup, passkey and sign-in routes, /healthz, GET /api/export (the whole tracker in one call) and
+// the web app are left off on purpose. /mcp is mounted beside it by cmd/hussla (agent keys only).
+var funnelRoutes = map[string]bool{
+	"GET /api": true, "GET /api/docs": true, "GET /api/me": true, "GET /api/stats": true,
+	"GET /api/jobs": true, "POST /api/jobs": true, "GET /api/jobs/{jobId}": true, "PATCH /api/jobs/{jobId}": true,
+	"PUT /api/jobs/{jobId}": true, "POST /api/jobs/{jobId}/events": true, "POST /api/jobs/{jobId}/contacts": true,
+	"POST /api/jobs/{jobId}/files": true, "POST /api/jobs/{jobId}/emails": true, "GET /api/files/{fileId}": true,
+	"GET /api/companies": true, "GET /api/companies/{slug}": true, "PATCH /api/companies/{slug}": true,
+	"POST /api/companies/{slug}/news": true, "POST /api/companies/{slug}/reviews": true, "POST /api/companies/{slug}/emails": true,
+	"GET /api/events": true, "POST /api/events": true,
+	"GET /api/answers": true, "POST /api/answers": true, "PATCH /api/answers/{answerId}": true,
+	"GET /api/pitches": true, "POST /api/pitches/{slot}/versions": true,
+	"GET /api/config": true, "GET /api/resumes": true, "GET /resumes/{name}": true,
+	"GET /api/mail": true, "GET /api/emails": true, "PATCH /api/emails/{emailId}": true, "POST /api/emails/{emailId}/cancel": true,
+	"/api/": true, // the JSON 404
+}
 
 // SessionCookie is the local listener's session cookie (HttpOnly, SameSite=Strict).
 const SessionCookie = "hussla_session"
@@ -90,8 +116,12 @@ func New(config Config, deps Deps) http.Handler {
 	return server
 }
 
-// handle registers a route and, when it is an API route, lists it for GET /api.
+// handle registers a route and, when it is an API route, lists it for GET /api. On the agent door
+// only funnelRoutes are registered; anything else is the mux's 404.
 func (server *api) handle(pattern string, handler http.Handler) {
+	if server.config.Listener == ListenerFunnel && !funnelRoutes[pattern] {
+		return
+	}
 	server.mux.Handle(pattern, handler)
 	if method, path, found := strings.Cut(pattern, " "); found && strings.HasPrefix(path, "/api") {
 		server.endpoints = append(server.endpoints, method+" "+path)

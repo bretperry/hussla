@@ -197,6 +197,11 @@ func (node *Node) RedirectListener() (net.Listener, error) {
 	return nil, errors.New("the fake tailnet has no port 80")
 }
 
+// FunnelListener: the fake has no Funnel (the agent door's tests build its handler directly).
+func (node *Node) FunnelListener(string) (net.Listener, error) {
+	return nil, errors.New("the fake tailnet has no Funnel")
+}
+
 // Refresh has nothing to ask: State reads the live state.
 func (node *Node) Refresh(context.Context) error { return nil }
 

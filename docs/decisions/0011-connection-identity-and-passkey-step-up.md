@@ -22,7 +22,7 @@
 
 ## Consequences
 
-- No route trusts a proxy's identity headers, so Tailscale Serve or a reverse proxy in front of Hussla gives no owner identity (by design; Funnel is not supported).
+- No route trusts a proxy's identity headers, so Tailscale Serve or a reverse proxy in front of Hussla gives no owner identity (by design; Funnel never serves the owner: since 0016 it can serve the agent-key API only, opt-in).
 - The UI (Phase 5) runs a passkey prompt before each owner-only action and handles 403 `passkey-required` and `setup-required`.
 - A laptop owner who uses both doors registers two passkeys. Passkey delete, rename, and recovery after losing every passkey for an address are deferred (`docs/deferred.md`); until then, register a second device.
 - `internal/httpapi/auth_matrix_test.go` holds a test per refusal, each proved by removing its check; a change here starts there.
