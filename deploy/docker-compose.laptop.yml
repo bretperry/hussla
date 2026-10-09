@@ -1,0 +1,22 @@
+# Hussla on a laptop with Docker Desktop: as docker-compose.yml, but the home-network page answers this computer only.
+# In the app: docs/install/laptop.md's Docker path (`docker compose -f deploy/docker-compose.laptop.yml up -d`).
+# Used by: docs/install/laptop.md.
+# Uses: ghcr.io/bretperry/hussla.
+#
+# A laptop moves between networks (a café's Wi-Fi), so the page is bound to 127.0.0.1: open it at
+# http://localhost:8484 on this computer. Everything else goes over Tailscale as on a NAS.
+
+services:
+  hussla:
+    image: ghcr.io/bretperry/hussla:latest
+    container_name: hussla
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8484:8484"
+    volumes:
+      - hussla-data:/data
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+
+volumes:
+  hussla-data:

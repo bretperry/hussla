@@ -1,7 +1,7 @@
-// The hussla binary: `hussla` (or `hussla serve`) runs the server; `hussla open` signs this computer's browser in.
-// In the app: the one process on the NAS or laptop; the Docker image's entrypoint (Phase 6).
+// The hussla binary: `hussla` (or `hussla serve`) runs the server; `hussla open` signs this computer's browser in; `hussla health` is the container healthcheck; `hussla import <file>` loads the old tracker's export.
+// In the app: the one process on the NAS or laptop; the Docker image's entrypoint and healthcheck.
 // Used by: people and the Docker image; tests build and run it (main_test.go).
-// Uses: serve.go (the composition root), open.go.
+// Uses: serve.go (the composition root), open.go, health.go, import.go.
 //
 // Settings come from the environment, so the Docker screen on a NAS is the whole configuration:
 //   DATA_DIR            where the database, backups, files and the tailnet state live (default ./data)
@@ -9,6 +9,7 @@
 //   HUSSLA_HOSTNAME     the node's tailnet name (default hussla → https://hussla.<tailnet>.ts.net)
 //   HUSSLA_TAILNET      "off" to run without Tailscale (laptop, local listener only)
 //   HUSSLA_LOCAL_PORT   the local listener's port on 127.0.0.1 (default 8484; "off" for none; 0 picks one)
+//   HUSSLA_HOME_PORT    the home-network setup page's port on every interface (default off; the Docker image sets 8484)
 //   HUSSLA_OWNER_LOGIN  your tailnet login (you@example.com); only it can claim the install
 
 package main
@@ -51,14 +52,35 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 			return 1
 		}
 		return 0
+	case "health":
+		if err := checkHealth(settingsFrom(getenv)); err != nil {
+			_, _ = fmt.Fprintln(stderr, "hussla health:", err)
+			return 1
+		}
+		return 0
 	case "open":
 		if err := openBrowser(settingsFrom(getenv), args[1:], stdout); err != nil {
 			_, _ = fmt.Fprintln(stderr, "hussla open:", err)
 			return 1
 		}
 		return 0
+	case "import":
+		err := importFile(context.Background(), settingsFrom(getenv), args[1:], stdout)
+		if errors.Is(err, datadir.ErrLocked) {
+			_, _ = fmt.Fprintln(stderr, "hussla import: Hussla is running and holds the data folder. Import from the app instead (Settings → Import from the old tracker), or stop Hussla and run this again.")
+			return exitLocked
+		}
+		if errors.Is(err, errImportUsage) {
+			_, _ = fmt.Fprintln(stderr, err)
+			return 2
+		}
+		if err != nil {
+			_, _ = fmt.Fprintln(stderr, "hussla import:", err)
+			return 1
+		}
+		return 0
 	default:
-		_, _ = fmt.Fprintf(stderr, "usage: hussla [serve|open [--print]]\n")
+		_, _ = fmt.Fprintf(stderr, "usage: hussla [serve|open [--print]|health|import <file>]\n")
 		return 2
 	}
 }

@@ -7,6 +7,7 @@ require (
 	golang.org/x/sys v0.48.0
 	modernc.org/sqlite v1.59.0
 	pgregory.net/rapid v1.2.0
+	rsc.io/qr v0.2.0
 	tailscale.com v1.104.1
 )
 

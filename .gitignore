@@ -37,3 +37,5 @@ xcuserdata/
 build-cpp/
 # Personal agent overrides: each person's own models and budget, never committed (docs/guide/overrides.md).
 /agent-overrides.local.json
+# scripts/release-binaries.sh output; the draft GitHub release holds the copies that matter.
+/release/

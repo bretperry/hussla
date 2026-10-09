@@ -26,7 +26,6 @@ import (
 
 	"github.com/bretperry/hussla/internal/app/store"
 	"github.com/bretperry/hussla/internal/app/storeerr"
-	"github.com/bretperry/hussla/internal/config"
 	"github.com/bretperry/hussla/internal/domain"
 )
 
@@ -36,6 +35,9 @@ const (
 	settingPasskeys  = "auth.passkeys"
 	settingSessions  = "auth.sessions"
 	settingSetupCode = "auth.setupCode"
+	// settingFirstPasskey records when the first passkey was ever stored. Its presence closes the
+	// first-run window and "Start over" for good, even if passkeys are later removed.
+	settingFirstPasskey = "auth.firstPasskeyAt"
 )
 
 // ownerRecord is the claimed owner. TailnetUserID is empty for an install claimed from the local listener only.
@@ -45,6 +47,9 @@ type ownerRecord struct {
 	Name          string    `json:"name,omitempty"`
 	Handle        []byte    `json:"handle"` // the WebAuthn user handle, random
 	ClaimedAt     time.Time `json:"claimedAt"`
+	// Released marks an owner given up with "Start over" before any passkey existed: it reads as
+	// no owner at all, so the next node owner is adopted. Kept, not deleted, for the history.
+	Released bool `json:"released,omitempty"`
 }
 
 // displayName is how the owner shows in the log: their name, else their login, else "owner".
@@ -84,12 +89,22 @@ func writeJSON(ctx context.Context, tx store.Tx, key string, value any) error {
 	return nil
 }
 
+// readOwnerTx reads the owner record inside a unit of work; a released record counts as none.
+func readOwnerTx(ctx context.Context, tx store.Tx) (ownerRecord, bool, error) {
+	var record ownerRecord
+	found, err := readJSON(ctx, tx, settingOwner, &record)
+	if err != nil || !found || record.Released {
+		return ownerRecord{}, false, err
+	}
+	return record, true, nil
+}
+
 func (s *Service) readOwner(ctx context.Context) (ownerRecord, bool, error) {
 	var record ownerRecord
 	var found bool
 	err := s.store.View(ctx, func(tx store.Tx) error {
 		var err error
-		found, err = readJSON(ctx, tx, settingOwner, &record)
+		record, found, err = readOwnerTx(ctx, tx)
 		return err
 	})
 	if err != nil {
@@ -112,13 +127,12 @@ func (s *Service) AdoptNodeOwner(ctx context.Context, nodeOwner TailnetPeer) (ad
 		return false, nil
 	}
 	err = s.store.Atomically(ctx, func(tx store.Tx) error {
-		var record ownerRecord
-		found, err := readJSON(ctx, tx, settingOwner, &record)
+		_, found, err := readOwnerTx(ctx, tx)
 		if err != nil || found {
 			return err
 		}
 		adopted = true
-		record = ownerRecord{TailnetUserID: nodeOwner.UserID, Login: nodeOwner.Login, Name: nodeOwner.Name, Handle: randomHandle(), ClaimedAt: domain.NormalizeTime(s.now())}
+		record := ownerRecord{TailnetUserID: nodeOwner.UserID, Login: nodeOwner.Login, Name: nodeOwner.Name, Handle: randomHandle(), ClaimedAt: domain.NormalizeTime(s.now())}
 		if err := writeJSON(ctx, tx, settingOwner, record); err != nil {
 			return err
 		}
@@ -200,6 +214,13 @@ type SetupStatus struct {
 	Enrolled bool
 	Passkeys int  // registered for this relying party
 	CodeLive bool // a setup code is waiting in the log
+	// OwnerLogin names the recorded owner's tailnet login ("" with no tailnet owner yet), for the
+	// setup pages' "Owner: X" and the refusal page's "this Hussla belongs to X".
+	OwnerLogin string
+	// CanStartOver: no passkey was ever stored, so the home-network page can still release the owner.
+	CanStartOver bool
+	// FirstRunOpen: the first-run window is open (the home-network page's link works).
+	FirstRunOpen bool
 }
 
 // SetupNeeded reports whether this install still needs the setup code (no owner, or no passkey at all).
@@ -273,7 +294,17 @@ func (s *Service) Status(ctx context.Context, rp RelyingParty) (SetupStatus, err
 	s.mu.Lock()
 	live := s.setupHash != ""
 	s.mu.Unlock()
-	return SetupStatus{Enrolled: enrolled, Passkeys: count, CodeLive: live}, nil
+	status := SetupStatus{Enrolled: enrolled, Passkeys: count, CodeLive: live}
+	if status.FirstRunOpen, err = s.firstRunOpen(ctx); err != nil {
+		return SetupStatus{}, err
+	}
+	if status.CanStartOver, err = s.CanStartOver(ctx); err != nil {
+		return SetupStatus{}, err
+	}
+	if status.OwnerLogin, err = s.OwnerLogin(ctx); err != nil {
+		return SetupStatus{}, err
+	}
+	return status, nil
 }
 
 // Claim checks the setup code. Before enrollment a tailnet peer on an untagged device becomes the
@@ -302,8 +333,7 @@ func (s *Service) Claim(ctx context.Context, caller Principal, typed string) (Pr
 	if caller.role == RolePeer {
 		claimed := false
 		err := s.store.Atomically(ctx, func(tx store.Tx) error {
-			var record ownerRecord
-			found, err := readJSON(ctx, tx, settingOwner, &record)
+			record, found, err := readOwnerTx(ctx, tx)
 			// An owner recorded from the local listener has no tailnet user yet; the code binds one.
 			if err != nil || (found && record.TailnetUserID != "") {
 				return err
@@ -352,25 +382,12 @@ func setupGuesser(caller Principal) string {
 // config.SetupCodeLockout; the code itself never changes.
 func (s *Service) checkSetupCode(guesser, typed string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.setupHash == "" {
+	live := s.setupHash
+	s.mu.Unlock()
+	if live == "" {
 		return ErrSetupClosed
 	}
-	now := s.now()
-	guesses := s.setupGuesses[guesser]
-	if now.Before(guesses.lockedUntil) {
-		return ErrSetupCodeLocked
-	}
-	if sameSecret(hashSecret(normalizeSetupCode(typed)), s.setupHash) {
-		delete(s.setupGuesses, guesser)
-		return nil
-	}
-	guesses.wrong++
-	if guesses.wrong >= config.SetupCodeAttempts {
-		guesses = setupGuesses{lockedUntil: now.Add(config.SetupCodeLockout)}
-	}
-	s.setupGuesses[guesser] = guesses
-	return ErrWrongSetupCode
+	return s.checkGuess(guesser, ErrWrongSetupCode, func() bool { return sameSecret(hashSecret(normalizeSetupCode(typed)), live) })
 }
 
 // ensureLocalOwner records an owner for an install first reached through the local listener: a
@@ -379,7 +396,9 @@ func (s *Service) checkSetupCode(guesser, typed string) error {
 func (s *Service) ensureLocalOwner(ctx context.Context) (ownerRecord, error) {
 	var record ownerRecord
 	err := s.store.Atomically(ctx, func(tx store.Tx) error {
-		found, err := readJSON(ctx, tx, settingOwner, &record)
+		var found bool
+		var err error
+		record, found, err = readOwnerTx(ctx, tx)
 		if err != nil || found {
 			return err
 		}

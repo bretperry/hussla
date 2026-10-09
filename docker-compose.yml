@@ -1,0 +1,25 @@
+# Hussla on a NAS or any always-on machine: the published image, one named volume, the home-network page on 8484.
+# In the app: what docs/install/nas.md pastes into Synology Container Manager (Project → Create) or runs with `docker compose up -d`.
+# Used by: docs/install/nas.md; docs/install/laptop.md and docs/install/cloud.md use the files in deploy/.
+# Uses: ghcr.io/bretperry/hussla (built by .github/workflows/publish-image.yml).
+#
+# Nothing here needs editing: no placeholder, no path, no user id. The named volume belongs to the
+# image's own user, and Tailscale signs in from the page on port 8484 (no auth key needed).
+# TS_AUTHKEY is optional, for installs with no browser handy: leave it unset otherwise.
+
+services:
+  hussla:
+    image: ghcr.io/bretperry/hussla:latest
+    container_name: hussla
+    restart: unless-stopped
+    ports:
+      # The home-network page: setup, the Tailscale sign-in link, and your Hussla address.
+      - "8484:8484"
+    volumes:
+      # Everything Hussla keeps: the database, backups, files, the encrypted secrets and its Tailscale identity.
+      - hussla-data:/data
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+
+volumes:
+  hussla-data:

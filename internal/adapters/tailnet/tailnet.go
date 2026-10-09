@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"tailscale.com/client/local"
 	"tailscale.com/ipn"
@@ -60,6 +61,8 @@ type Node struct {
 	owner   auth.TailnetPeer
 	state   auth.TailnetState
 	lastURL string // the login link last logged
+	// listening is true once Listener opened the HTTPS listener; Refresh reports Running only then.
+	listening bool
 }
 
 var _ auth.TailnetStatus = (*Node)(nil)
@@ -172,7 +175,9 @@ func (node *Node) observe(notify ipn.Notify) (running bool) {
 		if node.state.Phase != auth.TailnetNeedsLogin {
 			node.state = auth.TailnetState{Phase: auth.TailnetNeedsLogin}
 		}
-	case ipn.NoState, ipn.InUseOtherUser, ipn.NeedsMachineAuth, ipn.Stopped, ipn.Starting:
+	case ipn.NeedsMachineAuth:
+		node.state = auth.TailnetState{Phase: auth.TailnetNeedsApproval}
+	case ipn.NoState, ipn.InUseOtherUser, ipn.Stopped, ipn.Starting:
 		node.state = auth.TailnetState{Phase: auth.TailnetStarting}
 	}
 	return false
@@ -186,19 +191,116 @@ func (node *Node) running(status *ipnstate.Status) error {
 	if len(status.CertDomains) > 0 && (status.CurrentTailnet == nil || status.CurrentTailnet.MagicDNSEnabled) {
 		node.domain = status.CertDomains[0]
 	}
+	var keyExpiry time.Time
 	if self := status.Self; self != nil {
 		tagged := self.Tags != nil && self.Tags.Len() > 0
 		node.owner = auth.TailnetPeer{UserID: strconv.FormatInt(int64(self.UserID), 10), Tagged: tagged}
 		if profile, found := status.User[self.UserID]; found && !tagged {
 			node.owner.Login, node.owner.Name = profile.LoginName, profile.DisplayName
 		}
+		if self.KeyExpiry != nil {
+			keyExpiry = *self.KeyExpiry
+		}
 	}
 	if node.domain == "" {
-		node.state = auth.TailnetState{Phase: auth.TailnetNeedsHTTPS}
+		node.state = auth.TailnetState{Phase: auth.TailnetNeedsHTTPS, KeyExpiry: keyExpiry}
 		return ErrHTTPSOff
 	}
-	node.state = auth.TailnetState{Phase: auth.TailnetStarting, Domain: node.domain}
+	phase := auth.TailnetStarting
+	if node.listening {
+		phase = auth.TailnetRunning
+	}
+	node.state = auth.TailnetState{Phase: phase, Domain: node.domain, KeyExpiry: keyExpiry}
 	return nil
+}
+
+// Refresh re-reads a joined node's status (call it every config.TailnetRefresh): a rename moves
+// Domain, a new login moves the owner and key expiry, and a node that needs a login again (its key
+// expired, or Logout) asks tsnet for a new login link, so the home-network page can offer Connect
+// again. It never restarts the node.
+func (node *Node) Refresh(ctx context.Context) error {
+	node.mutex.Lock()
+	client := node.client
+	node.mutex.Unlock()
+	if client == nil {
+		return nil
+	}
+	status, err := client.Status(ctx)
+	if err != nil {
+		return fmt.Errorf("tailnet status: %w", err)
+	}
+	return node.refreshed(ctx, client, status)
+}
+
+// loginStarter is the one call refreshed makes back into tsnet (a fake in tests).
+type loginStarter interface {
+	StartLoginInteractive(ctx context.Context) error
+}
+
+func (node *Node) refreshed(ctx context.Context, client loginStarter, status *ipnstate.Status) error {
+	switch status.BackendState {
+	case ipn.Running.String():
+		if err := node.running(status); err != nil && !errors.Is(err, ErrHTTPSOff) {
+			return err
+		}
+		return nil
+	case ipn.NeedsLogin.String():
+		if status.AuthURL == "" {
+			if err := client.StartLoginInteractive(ctx); err != nil {
+				return fmt.Errorf("ask for a Tailscale login link: %w", err)
+			}
+			return nil
+		}
+		url := status.AuthURL
+		node.observe(ipn.Notify{BrowseToURL: &url})
+	case ipn.NeedsMachineAuth.String():
+		// A tailnet with device approval on: the page says to approve it; the next refresh sees Running.
+		approval := ipn.NeedsMachineAuth
+		node.observe(ipn.Notify{State: &approval})
+	}
+	return nil
+}
+
+// Logout signs the node out of Tailscale and asks for a new login link at once, for "Start over".
+// The node stays up (its listeners too); whoever logs in next owns it, and Refresh picks that up.
+func (node *Node) Logout(ctx context.Context) error {
+	node.mutex.Lock()
+	client := node.client
+	node.mutex.Unlock()
+	if client == nil {
+		return errors.New("the tailnet node isn't running")
+	}
+	if err := client.Logout(ctx); err != nil {
+		return fmt.Errorf("log out of Tailscale: %w", err)
+	}
+	// Logout also turns the node off (WantRunning false); turn it back on so the next login runs it.
+	if _, err := client.EditPrefs(ctx, &ipn.MaskedPrefs{WantRunningSet: true, Prefs: ipn.Prefs{WantRunning: true}}); err != nil {
+		return fmt.Errorf("turn the tailnet node back on: %w", err)
+	}
+	node.mutex.Lock()
+	node.owner = auth.TailnetPeer{}
+	node.state = auth.TailnetState{Phase: auth.TailnetNeedsLogin}
+	node.mutex.Unlock()
+	if err := client.StartLoginInteractive(ctx); err != nil {
+		return fmt.Errorf("ask for a Tailscale login link: %w", err)
+	}
+	return nil
+}
+
+// RedirectListener is plain HTTP on :80 on the tailnet, for the redirect from http:// and the
+// short name to the full https address. Call it after Up succeeds.
+func (node *Node) RedirectListener() (net.Listener, error) {
+	node.mutex.Lock()
+	server := node.server
+	node.mutex.Unlock()
+	if server == nil {
+		return nil, errors.New("the tailnet node isn't running")
+	}
+	listener, err := server.Listen("tcp", ":80")
+	if err != nil {
+		return nil, fmt.Errorf("listen on the tailnet's port 80: %w", err)
+	}
+	return listener, nil
 }
 
 // State is the node's progress right now (auth.TailnetStatus).
@@ -235,7 +337,8 @@ func (node *Node) Listener() (net.Listener, error) {
 		return nil, fmt.Errorf("listen on the tailnet: %w", err)
 	}
 	node.mutex.Lock()
-	node.state = auth.TailnetState{Phase: auth.TailnetRunning, Domain: domain}
+	node.listening = true
+	node.state = auth.TailnetState{Phase: auth.TailnetRunning, Domain: domain, KeyExpiry: node.state.KeyExpiry}
 	node.mutex.Unlock()
 	return listener, nil
 }

@@ -27,16 +27,37 @@ func (server *api) setupStatus(w http.ResponseWriter, r *http.Request, caller au
 	if server.config.Listener == ListenerLocal {
 		listener = "local"
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	body := map[string]any{
 		"enrolled": status.Enrolled, "passkeys": status.Passkeys, "codeInLog": status.CodeLive,
 		"listener": listener, "isOwner": caller.IsOwner(),
-	})
+		"ownerLogin": "", "seenLogin": caller.Peer().Login, "canStartOver": status.CanStartOver, "firstRunOpen": status.FirstRunOpen,
+		"address": "",
+	}
+	// Who owns it is for someone the tailnet (or the owner's session) vouches for, not for an anonymous caller or an agent.
+	if caller.Role() == auth.RolePeer || caller.IsOwner() {
+		body["ownerLogin"] = status.OwnerLogin
+	}
+	if server.deps.Setup != nil {
+		body["address"] = server.deps.Setup.Address()
+	}
+	if caller.IsOwner() && server.deps.Setup != nil {
+		wizard, err := server.deps.Setup.Wizard(r.Context())
+		if err != nil {
+			return err //nolint:wrapcheck // mapped by fail
+		}
+		body["wizard"] = map[string]any{"steps": wizard.Steps, "finished": wizard.Finished}
+		if expiry := server.deps.Setup.KeyExpiry(); !expiry.At.IsZero() {
+			body["keyExpiry"] = map[string]any{"at": moment(expiry.At), "daysLeft": expiry.DaysLeft, "warn": expiry.Warn, "expired": expiry.Expired}
+		}
+	}
+	writeJSON(w, http.StatusOK, body)
 	return nil
 }
 
 func (server *api) setupClaim(w http.ResponseWriter, r *http.Request, caller auth.Principal) error {
 	var input struct {
 		Code string `json:"code"`
+		Link string `json:"link"`
 	}
 	if err := decodeInto(r, &input); err != nil {
 		return err
@@ -48,7 +69,13 @@ func (server *api) setupClaim(w http.ResponseWriter, r *http.Request, caller aut
 		return auth.ErrNotOwner
 	case auth.RolePeer, auth.RoleOwner:
 	}
-	_, token, err := server.deps.Auth.Claim(r.Context(), caller, input.Code)
+	var token string
+	var err error
+	if input.Link != "" {
+		_, token, err = server.deps.Auth.ClaimWithLink(r.Context(), caller, input.Link)
+	} else {
+		_, token, err = server.deps.Auth.Claim(r.Context(), caller, input.Code)
+	}
 	if err != nil {
 		return err //nolint:wrapcheck // mapped by fail
 	}

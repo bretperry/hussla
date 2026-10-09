@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bretperry/hussla/internal/adapters/sqlite"
+	"github.com/bretperry/hussla/internal/app/emails"
 	"github.com/bretperry/hussla/internal/app/events"
 	"github.com/bretperry/hussla/internal/app/importseed"
 	"github.com/bretperry/hussla/internal/app/jobs"
@@ -36,6 +37,7 @@ type snapshot struct {
 	Companies []domain.Company
 	Answers   []domain.Answer
 	Events    []domain.Event
+	Emails    []domain.Email
 	Config    map[string]string
 }
 
@@ -53,6 +55,9 @@ func takeSnapshot(t *testing.T, s store.Store) snapshot {
 			return err
 		}
 		if snap.Events, err = tx.Events().List(t.Context(), events.Filter{Limit: 100000}); err != nil {
+			return err
+		}
+		if snap.Emails, err = tx.Emails().List(t.Context(), emails.Filter{}); err != nil {
 			return err
 		}
 		snap.Config, err = tx.Settings().All(t.Context())
