@@ -19,6 +19,10 @@ Internal record of how Hussla was built, newest first. Every entry says **what**
 
 - **Gazette React UI.** Pages: jobs front page, job, companies, compare, company, outbox, answers, activity, settings. Tokens in `src/shared/ui/tokens.css`, knobs in `src/config/ui.ts`, one sanitizing Markdown renderer for untrusted text, passkey step-up for owner-only actions, small History API router, `useResource` fetch hook (no client store). Evidence: `pnpm ui:evidence` (screenshots at 1280 and 390, grid and column-end DOM check) writes `docs/screenshots/phase-5/`. *Why:* Phase 5 of `docs/plans/hussla-v1.md`.
 
+### Phase 3b agent setup
+
+- **Settings → "Add an agent".** Name it, create its key (passkey tap, `POST /api/tokens`), then copy a ready snippet for Claude Code, Cursor/JSON clients, Claude Desktop via `mcp-remote` (unverified) or a plain-API prompt, filled with `window.location.origin` and the one-time key. The key lives only in component state; key creation moved out of the "Agent keys" list. Snippets in `src/features/settings/agent-snippets.ts`. *Why:* last part of Phase 3b of `docs/plans/hussla-v1.md`.
+
 ### Hussla setup
 
 - **Hussla from whippletree: Go server, React UI.** Packs kept: go, typescript, react, infra; the template's note-sync demo removed in both languages (skipped in `harness.project.json` so `harness:pull` keeps it out). Module `github.com/bretperry/hussla`; one owner per install (`docs/decisions/0007-single-owner.md`); Go server (`docs/decisions/0008-go-server.md`); build plan `docs/plans/hussla-v1.md`. *Why:* Bret asked for whippletree and chose Go for a lean NAS install.
