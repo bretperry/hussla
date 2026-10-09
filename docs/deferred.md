@@ -25,6 +25,16 @@ reason, then deleted).
 
 What. **Why deferred:** … **Where:** … **If we take it:** … -->
 
+## Agent door on Funnel: no limit on wrong keys
+`open` · recorded 2026-10-09 · from `docs/decisions/0016-agent-api-on-funnel.md`
+
+The `:8443` agent door answers 401 to every wrong key with no per-address limit. **Why deferred:** a key is 256 random bits, so guessing isn't a real attack; a limit would only cut load and log noise, and Funnel's client addresses haven't been checked to be the real ones. **Where:** `internal/httpapi/guard.go` (the agent door's 401). **If we take it:** a per-address wrong-key counter with a lockout, knobs in `internal/config/auth.go`, like `SetupCodeAttempts`.
+
+## Settings → "Add an agent" doesn't show the Funnel address
+`open` · recorded 2026-10-09 · from `docs/decisions/0016-agent-api-on-funnel.md`
+
+The snippet uses the page's own origin, so a cloud agent's `:8443` address comes from the install guide, not the UI. **Why deferred:** the server would have to report the door's state in the API (`api/openapi.yaml`, generated UI types), an API shape change for one line of copy. **Where:** `src/features/settings/AddAgent.tsx`, `GET /api/me` or `GET /api/setup`. **If we take it:** a `funnelAddress` field when the door is open, and a "cloud agents" variant of the snippet.
+
 ## A review PATCHed without `fetchedAt` answers `null`
 `open` · recorded 2026-10-09 · from the response-contract test (`test/contract-responses`)
 

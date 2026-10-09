@@ -15,6 +15,10 @@ Internal record of how Hussla was built, newest first. Every entry says **what**
 
 ## [Unreleased — dev only]
 
+### Agent door on Tailscale Funnel
+
+- **The agent-key API can open on Funnel `:8443`, opt-in.** `HUSSLA_AGENT_FUNNEL=1` makes the server `ListenFunnel` on `:8443` (FunnelOnly) after it joins the tailnet, retrying with the join backoff until the tailnet policy grants the `funnel` node attribute. The door is `httpapi.ListenerFunnel`: a mux of allowlisted agent routes only (`funnelRoutes`), owner and setup wrappers serving 404, 401 without a valid key, no `WhoIs`, cookies or web app; `/mcp` beside it. The site stays tailnet-only. *Why:* the owner's scheduled search runs as a Claude routine in the cloud, which can't join the tailnet; the owner chose this over running it on the Mac or joining the cloud to the tailnet (2026-10-09, `docs/decisions/0016-agent-api-on-funnel.md`). Tests: `internal/httpapi/funnel_test.go`. Open: a wrong-key limit and the `:8443` address in Settings (`docs/deferred.md`).
+
 ### First NAS install fixes
 
 - **Mail setup saves and tests on separate clicks.** "Save and send me a test" asked for two passkey taps in one click; Firefox (Zen) refused the second prompt as "cancelled or timed out", because a passkey prompt must follow a click closely. Now **Save** and **Send me a test** are two buttons (`MailStep.test.tsx`). The same chain broke **Add a spare passkey** (confirm, then create, in one click): it is now two buttons in `AddSparePasskey.tsx`, used by setup and `/setup/passkeys` (`AddSparePasskey.test.tsx`). The setup-code hint says to use the newest `Setup code` line in the log. **Blank board after setup:** the HTTP API answered `null` for a job's or company's lists that were never set (storage keeps null apart from `[]`), where the contract promises arrays; the front page crashed on `reviews.filter`. the HTTP and MCP answers now write `[]` for those (`wire.EmptyListsForNull`, `internal/httpapi/lists_test.go`).

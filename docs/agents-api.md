@@ -7,13 +7,17 @@ application, follow-up) reads and writes it through this API. The owner reads it
 
 ## Connect
 
-- Base URL: `https://hussla.<tailnet>.ts.net` from a device on the owner's tailnet. There is no
-  public address: a cloud agent joins the tailnet (as a tagged device) to reach it.
+- Base URL: `https://hussla.<tailnet>.ts.net` from a device on the owner's tailnet, or
+  `https://hussla.<tailnet>.ts.net:8443` (the API and `/mcp` only, agent keys only) from anywhere
+  when the owner has opened the agent door on Tailscale Funnel (`HUSSLA_AGENT_FUNNEL=1`). A cloud
+  agent that can't join the tailnet uses `:8443`; its network allowlist must include that host.
+  On `:8443` the owner's routes and the web app are `404`, and anything without a valid key is `401`.
 - Auth: `Authorization: Bearer <agent key>` on every request. The owner makes one key per agent or
   computer on the Settings page. Your key name shows up as `agent:<name>` in the activity log. A
   request with a key is always that agent, even from the owner's own computer; a wrong or revoked
   key is `401`, never a fallback to anyone else.
-- Don't send an `Origin` header (a foreign one is refused). Requests must use the ts.net host name.
+- Don't send an `Origin` header (a foreign one is refused). Requests must use the ts.net host name
+  (with `:8443` on the Funnel address).
 - Bodies are JSON (`content-type: application/json`) except file uploads.
 - `GET /api` lists every endpoint. This file is served at `GET /api/docs`.
 

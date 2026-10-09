@@ -221,3 +221,18 @@ func TestTailnetDoorFollowsARename(t *testing.T) {
 		t.Fatal("the door didn't follow the rename")
 	}
 }
+
+// The agent door is off unless HUSSLA_AGENT_FUNNEL is exactly "1".
+func TestAgentFunnelIsOptIn(t *testing.T) {
+	for value, want := range map[string]bool{"": false, "0": false, "true": false, "on": false, "1": true} {
+		got := settingsFrom(func(name string) string {
+			if name == config.AgentFunnelEnv {
+				return value
+			}
+			return ""
+		}).agentFunnel
+		if got != want {
+			t.Errorf("%s=%q: agentFunnel = %v, want %v", config.AgentFunnelEnv, value, got, want)
+		}
+	}
+}
