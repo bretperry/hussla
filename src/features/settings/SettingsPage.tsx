@@ -1,5 +1,5 @@
 /*
-  Settings: "Add an agent", agent keys, email sending, search settings, passkeys, backup and import.
+  Settings: "Add an agent", agent keys, email sending, search settings, passkeys, backup and import, and the running version.
   In the app: "/settings". Every change here is owner-only and asks for a passkey tap first.
   Used by: src/app/App.tsx.
   Uses: api.* for keys, mail, config, passkeys and sessions; AddAgent for the key-and-snippet flow.
@@ -148,6 +148,7 @@ export const SettingsPage = ({ me }: { me: Me }) => {
       <SearchSettings />
       <Security me={me} />
       <ImportFromOldTracker />
+      <p className="text-small text-muted">{me.appName} {me.version}</p>
     </>
   );
 };

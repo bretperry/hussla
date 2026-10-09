@@ -49,9 +49,6 @@ import (
 	"github.com/bretperry/hussla/internal/mcpapi"
 )
 
-// appVersion is recorded with each migration; the release build sets it with -ldflags.
-var appVersion = "dev"
-
 // localAddressFile records the local listener's address, so `hussla open` finds the port.
 const localAddressFile = "local-address"
 
@@ -99,7 +96,7 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 	}
 	defer func() { _ = lock.Release() }()
 
-	storage, err := sqlite.Open(ctx, sqlite.Options{Dir: dataDir, AppVersion: appVersion})
+	storage, err := sqlite.Open(ctx, sqlite.Options{Dir: dataDir, AppVersion: config.Version})
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
 	}
