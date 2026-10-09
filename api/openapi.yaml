@@ -1423,12 +1423,13 @@ components:
           items: { type: string }
     Me:
       type: object
-      required: [kind, name, appName]
+      required: [kind, name, appName, version]
       properties:
         kind: { type: string, enum: [user, agent] }
         name: { type: string }
         login: { type: string, description: "The owner's Tailscale login (the owner on the tailnet only)." }
         appName: { type: string }
+        version: { type: string, description: "The release this server was built from (`v0.1.1`); `dev` for an untagged build." }
 
     # ---------- jobs
     JobStatus:

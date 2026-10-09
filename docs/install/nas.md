@@ -40,6 +40,9 @@ Tailscale is what lets your phone reach Hussla from anywhere, and nobody else.
 
 5. **Next**, **Next**, **Done**. Container Manager downloads Hussla and starts it (a minute or two).
 
+   `:latest` is fine for a first install. To update later you'll pin a version instead
+   (see [Updating](#updating)): Container Manager never re-downloads a tag it already has.
+
 ## 3. Connect it to Tailscale
 
 1. On a computer or phone **on your home Wi-Fi**, open `http://<your NAS's address>:8484`.
@@ -100,8 +103,16 @@ everything (if you use SSH on the NAS), copy the whole data folder, then move it
 
 ## Updating
 
-Container Manager → Project → hussla → **Action → Stop**, then **Action → Build** (it fetches the
-newest Hussla), then **Action → Start**. Your data stays in the `hussla-data` volume.
+Container Manager's **Build** does not re-pull a tag it already has: with `:latest` it rebuilds
+from the copy on the NAS and you stay on the old version. Pin the exact version instead, and bump
+it to update:
+
+1. Find the newest version on <https://github.com/bretperry/hussla/pkgs/container/hussla>
+   (for example `0.1.1`). **Settings** in Hussla shows the one you run, at the bottom.
+2. Container Manager → Project → hussla → **Action → Stop**.
+3. **YAML**: change the `image:` line to that version, for example
+   `image: ghcr.io/bretperry/hussla:0.1.1` (no `v`), and save.
+4. **Action → Build**, then **Action → Start**. Your data stays in the `hussla-data` volume.
 
 A build fetches a new image, not a new `docker-compose.yml`: yours stays as you pasted it. If its
 `ports:` line reads `"8484:8484"`, change it to `"0.0.0.0:8484:8484"` (Project → hussla →

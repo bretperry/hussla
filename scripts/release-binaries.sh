@@ -13,7 +13,7 @@
 # Stop on the first failure, an unset variable, or a failed pipe stage.
 set -euo pipefail
 
-# The version recorded in the binary (and in each migration); "dev" when none is given.
+# The version recorded in the binary (shown on Settings, kept with each migration); "dev" when none is given.
 VERSION="${1:-dev}"
 # Run from the repo root wherever the script is called from.
 cd "$(dirname "$0")/.."
@@ -48,7 +48,7 @@ for target in "${TARGETS[@]}"; do
   # Windows needs the .exe suffix to run on a double-click.
   if [ "$os" = "windows" ]; then name="${name}.exe"; fi
   echo "building $name"
-  (cd "$SCRATCH" && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w -X main.appVersion=${VERSION}" -o "$OUT/$name" ./cmd/hussla)
+  (cd "$SCRATCH" && CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w -X github.com/bretperry/hussla/internal/config.Version=${VERSION}" -o "$OUT/$name" ./cmd/hussla)
 done
 
 # Checksums, so a download can be checked against the release page.

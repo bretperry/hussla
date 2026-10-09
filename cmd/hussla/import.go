@@ -21,6 +21,7 @@ import (
 	"github.com/bretperry/hussla/internal/adapters/datadir"
 	"github.com/bretperry/hussla/internal/adapters/sqlite"
 	"github.com/bretperry/hussla/internal/app/importseed"
+	"github.com/bretperry/hussla/internal/config"
 )
 
 // errImportUsage is a missing or extra argument.
@@ -45,7 +46,7 @@ func importFile(ctx context.Context, env settings, args []string, stdout io.Writ
 		return err //nolint:wrapcheck // ErrLocked is matched by main for its exit code and message
 	}
 	defer func() { _ = lock.Release() }()
-	storage, err := sqlite.Open(ctx, sqlite.Options{Dir: dataDir, AppVersion: appVersion})
+	storage, err := sqlite.Open(ctx, sqlite.Options{Dir: dataDir, AppVersion: config.Version})
 	if err != nil {
 		return fmt.Errorf("open storage: %w", err)
 	}
