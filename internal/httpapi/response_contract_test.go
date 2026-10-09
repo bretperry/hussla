@@ -41,12 +41,12 @@ type responseContract struct {
 var (
 	loadContractOnce sync.Once
 	loadedContract   *responseContract
-	loadContractErr  error
+	errLoadContract  error
 )
 
 func theResponseContract() (*responseContract, error) {
-	loadContractOnce.Do(func() { loadedContract, loadContractErr = loadResponseContract() })
-	return loadedContract, loadContractErr
+	loadContractOnce.Do(func() { loadedContract, errLoadContract = loadResponseContract() })
+	return loadedContract, errLoadContract
 }
 
 func loadResponseContract() (*responseContract, error) {
