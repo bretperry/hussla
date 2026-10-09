@@ -15,6 +15,10 @@ Internal record of how Hussla was built, newest first. Every entry says **what**
 
 ## [Unreleased — dev only]
 
+### First NAS install fixes
+
+- **Mail setup saves and tests on separate clicks.** "Save and send me a test" asked for two passkey taps in one click; Firefox (Zen) refused the second prompt as "cancelled or timed out", because a passkey prompt must follow a click closely. Now **Save** and **Send me a test** are two buttons (`MailStep.test.tsx`). The setup-code hint says to use the newest `Setup code` line in the log.
+
 ### Second dynamite test of PR #13
 
 - **Auth & security: the home page's forms work in a real browser.** `Referrer-Policy: same-origin` (was `no-referrer`, under which Chromium sends `Origin: null` on the page's own form POSTs, so Start over, Make it mine and Reconnect all answered 403); `fromThisPage` also accepts `Sec-Fetch-Site: same-origin` with no or a `null` Origin. `pnpm e2e:setup` now asserts each POST's Origin and status, and presses Start over in the browser. *Why:* measured in Chromium 141 by the dynamite test; reproduced against 610fe63 with real Chromium at `http://nas:<port>` (403), fixed (303).
