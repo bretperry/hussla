@@ -131,7 +131,7 @@ type challengeBody struct {
 }
 
 func (server *api) registerBegin(w http.ResponseWriter, r *http.Request, caller auth.Principal) error {
-	id, options, err := server.deps.Auth.BeginRegistration(r.Context(), caller, server.relyingParty(r))
+	id, options, err := server.deps.Auth.BeginRegistration(r.Context(), caller, server.relyingParty(r), r.Header.Get(StepUpHeader))
 	if err != nil {
 		return err //nolint:wrapcheck // mapped by fail
 	}

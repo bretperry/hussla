@@ -14,7 +14,7 @@ afterEach(() => vi.restoreAllMocks());
 
 const secrets = "Agent keys, mail passwords and other secrets are never imported: make new agent keys and set up mail in Settings.";
 const firstRun: ImportResult = {
-  jobs: 4, companies: 2, answers: 2, events: 4, emails: 5, needApproval: 3, filesNotImported: 1,
+  jobs: 4, companies: 2, answers: 2, events: 4, emails: 5, pitches: 3, needApproval: 3, filesNotImported: 1,
   warnings: ['job #4 (sample-labs-design-engineer): status "ghosted" has no match in Hussla; imported as "review", so set it by hand'],
   notices: [secrets, "3 imported emails were never sent: unapproved in the Outbox, and nothing goes out until you approve it again."],
 };
@@ -28,13 +28,13 @@ describe("ImportFromOldTracker", () => {
     const file = backup();
     await user.upload(screen.getByLabelText("Choose the backup file"), file);
     expect(importBundle).toHaveBeenCalledWith(file);
-    expect(await screen.findByText("Added 4 jobs, 2 companies, 2 answers, 5 emails, 4 activity lines.")).toBeInTheDocument();
+    expect(await screen.findByText("Added 4 jobs, 2 companies, 2 answers, 5 emails, 3 pitches, 4 activity lines.")).toBeInTheDocument();
     expect(screen.getByText(secrets)).toBeInTheDocument();
     expect(screen.getByText("1 thing worth a look")).toBeInTheDocument();
   });
 
   it("says nothing was new on a second import", async () => {
-    vi.spyOn(api, "importBundle").mockResolvedValue({ ...firstRun, jobs: 0, companies: 0, answers: 0, events: 0, emails: 0, warnings: [], notices: [secrets] });
+    vi.spyOn(api, "importBundle").mockResolvedValue({ ...firstRun, jobs: 0, companies: 0, answers: 0, events: 0, emails: 0, pitches: 0, warnings: [], notices: [secrets] });
     const user = userEvent.setup();
     render(<ImportFromOldTracker />);
     await user.upload(screen.getByLabelText("Choose the backup file"), backup());

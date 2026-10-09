@@ -17,11 +17,21 @@ import (
 
 // TailnetPeer is the tailnet's account of a connection's far end. UserID is stable; Login and
 // Name are for display. Tagged peers (servers, CI) belong to no user and are never the owner.
+// Tailnet is set only for the server's own node (NodeOwner): the stable id of the tailnet it is
+// logged in to, so a node moved to another tailnet (tagged or not) reads as someone else's.
 type TailnetPeer struct {
-	UserID string
-	Login  string
-	Name   string
-	Tagged bool
+	UserID  string
+	Login   string
+	Name    string
+	Tagged  bool
+	Tailnet string
+}
+
+// NodeIdentity is the server's own tailnet node as auth needs it: who it is logged in as now.
+// A claim with the setup code records it, so the node-owner check knows which node is the owner's
+// even when the owner isn't the node's user (a tagged node, or HUSSLA_OWNER_LOGIN).
+type NodeIdentity interface {
+	NodeOwner() TailnetPeer
 }
 
 // PeerIdentifier answers WhoIs for a connection's remote address. Only the tailnet adapter
@@ -105,6 +115,9 @@ type StoredPasskey struct {
 	Credential []byte    `json:"credential"`
 	CreatedAt  time.Time `json:"createdAt"`
 	LastUsedAt time.Time `json:"lastUsedAt"`
+	// FirstRun marks a passkey added through the first-run link (or with a tap of one that was):
+	// it can't remove a passkey added with the setup code, so the code wins a raced claim.
+	FirstRun bool `json:"firstRun,omitempty"`
 }
 
 // Ceremony runs the WebAuthn halves. Begin* return the options for navigator.credentials and a

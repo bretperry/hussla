@@ -12,7 +12,7 @@
 
 - **The code is spent by the first stored passkey, not by the claim** (the smaller of the two fixes the review offered; a longer register grant would still be spent by `register/begin`). Claim still checks it, and is still refused to anyone who could never be the owner before the code is touched.
 - **Only the code's SHA-256 is stored** (settings `auth.setupCode`, no migration: settings is key-value), so it survives a restart. A restart that finds one prints a reminder pointing at the earlier "Setup code (valid until used)" line instead of a new code.
-- **Wrong guesses lock out the guesser, not the code.** Each tailnet user (or the local listener as a whole) gets `config.SetupCodeAttempts` wrong tries, then waits `config.SetupCodeLockout`, right code or not. The counts live in memory.
+- **Wrong guesses lock out the guesser, not the code.** Each tailnet user (or the local listener as a whole) gets `config.SetupCodeAttempts` wrong tries, then waits `config.SetupCodeLockout`, right code or not. The counts live in memory. *Amended by 0015 (PR #13): the right code always passes, the code is 80 bits, and a new code no longer replaces the printed one.*
 - **The tailnet join retries forever** with backoff (`config.TailnetRetryFirst` doubling to `config.TailnetRetryMax`), logging each new problem once; HTTPS off gets one line naming the admin DNS page. tsnet's login link is logged once per new link and kept, with the join phase, in an `auth.TailnetState` the adapter exposes (`auth.TailnetStatus`) for a later setup page.
 
 ## Consequences

@@ -4,8 +4,9 @@
   Used by: src/features/setup/SetupPage.tsx, src/features/setup/PasskeysPage.tsx.
   Uses: api.claimSetup / newSetupCode / registerPasskey, src/shared/lib/webauthn.ts for browser support.
 
-  A cancelled Face ID prompt changes nothing: the code (or the link, inside its window) works
-  again, so the person just presses the button again.
+  A cancelled Face ID prompt with the code changes nothing: the code works again. The link from
+  the home-network page is good once (decision 0015), so after a cancelled prompt the person
+  presses Make it mine there again, or uses the code.
 */
 import { useState } from "react";
 import type { FormEvent } from "react";
@@ -46,7 +47,7 @@ export const PasskeyStep = ({ status, onDone, mode = "first" }: PasskeyStepProps
       await api.registerPasskey(name === "" ? DEFAULT_PASSKEY_NAME : name, stepUp);
       onDone();
     } catch (failure) {
-      // The link's window closed (or it was already used): fall back to the code, which still works.
+      // The link's window closed, or it was used or replaced: fall back to the code, which still works.
       if ("link" in proof && failure instanceof ApiError && (failure.status === 409 || failure.status === 403)) setUseLink(false);
       setProblem(describeError(failure));
     } finally {
@@ -65,7 +66,7 @@ export const PasskeyStep = ({ status, onDone, mode = "first" }: PasskeyStepProps
     setProblem("");
     try {
       await api.newSetupCode();
-      setNote("A new code is in the server log now; the old one no longer works.");
+      setNote("A new code is in the server log now; codes printed earlier still work too.");
     } catch (failure) {
       setProblem(describeError(failure));
     }
@@ -93,10 +94,10 @@ export const PasskeyStep = ({ status, onDone, mode = "first" }: PasskeyStepProps
         </Callout>
       )}
       {useLink ? (
-        <p>This link came from the home-network page; it works for a few minutes after Hussla starts.</p>
+        <p>This link came from the home-network page and works once. If the passkey prompt is cancelled, press Make it mine there again.</p>
       ) : (
         <Field label="Setup code" hint={WHERE_THE_CODE_IS}>
-          <TextInput name="code" autoComplete="one-time-code" placeholder="XXXX-XXXX-XXXX" required autoCapitalize="characters" spellCheck={false} />
+          <TextInput name="code" autoComplete="one-time-code" placeholder="XXXX-XXXX-XXXX-XXXX" required autoCapitalize="characters" spellCheck={false} />
         </Field>
       )}
       <Field label="Name this passkey" hint="So you can tell them apart later: “iPhone”, “Work laptop”.">

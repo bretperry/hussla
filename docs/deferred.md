@@ -25,6 +25,11 @@ reason, then deleted).
 
 What. **Why deferred:** … **Where:** … **If we take it:** … -->
 
+## command-guard test timing fix isn't upstream yet
+`open` · recorded 2026-10-09 · from the ship dynamite test fixes (`fix/ship-findings`)
+
+Two wall-clock asserts in `scripts/command-guard.test.mjs` failed on loaded CI runners (measured: 262.8 ms against the 250 ms budget). Bret approved fixing them here (2026-10-09), so this repo's copy now differs from whippletree's. **Why deferred:** pushing upstream is a separate PR on whippletree. **Where:** `scripts/command-guard.test.mjs` (the size-budget test and "looks nothing up … 5000 of them"). **If we take it:** `pnpm harness:push`, then delete this entry once `pnpm harness:status` shows no difference.
+
 ## Mail: OAuth2 sign-in for Outlook.com and Microsoft 365 (and Gmail without app passwords)
 `open` · recorded 2026-10-08 · from `docs/plans/hussla-v1.md` Phase 4
 
@@ -336,12 +341,6 @@ The front page fetches one company detail per open job (N+1, capped by `FRONT_PA
 Activity is reachable by link only (Pitches got its nav item in Phase 5b). Tests stub `fetch` and spy on `api` instead of using MSW. **Why deferred:** out of Phase 5's scope. **Where:** `src/config/ui.ts` (`NAV_ITEMS`). **If we take it:** add the nav item (the phone nav already wraps to a second row); adopt MSW only if the stubs get unwieldy.
 
 
-## Import result doesn't count pitches on the wire
-
-`open` · recorded 2026-10-09 · from Phase 5b (`docs/plans/hussla-v1.md`)
-
-The seed import creates pitches and its activity line counts them, but the HTTP `ImportResult` and the Settings import summary don't show a pitches count. **Why deferred:** PR #9 (`feat/import-prototype`) reshapes the same result and Settings code; adding a field here would conflict. **Where:** `internal/app/importseed/importseed.go` (`Report.Pitches`), `internal/httpapi` import route, `src/features/settings/SettingsPage.tsx`. **If we take it:** add `pitches` to the result schema in `api/openapi.yaml` after #9 lands.
-
 ## MCP tools for the HTTP-only agent routes
 
 `open` · recorded 2026-10-08 · from Phase 3b
@@ -365,3 +364,10 @@ Phase 6 adds `/setup/passkeys` (list, remove, add, recovery code) and `/setup/ma
 `open` · recorded 2026-10-09 · from Phase 6 (`docs/plans/hussla-v1.md`)
 
 `.github/workflows/publish-image.yml` uses `docker/*@vN` and `actions/checkout@v7`, like `ci.yml`, not commit SHAs. It holds `packages: write` and `contents: write` on a tag push. **Why deferred:** the session that wrote it couldn't read the docker actions' repos to resolve SHAs, and `ci.yml` follows the same convention. **Where:** `.github/workflows/publish-image.yml`. **If we take it:** pin each to a full SHA with the tag in a comment, and let Dependabot bump them.
+
+## Reconnect shows the Tailscale login link to the whole home network
+
+`open` · recorded 2026-10-09 · from PR #13's second dynamite test (low)
+
+After **Sign out of that account**, the home-network page shows the node's new Tailscale login link to anyone on the LAN, as a fresh install does. Whoever signs in first sets the node's account; if that isn't the owner, the node is still someone else's (it fails closed again) and the owner presses Sign out once more. **Why deferred:** it is a nuisance, not a takeover: the owner record, passkeys and data never move, and the tailnet door stays closed to the wrong account. **Where:** `internal/httpapi/home.go` (needs-login view), `internal/app/setup/setup.go` (`Reconnect`). **If we take it:** after a Reconnect, show the link only on the setup code (typed on the LAN page), or name the account it must be signed in as.
+

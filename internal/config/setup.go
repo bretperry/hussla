@@ -4,17 +4,18 @@
 // Uses: time.
 //
 // Why a window at all: on a headless NAS the setup code sits in a container log a non-technical
-// owner never opens. For a short time after a start, on an install that has never had a passkey,
-// the Tailscale user who owns the node may add the first passkey from the home-network page's link
-// instead (docs/decisions/0015-first-run-window.md). The window is short so a forgotten install
-// doesn't stay open; a restart (Container Manager → Restart) opens it again until a passkey exists.
+// owner never opens. For a short time after the node's owner is first known, on an install that
+// has never had a passkey, that Tailscale user may add the first passkey with the home-network
+// page's "Make it mine" instead (docs/decisions/0015-first-run-window.md). The window is short so
+// a forgotten install doesn't stay open, and it opens once per install: a restart doesn't reopen
+// it, and after it the setup code from the log is the way in.
 
 package config
 
 import "time"
 
-// FirstRunWindow is how long after a start the home-network page's "Make it mine" link works,
-// on an install that has never stored a passkey.
+// FirstRunWindow is how long the home-network page's "Make it mine" works, from the first time the
+// node's owner is adopted, on an install that has never stored a passkey. Once per install.
 const FirstRunWindow = 15 * time.Minute
 
 // SetupCodeReissueGap is the least time between two "print a new setup code" requests, so a

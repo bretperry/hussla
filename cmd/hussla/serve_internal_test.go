@@ -176,7 +176,7 @@ func TestSuperviseAdoptsTheNextOwnerAfterStartOver(t *testing.T) {
 		node := &ownerScript{owner: first}
 		go superviseTailnet(ctx, node, service, slog.New(slog.DiscardHandler))
 
-		if err := service.StartOver(ctx); err != nil {
+		if err := service.StartOver(ctx, func(context.Context) error { return nil }); err != nil {
 			t.Fatal(err)
 		}
 		node.set(auth.TailnetPeer{}) // logged out

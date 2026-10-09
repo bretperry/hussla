@@ -11,13 +11,19 @@ package config
 import "time"
 
 // SetupCodeAttempts is how many wrong setup codes one caller (one tailnet user, or the local
-// listener) may try before that caller is locked out for SetupCodeLockout. The code itself stays the
-// same, so someone else's wrong guesses can't make the owner's code stale.
+// listener) may try before that caller's further wrong guesses are refused for SetupCodeLockout.
+// The right code always passes, locked or not (an agent sharing the owner's tailnet identity must
+// not be able to lock the owner out), and the code itself stays the same.
 const SetupCodeAttempts = 5
 
-// SetupCodeLockout is how long a caller who ran out of SetupCodeAttempts waits before trying again.
-// Five tries per quarter hour against a 60-bit code is no guessing at all.
+// SetupCodeLockout is how long a caller who ran out of SetupCodeAttempts has wrong guesses refused.
+// It is a courtesy, not the defense: an 80-bit code is what makes guessing hopeless.
 const SetupCodeLockout = 15 * time.Minute
+
+// SetupCodesLive is how many printed setup codes can be good at once. A new code never
+// invalidates one already printed (so nobody can make the code in the owner's log stale); once
+// this many are live, asking for another is refused until a passkey spends them all.
+const SetupCodesLive = 10
 
 // StepUpLifetime is how long a passkey tap authorizes the one owner-only action it was made for.
 const StepUpLifetime = 2 * time.Minute

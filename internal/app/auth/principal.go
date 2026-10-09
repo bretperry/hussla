@@ -89,7 +89,7 @@ var (
 	ErrChallengeUnknown = errors.New("that passkey prompt expired: start again")
 	// ErrWrongSetupCode: the setup code is wrong (403).
 	ErrWrongSetupCode = errors.New("that setup code is wrong")
-	// ErrSetupCodeLocked: this caller made too many wrong guesses and waits config.SetupCodeLockout (403).
+	// ErrSetupCodeLocked: this caller made too many wrong guesses; more are refused for config.SetupCodeLockout, the right code never is (403).
 	ErrSetupCodeLocked = errors.New("too many wrong setup codes from this account: try again in a few minutes")
 	// ErrSetupClosed: no setup code is active (409): setup is done, or a new code is in the log.
 	ErrSetupClosed = errors.New("no setup code is active: check the log for a new one")

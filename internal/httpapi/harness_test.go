@@ -117,6 +117,7 @@ func (r *rig) restart() *rig {
 		AnnounceSetupCode: func(code string) { r.setupCode = code; r.announced++ },
 		RemindSetupCode:   func(issuedAt time.Time) { r.reminded = append(r.reminded, issuedAt) },
 		OwnerLogin:        r.ownerPin,
+		Node:              r.node,
 	})
 	r.deps.Auth = r.auth
 	r.deps.Setup = setup.New(setup.Options{Auth: r.auth, Tailnet: r.node, Store: r.store, Now: r.clock.Now})
@@ -128,11 +129,25 @@ func (r *rig) restart() *rig {
 	return r
 }
 
-// fakeNode is the server's own tailnet node as the setup pages see it: a settable state, and a Logout that records itself.
+// fakeNode is the server's own tailnet node as the setup pages see it: a settable state and
+// owner (none unless a test sets one), and a Logout that records itself.
 type fakeNode struct {
 	mutex   sync.Mutex
 	state   auth.TailnetState
+	owner   auth.TailnetPeer
 	logouts int
+}
+
+func (node *fakeNode) NodeOwner() auth.TailnetPeer {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	return node.owner
+}
+
+func (node *fakeNode) setOwner(owner auth.TailnetPeer) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	node.owner = owner
 }
 
 func (node *fakeNode) State() auth.TailnetState {
@@ -151,6 +166,7 @@ func (node *fakeNode) Logout(context.Context) error {
 	node.mutex.Lock()
 	defer node.mutex.Unlock()
 	node.logouts++
+	node.owner = auth.TailnetPeer{}
 	node.state = auth.TailnetState{Phase: auth.TailnetNeedsLogin, AuthURL: "https://login.example/a/next"}
 	return nil
 }

@@ -1517,10 +1517,14 @@ const BOUND_MS = 1500;
 
 describe("command-guard: budgets and failures fail closed to ask", () => {
   it("asks, without parsing, for a line over the size budget", () => {
+    // "Without parsing" is proven by the reason (the size gate answers before the parser runs),
+    // not by the wall clock: a 50 ms bound flaked on loaded CI runners. BOUND_MS still catches a
+    // gate that parses first.
     const line = `git commit -F - <<'EOF'\n${"a".repeat(LIMITS.chars)}\nEOF`;
     const started = performance.now();
     const verdict = evaluate(line, { branch: "feat" });
-    assert.ok(performance.now() - started < 50);
+    const took = performance.now() - started;
+    assert.ok(took < BOUND_MS, `took ${Math.round(took)} ms`);
     assert.equal(verdict?.decision, "ask");
     assert.match(verdict?.reason ?? "", /character budget/);
   });
@@ -1638,12 +1642,14 @@ describe("command-guard: branch lookups are bounded (round-3 B1)", () => {
   });
 
   it("looks nothing up for a line of plain commands after a cd (5000 of them)", () => {
+    // Counts the work (lookups), not the time: with the default 250 ms budget a loaded CI runner
+    // spent the budget on 5000 commands and the verdict became "ask", so lift the budgets here.
     let calls = 0;
     const branchIn = () => {
       calls += 1;
       return "feat";
     };
-    assert.equal(evaluate(`cd .;${"true;".repeat(5000)}git status`, { branch: "feat", branchIn }), null);
+    assert.equal(evaluate(`cd .;${"true;".repeat(5000)}git status`, { branch: "feat", branchIn, limits: UNBOUNDED }), null);
     assert.equal(calls, 0);
   });
 

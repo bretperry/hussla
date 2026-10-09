@@ -14,7 +14,9 @@ services:
     restart: unless-stopped
     ports:
       # The home-network page: setup, the Tailscale sign-in link, and your Hussla address.
-      - "8484:8484"
+      # IPv4 only: Docker's proxy hands an IPv6 client to Hussla with the bridge gateway (a private
+      # address) as its source, so an internet IPv6 client could pass the page's home-network check.
+      - "0.0.0.0:8484:8484"
     volumes:
       # Everything Hussla keeps: the database, backups, files, the encrypted secrets and its Tailscale identity.
       - hussla-data:/data

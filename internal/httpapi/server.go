@@ -114,7 +114,9 @@ func (server *api) routes() {
 	server.handle("GET /api/setup/qr", server.owner(server.addressQR))
 	server.handle("GET /api/passkeys", server.owner(server.listPasskeys))
 	server.handle("DELETE /api/passkeys/{passkeyId}", server.ownerStepUp(server.removePasskey))
-	server.handle("POST /api/passkeys/register/begin", server.ownerStepUp(server.registerBegin))
+	// Owner-only with a step-up token like ownerStepUp, but BeginRegistration spends the token
+	// itself: whether it came from the first-run link decides the new passkey's FirstRun mark.
+	server.handle("POST /api/passkeys/register/begin", server.owner(server.registerBegin))
 	server.handle("POST /api/passkeys/register/finish", server.owner(server.registerFinish))
 	server.handle("POST /api/stepup/begin", server.owner(server.stepUpBegin))
 	server.handle("POST /api/stepup/finish", server.owner(server.stepUpFinish))

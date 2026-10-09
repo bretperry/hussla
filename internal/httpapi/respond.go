@@ -83,15 +83,19 @@ func statusFor(err error) (int, errorBody) {
 	case errors.Is(err, tracker.ErrNoFreePitchSlot):
 		return http.StatusConflict, errorBody{Error: tracker.ErrNoFreePitchSlot.Error()}
 	case errors.Is(err, auth.ErrNotOwner), errors.Is(err, mailbox.ErrAgentMayNot),
-		errors.Is(err, auth.ErrPasskeyRejected), errors.Is(err, auth.ErrWrongSetupCode), errors.Is(err, auth.ErrSetupCodeLocked), errors.Is(err, auth.ErrWrongLink):
+		errors.Is(err, auth.ErrPasskeyRejected), errors.Is(err, auth.ErrWrongSetupCode), errors.Is(err, auth.ErrSetupCodeLocked), errors.Is(err, auth.ErrWrongLink),
+		errors.Is(err, auth.ErrFirstRunPasskeyLimited):
 		return http.StatusForbidden, errorBody{Error: rootMessage(err)}
 	case errors.Is(err, auth.ErrChallengeUnknown):
 		return http.StatusBadRequest, errorBody{Error: auth.ErrChallengeUnknown.Error()}
 	case errors.Is(err, auth.ErrNoPasskey), errors.Is(err, auth.ErrSetupClosed), errors.Is(err, auth.ErrFirstRunClosed),
-		errors.Is(err, auth.ErrStartOverClosed), errors.Is(err, auth.ErrLastPasskey), errors.Is(err, setup.ErrNoTailnet):
+		errors.Is(err, auth.ErrStartOverClosed), errors.Is(err, auth.ErrLastPasskey), errors.Is(err, setup.ErrNoTailnet),
+		errors.Is(err, setup.ErrNotMismatched), errors.Is(err, setup.ErrNotReady):
 		return http.StatusConflict, errorBody{Error: rootMessage(err)}
 	case errors.Is(err, auth.ErrCodeTooSoon):
 		return http.StatusTooManyRequests, errorBody{Error: auth.ErrCodeTooSoon.Error()}
+	case errors.Is(err, auth.ErrTooManyCodes):
+		return http.StatusTooManyRequests, errorBody{Error: auth.ErrTooManyCodes.Error()}
 	case errors.Is(err, mailsetup.ErrNotConfigured):
 		return http.StatusBadRequest, errorBody{Error: mailbox.ErrMailNotConfigured.Error()}
 	case errors.Is(err, mailbox.ErrMailNotConfigured):

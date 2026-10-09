@@ -1,5 +1,5 @@
 /*
-  End-to-end first run in a real browser against the e2e image: home page, fake Tailscale sign-in, "Make it mine", the wizard, a restart, the app.
+  End-to-end first run in a real browser against the e2e image: home page, fake Tailscale sign-in, Start over, "Make it mine", the wizard, a restart, the app.
   In the app: nothing at runtime; Phase 6's browser Done-when (`pnpm e2e:setup` after `docker build --target e2e -t hussla:e2e .`). Not in `pnpm check`: it needs Docker and Chromium.
   Used by: package.json (e2e:setup), the Phase 6 PR description.
   Uses: docker, playwright-core with the Chromium at /opt/pw-browsers/chromium, a CDP virtual authenticator (no real passkey), the image's fake Tailscale.
@@ -80,17 +80,39 @@ try {
   await page.goto(loginHref ?? "", { waitUntil: "domcontentloaded" });
   await page.goto(HOME, { waitUntil: "domcontentloaded" });
   await page.waitForSelector("#make-it-mine", { timeout: 30_000 });
-  await page.screenshot({ path: join(shots, "home-make-it-mine-390.png"), fullPage: true });
-  const claimHref = await page.locator("#make-it-mine").getAttribute("href");
-  check(claimHref?.includes("/setup?link=") === true, "the page offers the first-run link");
+  check(!(await page.content()).includes("link="), "the home page's GET holds no first-run link");
 
-  // 3. "Make it mine" with a virtual authenticator standing in for Face ID.
+  // The page's own forms, posted by the browser itself: each one is refused unless Chromium sends
+  // this page's Origin, which a Referrer-Policy of no-referrer turns into "null" (PR #13's blocker).
+  const homeReply = await page.request.get(HOME);
+  check(homeReply.headers()["referrer-policy"] === "same-origin", `the home page's Referrer-Policy is same-origin (${homeReply.headers()["referrer-policy"]})`);
+  const formPost = async (selector, path) => {
+    const [request] = await Promise.all([
+      page.waitForRequest((sent) => sent.method() === "POST" && new URL(sent.url()).pathname === path, { timeout: 15_000 }),
+      page.locator(selector).click(),
+    ]);
+    const reply = await request.response();
+    check(request.headers().origin === HOME, `the browser's POST ${path} carries this page's Origin (${request.headers().origin})`);
+    check(reply?.status() === 303, `POST ${path} from the page answers 303 (${reply?.status()})`);
+  };
+
+  // 2b. Start over (a real form POST), then the same person signs in again: a fresh window opens.
+  await formPost("#start-over", "/start-over");
+  await page.waitForSelector("#connect", { timeout: 30_000 });
+  await page.goto((await page.locator("#connect").getAttribute("href")) ?? "", { waitUntil: "domcontentloaded" });
+  await page.goto(HOME, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector("#make-it-mine", { timeout: 30_000 });
+  check(true, "after Start over and a new sign-in, Make it mine is back");
+  await page.screenshot({ path: join(shots, "home-make-it-mine-390.png"), fullPage: true });
+
+  // 3. "Make it mine" (a form POST that redirects to the one-use link) with a virtual authenticator standing in for Face ID.
   const cdp = await context.newCDPSession(page);
   await cdp.send("WebAuthn.enable");
   await cdp.send("WebAuthn.addVirtualAuthenticator", {
     options: { protocol: "ctap2", transport: "internal", hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
   });
-  await page.goto(claimHref ?? "", { waitUntil: "domcontentloaded" });
+  await Promise.all([page.waitForURL(/\/setup\?link=/, { timeout: 15_000 }), formPost("#make-it-mine", "/make-it-mine")]);
+  check(true, "the button's POST sends the browser to the first-run link");
   await page.getByRole("button", { name: "Make it mine" }).click();
   await page.getByText(/Step 2 of 7/).waitFor({ timeout: 15_000 });
   check(true, "the first passkey was made from the link; the wizard is at step 2");

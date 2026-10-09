@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +29,13 @@ const homeHost = "192.168.1.20:8484"
 // homeCall is one request to the home-network page from a laptop on the home network.
 func (r *rig) home(method, path, host, from, origin string) (int, string) {
 	r.t.Helper()
+	status, _, body := r.homeFull(method, path, host, from, origin)
+	return status, body
+}
+
+// homeFull is home with the response headers too (the Location of a redirect).
+func (r *rig) homeFull(method, path, host, from, origin string) (int, http.Header, string) {
+	r.t.Helper()
 	request := httptest.NewRequest(method, path, nil)
 	request.Host, request.RemoteAddr = host, from
 	if origin != "" {
@@ -40,7 +46,22 @@ func (r *rig) home(method, path, host, from, origin string) (int, string) {
 	result := recorder.Result()
 	defer func() { _ = result.Body.Close() }()
 	body, _ := io.ReadAll(result.Body)
-	return result.StatusCode, string(body)
+	return result.StatusCode, result.Header, string(body)
+}
+
+// makeItMine presses the home-network page's button and returns the first-run link's secret.
+func (r *rig) makeItMine(from string) string {
+	r.t.Helper()
+	status, header, body := r.homeFull(http.MethodPost, "/make-it-mine", homeHost, from, "http://"+homeHost)
+	location := header.Get("Location")
+	if status != http.StatusSeeOther || !strings.HasPrefix(location, tailnetOrigin+"/setup?link=") {
+		r.t.Fatalf("make it mine: %d to %q\n%s", status, location, body)
+	}
+	target, err := url.Parse(location)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	return target.Query().Get("link")
 }
 
 func TestHomePageAnswersOnlyTheHomeNetwork(t *testing.T) {
@@ -104,11 +125,20 @@ func TestHomePageWalksTheTailnetStatesWithoutARestart(t *testing.T) {
 	if !strings.Contains(body, tailnetOrigin) || !strings.Contains(body, "<svg") || !strings.Contains(body, ownerPeer.Login) {
 		t.Fatalf("running: no address, QR or owner:\n%s", body)
 	}
-	link := regexp.MustCompile(`href="` + regexp.QuoteMeta(tailnetOrigin) + `/setup\?link=([^"]+)"`).FindStringSubmatch(body)
-	if link == nil {
-		t.Fatalf("running: no Make it mine link:\n%s", body)
+	// The page shows a button, never the link: a GET holds no first-run secret.
+	if !strings.Contains(body, `action="/make-it-mine"`) || strings.Contains(body, "link=") {
+		t.Fatalf("running: want the Make it mine form and no link:\n%s", body)
 	}
-	secret, _ := url.QueryUnescape(link[1])
+	if csp := r.homeCSP(from); !strings.Contains(csp, "form-action 'self' "+tailnetOrigin) {
+		t.Fatalf("the page's CSP must let the form redirect to the tailnet address: %s", csp)
+	}
+	// Only a form post from this page mints one.
+	for _, origin := range []string{"", "http://evil.example"} {
+		if code, _ := r.home(http.MethodPost, "/make-it-mine", homeHost, from, origin); code != http.StatusForbidden {
+			t.Fatalf("make it mine with Origin %q: %d", origin, code)
+		}
+	}
+	secret := r.makeItMine(from)
 
 	// The link adds the first passkey on the tailnet, for the node's owner only.
 	r.must(http.StatusForbidden, call{method: http.MethodPost, path: "/api/setup/claim", body: map[string]string{"link": secret}, from: otherAddr, origin: tailnetOrigin})
@@ -123,6 +153,123 @@ func TestHomePageWalksTheTailnetStatesWithoutARestart(t *testing.T) {
 		t.Fatalf("after setup the page still offers setup:\n%s", body)
 	}
 	r.must(http.StatusConflict, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"link": secret}))
+	if code, _ := r.home(http.MethodPost, "/make-it-mine", homeHost, from, "http://"+homeHost); code != http.StatusConflict {
+		t.Fatalf("make it mine after setup: %d", code)
+	}
+}
+
+// homeCSP is the home page's Content-Security-Policy as a GET from the home network sees it.
+func (r *rig) homeCSP(from string) string {
+	r.t.Helper()
+	_, header, _ := r.homeFull(http.MethodGet, "/", homeHost, from, "")
+	return header.Get("Content-Security-Policy")
+}
+
+func TestNoGetEverShowsTheFirstRunLink(t *testing.T) {
+	r := newRig(t)
+	from := "192.168.1.30:51000"
+	if _, err := r.auth.AdoptNodeOwner(context.Background(), ownerPeer); err != nil {
+		t.Fatal(err)
+	}
+	secret := r.makeItMine(from)
+	for _, path := range []string{"/", "/home.css", "/healthz"} {
+		if _, body := r.home(http.MethodGet, path, homeHost, from, ""); strings.Contains(body, secret) || strings.Contains(body, "link=") {
+			t.Fatalf("GET %s shows the first-run link:\n%s", path, body)
+		}
+	}
+	if body := string(r.must(http.StatusOK, call{path: "/api/setup"}).body); strings.Contains(body, secret) {
+		t.Fatalf("GET /api/setup shows the first-run link: %s", body)
+	}
+}
+
+func TestARestartDoesNotReopenTheFirstRunWindow(t *testing.T) {
+	r := newRig(t)
+	from := "192.168.1.30:51000"
+	if _, err := r.auth.AdoptNodeOwner(context.Background(), ownerPeer); err != nil {
+		t.Fatal(err)
+	}
+	r.clock.Advance(config.FirstRunWindow + time.Second)
+	r.restart()
+	_, body := r.home(http.MethodGet, "/", homeHost, from, "")
+	if strings.Contains(body, "make-it-mine") || !strings.Contains(body, "timed out") || strings.Contains(body, "Restart Hussla") {
+		t.Fatalf("after the window and a restart: want timed out, no button, no restart advice:\n%s", body)
+	}
+	if code, _ := r.home(http.MethodPost, "/make-it-mine", homeHost, from, "http://"+homeHost); code != http.StatusConflict {
+		t.Fatalf("make it mine after a restart past the window: %d", code)
+	}
+	// The setup code from the log still works.
+	r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": r.setupCode}))
+}
+
+func TestANodeSignedInAsSomeoneElseFailsClosed(t *testing.T) {
+	r := newRig(t).enroll()
+	from := "192.168.1.30:51000"
+	guarded := httpapi.GuardNodeOwner(r.deps.Setup, r.tailnetUI)
+	serve := func(method, path, remote string) (int, string) {
+		request := httptest.NewRequest(method, path, nil)
+		request.Host, request.RemoteAddr = tailnetHost, remote
+		request.Header.Set("Origin", tailnetOrigin)
+		recorder := httptest.NewRecorder()
+		guarded.ServeHTTP(recorder, request)
+		return recorder.Code, recorder.Body.String()
+	}
+	r.node.setOwner(ownerPeer)
+	if code, _ := serve(http.MethodGet, "/api/me", ownerAddr); code != http.StatusOK {
+		t.Fatalf("the owner's own node: %d", code)
+	}
+	// While the node is logged in as its owner, Reconnect does nothing.
+	if code, _ := r.home(http.MethodPost, "/reconnect", homeHost, from, "http://"+homeHost); code != http.StatusConflict || r.node.logouts != 0 {
+		t.Fatalf("reconnect on a healthy node: %d, %d logouts", code, r.node.logouts)
+	}
+
+	// The key expired; someone on the home network signed the node in with their own account.
+	r.node.setOwner(otherPeer)
+	agent := r.agentKey("Helper")
+	for _, request := range []struct{ method, path, from string }{
+		{http.MethodGet, "/", otherAddr},
+		{http.MethodGet, "/api/setup", otherAddr},
+		{http.MethodGet, "/api/me", ownerAddr},
+		{http.MethodPost, "/api/setup/code", otherAddr},
+		{http.MethodPost, "/api/jobs", ownerAddr},
+	} {
+		code, body := serve(request.method, request.path, request.from)
+		if code != http.StatusForbidden || !strings.Contains(body, "belongs to someone else") {
+			t.Fatalf("%s %s on a node signed in as someone else: %d %.120s", request.method, request.path, code, body)
+		}
+	}
+	keyed := httptest.NewRequest(http.MethodGet, "/api/jobs", nil)
+	keyed.Host, keyed.RemoteAddr = tailnetHost, otherAddr
+	keyed.Header.Set("Authorization", "Bearer "+agent)
+	recorder := httptest.NewRecorder()
+	guarded.ServeHTTP(recorder, keyed)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("an agent key on a node signed in as someone else: %d", recorder.Code)
+	}
+
+	// The home-network page says so and offers the way back, without Start over or the address.
+	_, body := r.home(http.MethodGet, "/", homeHost, from, "")
+	if !strings.Contains(body, `action="/reconnect"`) || strings.Contains(body, "start-over") || strings.Contains(body, `id="address"`) {
+		t.Fatalf("home page on a node signed in as someone else:\n%s", body)
+	}
+	if code, _ := r.home(http.MethodPost, "/reconnect", homeHost, from, ""); code != http.StatusForbidden {
+		t.Fatalf("reconnect from another site: %d", code)
+	}
+	if code, _ := r.home(http.MethodPost, "/reconnect", homeHost, from, "http://"+homeHost); code != http.StatusSeeOther || r.node.logouts != 1 {
+		t.Fatalf("reconnect: %d, %d logouts", code, r.node.logouts)
+	}
+	// Logged out: the re-login link is there for the owner, and the owner record and passkey stayed.
+	_, body = r.home(http.MethodGet, "/", homeHost, from, "")
+	if !strings.Contains(body, "https://login.example/a/next") {
+		t.Fatalf("after reconnect, no Connect link:\n%s", body)
+	}
+	if login, err := r.auth.OwnerLogin(context.Background()); err != nil || login != ownerPeer.Login {
+		t.Fatalf("owner after reconnect: %q %v", login, err)
+	}
+	r.node.set(auth.TailnetState{Phase: auth.TailnetRunning, Domain: tailnetHost})
+	r.node.setOwner(ownerPeer)
+	if code, _ := serve(http.MethodGet, "/api/me", ownerAddr); code != http.StatusOK {
+		t.Fatalf("the owner signed back in: %d", code)
+	}
 }
 
 func TestHomePageSaysWhenTheLinkTimedOut(t *testing.T) {
@@ -189,7 +336,8 @@ func TestANewSetupCodeOnRequest(t *testing.T) {
 		t.Fatalf("no new code printed (%d)", r.announced)
 	}
 	r.must(http.StatusTooManyRequests, ownerWrite(http.MethodPost, "/api/setup/code", nil))
-	r.must(http.StatusForbidden, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": lost}))
+	// The code already printed stays good beside the new one: asking for codes can't make it stale.
+	r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": lost}))
 	r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": r.setupCode}))
 }
 
@@ -255,5 +403,109 @@ func TestMailSetupNeverGivesThePasswordBack(t *testing.T) {
 	status := r.must(http.StatusOK, call{path: "/api/mail"}).json(t)
 	if status["configured"] != true || status["provider"] != "iCloud Mail" {
 		t.Fatalf("mail status: %v", status)
+	}
+}
+
+// homeForm posts one of the home page's forms the way a browser does: Origin (as the browser
+// serializes it, "null" included) and Sec-Fetch-Site (empty: not sent).
+func (r *rig) homeForm(path, origin, fetchSite string) int {
+	r.t.Helper()
+	request := httptest.NewRequest(http.MethodPost, path, nil)
+	request.Host, request.RemoteAddr = homeHost, "192.168.1.30:51000"
+	if origin != "" {
+		request.Header.Set("Origin", origin)
+	}
+	if fetchSite != "" {
+		request.Header.Set("Sec-Fetch-Site", fetchSite)
+	}
+	recorder := httptest.NewRecorder()
+	httpapi.NewHome(r.deps.Setup).ServeHTTP(recorder, request)
+	return recorder.Code
+}
+
+// From a real browser: the page's Referrer-Policy must let Chromium send this page's Origin on its
+// own form POST (no-referrer made it "null", and every form answered 403). A browser that still
+// sends "null" but says Sec-Fetch-Site: same-origin is accepted; a cross-site one isn't.
+func TestHomeFormsWorkFromARealBrowser(t *testing.T) {
+	r := newRig(t)
+	if _, header, _ := r.homeFull(http.MethodGet, "/", homeHost, "192.168.1.30:51000", ""); header.Get("Referrer-Policy") != "same-origin" {
+		t.Fatalf("Referrer-Policy %q: Chromium sends Origin: null on a form POST under no-referrer", header.Get("Referrer-Policy"))
+	}
+	if _, err := r.auth.AdoptNodeOwner(context.Background(), ownerPeer); err != nil {
+		t.Fatal(err)
+	}
+	r.node.setOwner(ownerPeer)
+	for _, refused := range []struct{ origin, site string }{
+		{"null", ""}, {"null", "cross-site"}, {"null", "same-site"}, {"", "cross-site"}, {"http://evil.example", "same-origin"},
+	} {
+		if code := r.homeForm("/make-it-mine", refused.origin, refused.site); code != http.StatusForbidden {
+			t.Fatalf("make it mine with Origin %q, Sec-Fetch-Site %q: %d, want 403", refused.origin, refused.site, code)
+		}
+	}
+	if code := r.homeForm("/make-it-mine", "null", "same-origin"); code != http.StatusSeeOther {
+		t.Fatalf("make it mine with Origin null, Sec-Fetch-Site same-origin: %d, want 303", code)
+	}
+	if code := r.homeForm("/make-it-mine", "http://"+homeHost, "same-origin"); code != http.StatusSeeOther {
+		t.Fatalf("make it mine from this page: %d, want 303", code)
+	}
+	if code := r.homeForm("/start-over", "null", "same-origin"); code != http.StatusSeeOther {
+		t.Fatalf("start over with Origin null, Sec-Fetch-Site same-origin: %d, want 303", code)
+	}
+}
+
+// A tagged node claimed with the code, then logged in to someone else's tailnet and tagged there:
+// the tailnet door fails closed and the home page offers the way back.
+func TestATaggedNodeOnAnotherTailnetFailsClosed(t *testing.T) {
+	r := newRig(t)
+	home := auth.TailnetPeer{UserID: "9", Tagged: true, Tailnet: "id:Tnet-home"}
+	r.node.setOwner(home)
+	if adopted, err := r.auth.AdoptNodeOwner(context.Background(), home); err != nil || adopted {
+		t.Fatalf("adopt a tagged node: %v %v", adopted, err)
+	}
+	r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": r.setupCode}))
+	guarded := httpapi.GuardNodeOwner(r.deps.Setup, r.tailnetUI)
+	me := func() int {
+		request := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+		request.Host, request.RemoteAddr = tailnetHost, ownerAddr
+		recorder := httptest.NewRecorder()
+		guarded.ServeHTTP(recorder, request)
+		return recorder.Code
+	}
+	if code := me(); code != http.StatusOK {
+		t.Fatalf("the owner's own tagged node: %d", code)
+	}
+	r.node.setOwner(auth.TailnetPeer{UserID: "9", Tagged: true, Tailnet: "id:Tnet-attacker"})
+	if code := me(); code != http.StatusForbidden {
+		t.Fatalf("a tagged node on another tailnet: %d, want 403", code)
+	}
+	_, body := r.home(http.MethodGet, "/", homeHost, "192.168.1.30:51000", "")
+	if !strings.Contains(body, `action="/reconnect"`) {
+		t.Fatalf("no Sign out of that account on the home page:\n%s", body)
+	}
+	if code := r.homeForm("/reconnect", "http://"+homeHost, ""); code != http.StatusSeeOther || r.node.logouts != 1 {
+		t.Fatalf("reconnect: %d, %d logouts", code, r.node.logouts)
+	}
+}
+
+// HUSSLA_OWNER_LOGIN names someone other than the node's login: after that login claims with the
+// code, the tailnet still answers (the configured login is the owner, the node's own login is no mismatch).
+func TestAPinnedOwnerOnSomeoneElsesNodeIsServed(t *testing.T) {
+	r := newRigPinned(t, ownerPeer.Login)
+	admin := auth.TailnetPeer{UserID: "3003", Login: "admin@example.com", Tailnet: "id:Tnet-home"}
+	r.node.setOwner(admin)
+	if adopted, err := r.auth.AdoptNodeOwner(context.Background(), admin); err != nil || adopted {
+		t.Fatalf("the pin let the node's login be adopted: %v %v", adopted, err)
+	}
+	claimed := r.must(http.StatusOK, ownerWrite(http.MethodPost, "/api/setup/claim", map[string]string{"code": r.setupCode})).json(t)
+	stepUp, _ := claimed["stepUp"].(string)
+	r.key = virtualauthn.New()
+	r.registerPasskey(r.key, stepUp, tailnetOrigin, "")
+	guarded := httpapi.GuardNodeOwner(r.deps.Setup, r.tailnetUI)
+	request := httptest.NewRequest(http.MethodGet, "/api/setup", nil)
+	request.Host, request.RemoteAddr = tailnetHost, ownerAddr
+	recorder := httptest.NewRecorder()
+	guarded.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"isOwner":true`) {
+		t.Fatalf("the pinned owner after setup: %d %s", recorder.Code, recorder.Body.String())
 	}
 }

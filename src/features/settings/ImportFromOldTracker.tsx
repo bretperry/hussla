@@ -17,7 +17,7 @@ import { Section } from "@/shared/ui/Section";
 const added = (result: ImportResult): string => {
   const parts: [number, string, string][] = [
     [result.jobs, "job", "jobs"], [result.companies, "company", "companies"], [result.answers, "answer", "answers"],
-    [result.emails, "email", "emails"], [result.events, "activity line", "activity lines"],
+    [result.emails, "email", "emails"], [result.pitches, "pitch", "pitches"], [result.events, "activity line", "activity lines"],
   ];
   const named = parts.filter(([count]) => count > 0).map(([count, one, many]) => `${count} ${count === 1 ? one : many}`);
   return named.length === 0 ? "Nothing new: everything in that file is already here." : `Added ${named.join(", ")}.`;

@@ -249,8 +249,11 @@ func (node *Node) peerLocked() auth.TailnetPeer {
 	sum := sha256.Sum256([]byte(strings.ToLower(node.state.Login)))
 	id := strconv.FormatUint(binary.BigEndian.Uint64(sum[:8])>>1, 10)
 	name, _, _ := strings.Cut(node.state.Login, "@")
-	return auth.TailnetPeer{UserID: id, Login: node.state.Login, Name: name}
+	return auth.TailnetPeer{UserID: id, Login: node.state.Login, Name: name, Tailnet: FakeTailnet}
 }
+
+// FakeTailnet is the one tailnet the fake's node is ever on.
+const FakeTailnet = "name:fake.example"
 
 // WhoIs answers the signed-in user for every connection (one device, one user).
 func (node *Node) WhoIs(context.Context, string) (auth.TailnetPeer, error) {

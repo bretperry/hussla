@@ -97,24 +97,25 @@ func Import(ctx context.Context, target store.Store, input io.Reader, now time.T
 	if err != nil {
 		return Report{}, fmt.Errorf("read seed file: %w", err)
 	}
+	// A file that can't be read as a bundle is the uploader's mistake (400 with the reason), not a server fault.
 	if len(raw) > MaxBundleBytes {
-		return Report{}, fmt.Errorf("the seed file is larger than %d MB", MaxBundleBytes>>20)
+		return Report{}, malformed(fmt.Sprintf("is larger than %d MB", MaxBundleBytes>>20), nil)
 	}
 	if trimmed := bytes.TrimSpace(raw); len(trimmed) > 0 && trimmed[0] == '[' {
 		// The prototype's GET /api/emails list: a list of objects, read as a bundle with only emails.
 		var rows []map[string]json.RawMessage
 		if err := json.Unmarshal(trimmed, &rows); err != nil {
-			return Report{}, fmt.Errorf("the file is a list, but not a list of emails: %w", err)
+			return Report{}, malformed("is a list, but not a list of emails", err)
 		}
 		raw = append(append([]byte(`{"emails":`), trimmed...), '}')
 	}
 	var parsed bundle
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return Report{}, fmt.Errorf("the seed file isn't valid JSON of the expected shape: %w", err)
+		return Report{}, malformed("isn't valid JSON of the expected shape", err)
 	}
 	var sections map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &sections); err != nil {
-		return Report{}, fmt.Errorf("the seed file isn't a JSON object: %w", err)
+		return Report{}, malformed("isn't a JSON object", err)
 	}
 	now = domain.NormalizeTime(now)
 	importer := &importer{now: now}
@@ -133,6 +134,15 @@ func Import(ctx context.Context, target store.Store, input io.Reader, now time.T
 	}
 	importer.addNotices()
 	return importer.report, nil
+}
+
+// malformed is the ValidationError for a file that can't be read as a bundle; the JSON decoder's
+// own words (which name the offset and the type it expected) follow the problem.
+func malformed(problem string, cause error) error {
+	if cause != nil {
+		problem += ": " + cause.Error()
+	}
+	return &domain.ValidationError{Field: "seed file", Problem: problem}
 }
 
 type importer struct {

@@ -50,9 +50,12 @@ type Options struct {
 	// login can claim with the setup code or be adopted as the node's owner; "" allows anyone
 	// eligible. It never replaces an owner already recorded.
 	OwnerLogin string
-	// FirstRunWindow is how long after New the home-network page's first-run link works on an
-	// install that never stored a passkey; zero means config.FirstRunWindow, negative turns it off.
+	// FirstRunWindow is how long after the node's owner is first adopted the home-network page's
+	// "Make it mine" works on an install that never stored a passkey; zero means
+	// config.FirstRunWindow, negative turns it off.
 	FirstRunWindow time.Duration
+	// Node is the server's own tailnet node (nil without Tailscale).
+	Node NodeIdentity
 }
 
 // Service is the auth use-case. It is safe for concurrent use.
@@ -64,18 +67,21 @@ type Service struct {
 	announce func(code string)
 	remind   func(issuedAt time.Time)
 	pinned   string
-	// firstRunUntil ends the first-run window (the zero time when it is off); firstRunLink is the
-	// window's one link secret, minted at New and never stored, so a restart mints a new one.
-	firstRunUntil time.Time
-	firstRunLink  string
+	// firstRunWindow is the first-run window's length (zero or less: off). When it starts is a
+	// settings value (settingFirstRunStarted), so a restart doesn't open it again.
+	firstRunWindow time.Duration
+	node           NodeIdentity
 
 	mu           sync.Mutex
 	lastReissue  time.Time // the last "print a new setup code", for config.SetupCodeReissueGap
-	setupHash    string    // the live setup code's hash ("" when none), mirrored from settings
+	setupHashes  []string  // every live setup code's hash (none when setup is done), mirrored from settings
 	setupGuesses map[string]setupGuesses
-	challenges   map[string]challenge
-	stepUps      map[string]stepUp
-	usedSignIn   map[string]time.Time
+	// firstRunLinkHash is the hash of the one live "Make it mine" link ("" when none): minted by a
+	// POST from the home-network page, spent by the first claim with it, never stored.
+	firstRunLinkHash string
+	challenges       map[string]challenge
+	stepUps          map[string]stepUp
+	usedSignIn       map[string]time.Time
 }
 
 // New builds the Service.
@@ -96,16 +102,13 @@ func New(options Options) *Service {
 	if window == 0 {
 		window = config.FirstRunWindow
 	}
-	var firstRunUntil time.Time
-	if window > 0 {
-		firstRunUntil = now().Add(window)
-	}
 	return &Service{
 		store: options.Store, ceremony: options.Ceremony, signIn: options.SignIn, now: now, announce: announce, remind: remind,
-		pinned:        strings.TrimSpace(options.OwnerLogin),
-		firstRunUntil: firstRunUntil, firstRunLink: randomSecret(),
-		setupGuesses: map[string]setupGuesses{},
-		challenges:   map[string]challenge{}, stepUps: map[string]stepUp{}, usedSignIn: map[string]time.Time{},
+		pinned:         strings.TrimSpace(options.OwnerLogin),
+		firstRunWindow: window,
+		node:           options.Node,
+		setupGuesses:   map[string]setupGuesses{},
+		challenges:     map[string]challenge{}, stepUps: map[string]stepUp{}, usedSignIn: map[string]time.Time{},
 	}
 }
 

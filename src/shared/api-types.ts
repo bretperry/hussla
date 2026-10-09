@@ -772,7 +772,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Prints a new setup code to the server log, replacing the live one (a lost log, or a lost passkey). The owner may ask; before there is an owner, so may anyone who could claim with it. At most once a minute (429). */
+        /** Prints a new setup code to the server log, beside the live ones: codes printed earlier keep working until a passkey is stored (a lost log, or a lost passkey). The owner may ask; before there is an owner, so may anyone who could claim with it. At most once a minute, and at most ten codes live at once (429). */
         post: operations["requestSetupCode"];
         delete?: never;
         options?: never;
@@ -1580,6 +1580,8 @@ export interface components {
             answers: number;
             events: number;
             emails: number;
+            /** @description Pitches added (a slot that already holds one is left as it is). */
+            pitches: number;
             /** @description Imported emails that never went out; each waits, unapproved, for the owner's approval. */
             needApproval: number;
             /** @description File records in the file; their contents aren't in it, so none are stored. */
@@ -1714,9 +1716,9 @@ export interface components {
         };
         /** @description The setup code from the log, or the home-network page's first-run link (`link`), one of the two. */
         SetupClaim: {
-            /** @description As printed (XXXX-XXXX-XXXX); case and dashes don't matter. */
+            /** @description As printed (XXXX-XXXX-XXXX-XXXX); case and dashes don't matter. */
             code?: string;
-            /** @description The secret from the home-network page's "Make it mine" link. */
+            /** @description The one-use secret that the home-network page's "Make it mine" button redirects to; spent by the first claim with it. */
             link?: string;
         };
         SetupClaimed: {
