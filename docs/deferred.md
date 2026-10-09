@@ -28,7 +28,7 @@ What. **Why deferred:** … **Where:** … **If we take it:** … -->
 ## command-guard test timing fix isn't upstream yet
 `open` · recorded 2026-10-09 · from the ship dynamite test fixes (`fix/ship-findings`)
 
-Two wall-clock asserts in `scripts/command-guard.test.mjs` failed on loaded CI runners (measured: 262.8 ms against the 250 ms budget). Bret approved fixing them here (2026-10-09), so this repo's copy now differs from whippletree's. **Why deferred:** pushing upstream is a separate PR on whippletree. **Where:** `scripts/command-guard.test.mjs` (the size-budget test and "looks nothing up … 5000 of them"). **If we take it:** `pnpm harness:push`, then delete this entry once `pnpm harness:status` shows no difference.
+Four wall-clock asserts in `scripts/command-guard.test.mjs` failed on loaded runners (measured: 262.8 ms against the 250 ms budget, a linearity ratio of 8.5 against 8, and 1261 ms against 1 s). Bret approved fixing them here (2026-10-09), so this repo's copy now differs from whippletree's. **Why deferred:** the same fix is open upstream as whippletree#60 and lands there separately. **Where:** `scripts/command-guard.test.mjs` (the size-budget test, "looks nothing up … 5000 of them", "linear with the budgets lifted", and the 200k-character test). **If we take it:** `pnpm harness:push`, then delete this entry once `pnpm harness:status` shows no difference.
 
 ## Mail: OAuth2 sign-in for Outlook.com and Microsoft 365 (and Gmail without app passwords)
 `open` · recorded 2026-10-08 · from `docs/plans/hussla-v1.md` Phase 4
