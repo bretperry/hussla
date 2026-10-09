@@ -318,6 +318,40 @@ Passkeys can be added (setup code for the first on each address, then a tap with
 
 Only the setup code's hash is stored, so a restart reminds the owner of the code printed earlier instead of printing it again. If that log line is gone (the container recreated before setup finished), no code can be read and none is issued. **Why deferred:** the review asked for a hash, not the code, at rest; Phase 6 decides how the first passkey is authorized without the log (review blocker 1), which may retire the code. **Where:** `internal/app/auth/owner.go` (`issueSetupCode`), settings key `auth.setupCode`. **If we take it:** a `hussla new-setup-code` command (data-directory access is the proof, like `hussla open`) that replaces the stored hash and prints the new code.
 
+## Front-page overview endpoint
+
+`open` · recorded 2026-10-08 · from Phase 5 (`docs/plans/hussla-v1.md`)
+
+The front page fetches one company detail per open job (N+1, capped by `FRONT_PAGE_COMPANY_DETAILS`). **Why deferred:** out of Phase 5's scope. **Where:** `src/features/jobs/use-front-page.ts`. **If we take it:** add one overview endpoint to `api/openapi.yaml` and drop the second fetch wave.
+
+
+## First-run setup gate, passkey registration, and wizard
+
+`open` · recorded 2026-10-08 · from Phase 5 (`docs/plans/hussla-v1.md`)
+
+The UI shows a gate on `setup-required` but cannot register a passkey yet. **Why deferred:** out of Phase 5's scope. **Where:** `src/app/App.tsx`. **If we take it:** Phase 6 builds the setup screen.
+
+
+## Vite build is not embedded in the Go binary
+
+`open` · recorded 2026-10-08 · from Phase 5 (`docs/plans/hussla-v1.md`)
+
+`pnpm build` output is not yet wired into `cmd/hussla/web`. **Why deferred:** out of Phase 5's scope. **Where:** `vite.config.ts`, `cmd/hussla`. **If we take it:** Phase 6 embeds it.
+
+
+## Pitch billboard and Settings agent snippet
+
+`open` · recorded 2026-10-08 · from Phase 5 (`docs/plans/hussla-v1.md`)
+
+The pitch slot (Phase 5b) and the Settings "Add an agent" snippet (Phase 3b) are placeholders. **Why deferred:** out of Phase 5's scope. **Where:** `src/features/jobs/PitchSlot.tsx`, `src/features/settings/SettingsPage.tsx`. **If we take it:** build both when their phases land.
+
+
+## Pitches and Activity nav items; no MSW
+
+`open` · recorded 2026-10-08 · from Phase 5 (`docs/plans/hussla-v1.md`)
+
+Activity is reachable by link only; Pitches has no page. Tests stub `fetch` and spy on `api` instead of using MSW. **Why deferred:** out of Phase 5's scope. **Where:** `src/config/ui.ts` (`NAV_ITEMS`). **If we take it:** add the nav items with Phase 5b; adopt MSW only if the stubs get unwieldy.
+
 ## "Add an agent" in Settings: the snippet UI
 
 `open` · recorded 2026-10-08 · from Phase 3b (`docs/plans/hussla-v1.md`)

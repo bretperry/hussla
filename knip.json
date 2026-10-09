@@ -5,10 +5,12 @@
   ],
   "project": [
     "src/**/*.{ts,tsx}",
-    "scripts/**/*.{mjs,ts}"
+    "scripts/**/*.{mjs,ts}",
+    "src/test/*.mjs"
   ],
   "ignoreDependencies": [
-    "@swc/core"
+    "@swc/core",
+    "tailwindcss"
   ],
   "ignoreBinaries": [
     "mkfifo"

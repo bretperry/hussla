@@ -2,9 +2,12 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    // The UI is React in a browser: DOM types, the automatic JSX runtime, and the jest-dom matchers.
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "jsx": "react-jsx",
     // TS 7 defaults `types` to []; name the ambient packages the code actually uses.
-    "types": ["node"],
+    "types": ["node", "vite/client", "@testing-library/jest-dom/vitest"],
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src", "scripts", "vitest.config.ts"]
+  "include": ["src", "scripts", "vitest.config.ts", "vite.config.ts"]
 }
