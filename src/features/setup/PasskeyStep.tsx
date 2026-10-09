@@ -22,7 +22,7 @@ import { Field, TextInput } from "@/shared/ui/Form";
 
 // Where the code is, in the words of each place Hussla runs.
 const WHERE_THE_CODE_IS =
-  "It's in the server's log: on a Synology, Container Manager → Container → hussla → Log; anywhere else, `docker logs hussla` (or the window you started Hussla in).";
+  "Find the newest line starting with “Setup code” in the server's log: on a Synology, Container Manager → Container → hussla → Log; anywhere else, `docker logs hussla` (or the window you started Hussla in).";
 
 type PasskeyStepProps = {
   status: SetupStatus;
