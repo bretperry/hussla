@@ -318,6 +318,23 @@ func (node *Node) RedirectListener() (net.Listener, error) {
 	return listener, nil
 }
 
+// FunnelListener is HTTPS on the public internet through Tailscale Funnel on port, for the agent
+// door only (FunnelOnly: tailnet devices use the site's :443). Call it after Up succeeds. It fails
+// until the tailnet policy grants this node the "funnel" node attribute.
+func (node *Node) FunnelListener(port string) (net.Listener, error) {
+	node.mutex.Lock()
+	server, domain := node.server, node.domain
+	node.mutex.Unlock()
+	if server == nil || domain == "" {
+		return nil, ErrHTTPSOff
+	}
+	listener, err := server.ListenFunnel("tcp", ":"+port, tsnet.FunnelOnly())
+	if err != nil {
+		return nil, fmt.Errorf("listen on Funnel port %s: %w", port, err)
+	}
+	return listener, nil
+}
+
 // State is the node's progress right now (auth.TailnetStatus).
 func (node *Node) State() auth.TailnetState {
 	node.mutex.Lock()

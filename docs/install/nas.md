@@ -81,6 +81,45 @@ back if someone else pressed Make it mine first: add your passkey with it, then 
 With Tailscale **on** on the phone, open the address from step 4 (the setup's phone step shows a
 QR code to scan). Add it to your home screen.
 
+## Let a cloud agent in (optional)
+
+Only if an agent runs somewhere that can't use your Tailscale, like a scheduled Claude routine in
+the cloud. This opens the **agent door**: the agent API alone, on the internet at
+`https://hussla.<something>.ts.net:8443`, answering only to an agent key. Your Hussla site stays
+private to your Tailscale.
+
+1. **Allow Funnel in Tailscale.** Open <https://login.tailscale.com/admin/acls/file>. Look for a
+   `"nodeAttrs"` section with `"attr": ["funnel"]` in it (new tailnets have one). If it isn't
+   there, add this inside the outer `{ }`, after another section (mind the commas), then **Save**:
+
+   ```json
+   "nodeAttrs": [
+     { "target": ["autogroup:member"], "attr": ["funnel"] }
+   ]
+   ```
+
+   If a `"nodeAttrs"` section exists without `funnel`, add only the `{ "target": ... }` line to it.
+2. **Turn the door on in Hussla.** Container Manager → **Project** → **hussla** → **Action → Stop**.
+   Open its **YAML** tab and add one line under `environment:`, lined up with `TS_AUTHKEY`:
+
+   ```yaml
+       environment:
+         TS_AUTHKEY: ${TS_AUTHKEY:-}
+         HUSSLA_AGENT_FUNNEL: "1"
+   ```
+
+   **Save**, then **Action → Start** (say yes if it asks to rebuild).
+3. **Check it.** Container → hussla → **Log** shows `agent door open on Tailscale Funnel`. If it
+   shows `Agent door on Funnel: not open yet` instead, step 1 isn't saved yet; Hussla keeps trying.
+   On a phone with Tailscale **off**, open `https://hussla.<something>.ts.net:8443/api`: it says
+   to send an agent key. Your normal address still needs Tailscale.
+4. **Give the agent its key.** Settings → **Add an agent**; put the key in the agent's environment
+   (`HUSSLA_KEY`) and use `https://hussla.<something>.ts.net:8443` as its address. A Claude
+   routine's environment must also allow that host in its network settings.
+
+To close the door: remove the `HUSSLA_AGENT_FUNNEL` line the same way and start the project again.
+If a key leaks, revoke it in Settings.
+
 ## Check that it worked
 
 - Container Manager → Container: **hussla** is **Running** and its health is **healthy**.

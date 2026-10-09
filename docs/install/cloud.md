@@ -1,7 +1,9 @@
 # Install Hussla on a rented cloud server
 
 About 10 minutes. Hussla is reachable only over your Tailscale network: the server publishes no
-port, so nothing faces the internet. Do the steps in order.
+port, so nothing faces the internet (unless you open the agent door for cloud agents:
+`docs/install/nas.md` → "Let a cloud agent in"; add `HUSSLA_AGENT_FUNNEL: "1"` under
+`environment:` in `docker-compose.yml`). Do the steps in order.
 
 **You need:** a small Linux server (1 GB of memory is plenty; amd64 or arm64) with Docker
 installed, Tailscale on your phone and computer (<https://tailscale.com/download>), signed in and

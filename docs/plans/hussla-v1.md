@@ -19,7 +19,7 @@ Done looks like: Bret opens `https://hussla.<tailnet>.ts.net` on his phone, sees
 companies, edits and approves a follow-up, and it arrives from his own address.
 
 Deliberately not building: multi-user accounts (one owner per install; agents are keys), a
-public internet exposure (tailnet only; no Funnel: a cloud agent joins the tailnet instead), automatic sending without
+public internet exposure (the site is tailnet only; amended 2026-10-09 by `docs/decisions/0016-agent-api-on-funnel.md`: the agent-key API alone may open on Funnel, opt-in, for a cloud agent), automatic sending without
 approval, Postgres (SQLite in a Docker volume is enough for one person), an email inbox reader,
 a hosted multi-customer service, and signed native desktop apps (Docker Desktop or the plain
 binary covers laptops; code-signing and installers are deferred).
