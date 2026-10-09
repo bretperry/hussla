@@ -228,6 +228,24 @@ func listOrNull[T any](list []T) any {
 	return list
 }
 
+// The list fields the API contract types as arrays, never null.
+var (
+	JobListFields     = []string{"reasons", "scamFlags", "contacts", "sources"}
+	CompanyListFields = []string{"facts", "anecdotes", "news", "reviews", "sources"}
+)
+
+// EmptyListsForNull writes [] where listOrNull wrote null; the API and MCP answers call it, storage doesn't.
+//
+// Storage keeps null and [] apart, but the contract promises an array, and the UI crashed on a
+// company whose reviews were null (blank page, "t.reviews is null").
+func EmptyListsForNull(object Object, keys []string) {
+	for _, key := range keys {
+		if value, ok := object[key]; ok && string(value) == "null" {
+			object[key] = json.RawMessage("[]")
+		}
+	}
+}
+
 // EncodeWriters is how a record's per-field writers are stored: the names of the owner-written
 // fields only, since agent is the default (decision 0009).
 func EncodeWriters(writers domain.FieldWriters) string {

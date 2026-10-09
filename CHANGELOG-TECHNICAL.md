@@ -17,7 +17,7 @@ Internal record of how Hussla was built, newest first. Every entry says **what**
 
 ### First NAS install fixes
 
-- **Mail setup saves and tests on separate clicks.** "Save and send me a test" asked for two passkey taps in one click; Firefox (Zen) refused the second prompt as "cancelled or timed out", because a passkey prompt must follow a click closely. Now **Save** and **Send me a test** are two buttons (`MailStep.test.tsx`). The setup-code hint says to use the newest `Setup code` line in the log.
+- **Mail setup saves and tests on separate clicks.** "Save and send me a test" asked for two passkey taps in one click; Firefox (Zen) refused the second prompt as "cancelled or timed out", because a passkey prompt must follow a click closely. Now **Save** and **Send me a test** are two buttons (`MailStep.test.tsx`). The same chain broke **Add a spare passkey** (confirm, then create, in one click): it is now two buttons in `AddSparePasskey.tsx`, used by setup and `/setup/passkeys` (`AddSparePasskey.test.tsx`). The setup-code hint says to use the newest `Setup code` line in the log. **Blank board after setup:** the HTTP API answered `null` for a job's or company's lists that were never set (storage keeps null apart from `[]`), where the contract promises arrays; the front page crashed on `reviews.filter`. the HTTP and MCP answers now write `[]` for those (`wire.EmptyListsForNull`, `internal/httpapi/lists_test.go`).
 
 ### Second dynamite test of PR #13
 

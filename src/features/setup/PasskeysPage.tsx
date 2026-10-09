@@ -2,7 +2,7 @@
   Your passkeys: the list, removing one (never the last), adding a spare, and a new passkey from a new setup code when every one is lost.
   In the app: "/setup/passkeys"; reached from setup's links and the recovery route a lost phone needs.
   Used by: src/app/App.tsx (the route).
-  Uses: api.listPasskeys / removePasskey / registerPasskey, src/features/setup/PasskeyStep.tsx for the recovery code.
+  Uses: api.listPasskeys / removePasskey, AddSparePasskey, src/features/setup/PasskeyStep.tsx for the recovery code.
 */
 import { useState } from "react";
 import { api, describeError } from "@/shared/api";
@@ -12,6 +12,7 @@ import { useResource } from "@/shared/lib/use-resource";
 import { Button } from "@/shared/ui/Button";
 import { ErrorLine, LoadingLine, useToast } from "@/shared/ui/Feedback";
 import { PageHead, Section } from "@/shared/ui/Section";
+import { AddSparePasskey } from "./AddSparePasskey";
 import { PasskeyStep } from "./PasskeyStep";
 
 export const PasskeysPage = ({ status, onChange }: { status: SetupStatus; onChange: () => void }) => {
@@ -53,9 +54,7 @@ export const PasskeysPage = ({ status, onChange }: { status: SetupStatus; onChan
           ))}
         </ul>
         {list.length === 1 ? <p className="text-small text-muted">The last passkey can't be removed; add another first.</p> : null}
-        <Button className="self-start" onClick={() => void run(() => api.registerPasskey("Spare passkey"), "Added a passkey.")}>
-          Add a spare passkey
-        </Button>
+        <AddSparePasskey onAdded={() => void run(() => Promise.resolve(), "Added a passkey.")} />
         {problem === "" ? null : <ErrorLine message={problem} />}
       </Section>
       <Section kicker="Lost every passkey?">
