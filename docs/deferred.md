@@ -368,7 +368,7 @@ Phase 6 adds `/setup/passkeys` (list, remove, add, recovery code) and `/setup/ma
 
 `open` · recorded 2026-10-09 · from Phase 6 (`docs/plans/hussla-v1.md`)
 
-`.github/workflows/publish-image.yml` uses `docker/*@vN` and `actions/checkout@v7`, like `ci.yml`, not commit SHAs. It holds `packages: write` and `contents: write` on a tag push. **Why deferred:** the session that wrote it couldn't read the docker actions' repos to resolve SHAs, and `ci.yml` follows the same convention. **Where:** `.github/workflows/publish-image.yml`. **If we take it:** pin each to a full SHA with the tag in a comment, and let Dependabot bump them.
+`.github/workflows/publish-image.yml` uses `docker/*@vN` and `actions/checkout@v7`, like `ci.yml`, not commit SHAs. It holds `packages: write` and `contents: write` on a release (`release.yml` calls it after each ship; a hand-pushed tag still runs it). **Why deferred:** the session that wrote it couldn't read the docker actions' repos to resolve SHAs, and `ci.yml` follows the same convention. **Where:** `.github/workflows/publish-image.yml`. **If we take it:** pin each to a full SHA with the tag in a comment, and let Dependabot bump them.
 
 ## Reconnect shows the Tailscale login link to the whole home network
 
