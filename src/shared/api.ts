@@ -189,6 +189,8 @@ export const api = {
   signOutEverywhere: (): Promise<Schemas["Ok"]> => send("POST", "/api/sessions/revoke-all", { stepUp: true }),
   removePasskey: (passkeyId: string): Promise<Schemas["Ok"]> => send("DELETE", `/api/passkeys/${id(passkeyId)}`, { stepUp: true }),
   // A new passkey: with the token from the setup code or the first-run link, or else a tap with a passkey already here.
+  // The tap that authorizes adding a passkey, on its own click; registerPasskey takes the token on the next one.
+  confirmForNewPasskey: (): Promise<string> => requestStepUpToken("POST", "/api/passkeys/register/begin"),
   registerPasskey: async (name: string, stepUpToken?: string): Promise<{ id: string; name: string; rpId: string }> => {
     const challenge = await send<Schemas["PasskeyChallenge"]>(
       "POST",

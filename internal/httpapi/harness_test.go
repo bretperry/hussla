@@ -1,10 +1,11 @@
 // The HTTP tests' rig: the real router and use-cases over the in-memory store, a fake tailnet, a virtual authenticator, and request helpers.
 // In the app: nothing at runtime (tests only).
 // Used by: every _test.go in this package.
-// Uses: httpapi.New, the use-cases, the passkey adapter (the real WebAuthn checks), internal/testsupport fakes.
+// Uses: httpapi.New, the use-cases, the passkey adapter (the real WebAuthn checks), internal/testsupport fakes, response_contract_test.go.
 //
 // Requests go straight into the handler (no socket), with RemoteAddr set the way the tailnet
 // listener would see it, so WhoIs is answered by the fake tailnet table. Fixtures are synthetic.
+// Every 2xx JSON answer is checked against api/openapi.yaml on the way back (rig.do).
 
 package httpapi_test
 
@@ -256,7 +257,9 @@ func (r *rig) do(c call) reply {
 	result := recorder.Result()
 	defer func() { _ = result.Body.Close() }()
 	raw, _ := io.ReadAll(result.Body)
-	return reply{status: result.StatusCode, header: result.Header, body: raw}
+	got := reply{status: result.StatusCode, header: result.Header, body: raw}
+	checkResponseContract(r.t, c.method, c.path, got)
+	return got
 }
 
 // must runs a request and fails the test unless it answers `want`.
