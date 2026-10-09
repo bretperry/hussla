@@ -7,7 +7,7 @@
   Exit 0 only when every check passed. Checks:
   - no console errors, no failed requests, and no horizontal scroll, on every page at both widths;
   - front page at 1280: the lead and rail columns end within 4px of each other, and every section's rule starts on a column
-    start and ends on a column end of the 12 x 74px grid (64px margins, 24px gutters), within 1px;
+    start and ends on a column end of the front page's 12 x 52px grid (64px margins, 48px gutters), within 1px;
   - the three front page states (day one, nothing to sign, no lead story) show what the spec says;
   - the billboard: every pitch (the longest the server allows included) fits its fixed box at both widths, turning to the
     next one never moves the page, and under prefers-reduced-motion the switch draws no outgoing layer.
@@ -26,10 +26,10 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const outDir = process.env.UI_EVIDENCE_OUT ?? join(root, "docs", "screenshots", "phase-5");
 const CHROMIUM = process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium";
 
-// Grid at 1280: 64px margin, 12 columns of 74px, 24px gutters.
+// The front page grid at 1280: 64px margin, 12 columns of 52px, 48px gutters.
 const MARGIN = 64;
-const COLUMN = 74;
-const GUTTER = 24;
+const COLUMN = 52;
+const GUTTER = 48;
 const GRID_TOLERANCE = 1;
 const COLUMN_END_TOLERANCE = 4;
 
@@ -112,7 +112,8 @@ if (geometry.leadContentBottom !== null && geometry.railContentBottom !== null) 
 const starts = Array.from({ length: 12 }, (_, index) => MARGIN + index * (COLUMN + GUTTER));
 const ends = starts.map((start) => start + COLUMN);
 const near = (value, list) => list.some((candidate) => Math.abs(candidate - value) <= GRID_TOLERANCE);
-check(geometry.edges.length >= 6, `front: ${geometry.edges.length} section rules found`);
+// Lead, fact box, pitch, news and board; the briefing sits in the section bar and has no 2px rule.
+check(geometry.edges.length >= 5, `front: ${geometry.edges.length} section rules found`);
 for (const edge of geometry.edges) {
   check(near(edge.left, starts), `front: "${edge.text.slice(0, 28)}" starts on a column (${edge.left.toFixed(1)})`);
   check(near(edge.right, ends), `front: "${edge.text.slice(0, 28)}" ends on a column (${edge.right.toFixed(1)})`);
@@ -171,7 +172,8 @@ for (const width of [1280, 390]) {
 // The three states from the spec.
 fixture.state.mode = "empty";
 const dayOne = await open(1280, "/", "day one");
-check((await dayOne.locator("text=Nothing to sign").count()) === 1 && (await dayOne.locator("text=Review & sign").count()) === 0, "day one: the ear says nothing to sign, with no button");
+// Visible only: the phone briefing is in the page too, hidden by CSS at this width.
+check((await dayOne.locator("text=Nothing to sign").filter({ visible: true }).count()) === 1 && (await dayOne.locator("text=Review & sign").count()) === 0, "day one: the briefing says nothing to sign, with no button");
 check((await dayOne.locator("text=Your first story starts with one job").count()) === 1, "day one: the lead story invites the first job");
 check((await dayOne.locator("text=at a glance").count()) === 0, "day one: no fact box");
 check((await dayOne.locator("text=Your pitches will rotate here").count()) === 1, "day one: the pitch slot says pitches will rotate here");
@@ -180,7 +182,7 @@ await dayOne.close();
 
 fixture.state.mode = "nothing-to-sign";
 const quiet = await open(1280, "/", "nothing to sign");
-check((await quiet.locator("text=Nothing to sign").count()) === 1 && (await quiet.getByRole("link", { name: "Review & sign" }).count()) === 0, "nothing to sign: ear says so, no button");
+check((await quiet.locator("text=Nothing to sign").filter({ visible: true }).count()) === 1 && (await quiet.getByRole("link", { name: "Review & sign" }).count()) === 0, "nothing to sign: the briefing says so, no button");
 await quiet.close();
 
 fixture.state.mode = "no-lead";

@@ -44,7 +44,7 @@ const ImportStep = ({ onDone }: { onDone: () => void }) => {
   };
   return (
     <div className="flex max-w-prose flex-col gap-4">
-      <h2 className="font-display text-lead-phone font-black">Bring your jobs</h2>
+      <h2 className="font-display text-lead-phone font-bold">Bring your jobs</h2>
       <p>Have a Hussla backup or an export from the old tracker? Pick the .json file. Importing twice changes nothing.</p>
       <Field label="Backup file">
         <input type="file" accept="application/json,.json" onChange={(event) => void pick(event)} />
@@ -78,7 +78,7 @@ const AgentStep = ({ onDone }: { onDone: () => void }) => {
   };
   return (
     <form className="flex max-w-prose flex-col gap-4" onSubmit={(event) => void submit(event)} aria-label="Connect an agent">
-      <h2 className="font-display text-lead-phone font-black">Connect an agent</h2>
+      <h2 className="font-display text-lead-phone font-bold">Connect an agent</h2>
       <p>An agent (Claude, say) finds jobs and drafts follow-ups through a key you can revoke any time. It can never send or approve email.</p>
       {created === null ? (
         <>
@@ -111,7 +111,7 @@ const AgentStep = ({ onDone }: { onDone: () => void }) => {
 
 const PhoneStep = ({ status, onDone }: { status: SetupStatus; onDone: () => void }) => (
   <div className="flex max-w-prose flex-col gap-4">
-    <h2 className="font-display text-lead-phone font-black">Open Hussla on your phone</h2>
+    <h2 className="font-display text-lead-phone font-bold">Open Hussla on your phone</h2>
     <ol className="ml-6 list-decimal">
       <li>
         Install Tailscale on the phone (<a href={TAILSCALE_DOWNLOAD}>tailscale.com/download</a>) and sign in as <b>{status.ownerLogin}</b>.
@@ -130,7 +130,7 @@ const PhoneStep = ({ status, onDone }: { status: SetupStatus; onDone: () => void
 
 const ExpiryStep = ({ status, onDone }: { status: SetupStatus; onDone: () => void }) => (
   <div className="flex max-w-prose flex-col gap-4">
-    <h2 className="font-display text-lead-phone font-black">Keep this machine signed in to Tailscale</h2>
+    <h2 className="font-display text-lead-phone font-bold">Keep this machine signed in to Tailscale</h2>
     <p>
       Tailscale signs a machine out after a while (about six months), and Hussla goes quiet until someone signs it in again.
       {status.keyExpiry === undefined ? " This one never expires already." : ` This one expires in ${status.keyExpiry.daysLeft} days.`}
@@ -149,7 +149,7 @@ const ExpiryStep = ({ status, onDone }: { status: SetupStatus; onDone: () => voi
 
 const SecondPasskeyStep = ({ onDone }: { onDone: () => void }) => (
   <div className="flex max-w-prose flex-col gap-4">
-    <h2 className="font-display text-lead-phone font-black">Add a spare passkey</h2>
+    <h2 className="font-display text-lead-phone font-bold">Add a spare passkey</h2>
     <p>
       If this phone is lost, a second passkey (your laptop, a security key) still gets you in. First confirm with the passkey you have, then
       make the new one.

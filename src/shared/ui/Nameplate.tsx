@@ -1,13 +1,13 @@
 /*
   The nameplate: the product name in black Bodoni with a red period, and the rules under it.
-  In the app: the top of every page; huge on the front page, smaller on inner pages.
-  Used by: src/app/shell.tsx, src/features/jobs/FrontPage.tsx.
+  In the app: the middle of the masthead on every page; a touch bigger on the front page.
+  Used by: src/app/shell.tsx.
 */
 import { cn } from "../lib/cn";
 
 type NameplateProps = {
   name: string;
-  // "front" is the 112px masthead centerpiece; "inner" is the compact one that links home.
+  // "front" is 64px on the front page; "inner" is 44px everywhere else. Both are 44px on a phone.
   size: "front" | "inner";
   className?: string;
 };
@@ -16,9 +16,9 @@ export const Nameplate = ({ name, size, className }: NameplateProps) => (
   <div
     data-nameplate
     className={cn(
-      "font-display font-black",
-      size === "front" && "text-center text-nameplate-phone lg:text-nameplate",
-      size === "inner" && "text-nameplate-inner",
+      "font-nameplate font-black text-nameplate-phone",
+      size === "front" && "lg:text-nameplate",
+      size === "inner" && "lg:text-nameplate-inner",
       className,
     )}
   >

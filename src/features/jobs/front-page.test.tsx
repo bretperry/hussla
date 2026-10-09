@@ -11,7 +11,7 @@ import { FrontPageView } from "./FrontPage";
 import type { FrontPageData } from "./use-front-page";
 
 const full: FrontPageData = { jobs: jobItems, companies: companySummaries, drafts: emails.filter((email) => email.status === "draft"), details: companyDetails };
-const view = (data: FrontPageData) => render(<FrontPageView appName="Hussla" data={data} now={FIXTURE_NOW} />);
+const view = (data: FrontPageData) => render(<FrontPageView data={data} now={FIXTURE_NOW} />);
 
 describe("front page rules", () => {
   it("leads with the job furthest along, then the best fit", () => {
@@ -54,11 +54,11 @@ describe("front page rules", () => {
 });
 
 describe("front page states", () => {
-  it("full page: lead headline, fact box, signature ear with a button", () => {
+  it("full page: lead headline, fact box, briefing with a button", () => {
     view(full);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Northwind Labs has you interviewing");
     expect(screen.getByRole("group", { name: "Northwind Labs at a glance" })).toBeInTheDocument();
-    expect(screen.getByText("2 follow-ups ready")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Briefing" })).toHaveTextContent("2 follow-ups ready");
     expect(screen.getByRole("link", { name: "Review & sign" })).toHaveAttribute("href", "/outbox");
     expect(screen.getByRole("link", { name: "All 10 jobs →" })).toHaveAttribute("href", "/jobs");
   });
@@ -81,7 +81,7 @@ describe("front page states", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Your first story starts with one job");
   });
 
-  it("nothing to sign: the ear says so with no button, the rest of the page stays", () => {
+  it("nothing to sign: the briefing says so with no button, the rest of the page stays", () => {
     view({ ...full, drafts: [] });
     expect(screen.getByText("Nothing to sign")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Review & sign" })).toBeNull();

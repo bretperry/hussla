@@ -1,6 +1,6 @@
 /*
   Newspaper section pieces: the kicker, the 2px-ruled section head, stat blocks and the page head.
-  In the app: every section on every page opens with a 2px rule, then a mono kicker.
+  In the app: every section on every page opens with a 2px rule, then a small-caps kicker.
   Used by: src/features/**, src/app/**.
 
   Gaps are fixed by relationship (rule to kicker 8, kicker to headline 8, headline to body 16, body to buttons 16, section to section 24).
@@ -43,10 +43,10 @@ export const Section = ({
   </section>
 );
 
-// A big Bodoni number over a mono label.
+// A big serif number over a kicker label.
 export const Stat = ({ value, label }: { value: ReactNode; label: string }) => (
   <div className="flex flex-col">
-    <span className="font-display text-stat font-black">{value}</span>
+    <span className="font-display text-stat font-bold">{value}</span>
     <span className="kicker">{label}</span>
   </div>
 );
@@ -56,7 +56,7 @@ export const PageHead = ({ kicker, title, actions }: { kicker: string; title: Re
   <div className="flex flex-col gap-2">
     <SectionHead kicker={kicker} />
     <div className="flex flex-wrap items-start justify-between gap-4">
-      <h1 className="font-display text-lead-phone font-black lg:text-page">{title}</h1>
+      <h1 className="font-display text-lead-phone font-bold lg:text-page">{title}</h1>
       {actions === undefined ? null : <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   </div>

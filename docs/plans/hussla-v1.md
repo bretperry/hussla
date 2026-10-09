@@ -265,26 +265,29 @@ lists them) in the brand the owner picked (below), plus: company page (quick tak
 stat tiles, money, facts, anecdotes, news, reviews, contacts with call and email links, editable
 follow-up drafts per job and a new-email composer, sent/queued history), companies table with
 sorting and a 2–4 company side-by-side compare. Works at 390px.
-**Brand (picked 2026-10-08): "The Gazette", a designed newspaper; front page is mockup 8c.**
+**Brand (picked 2026-10-08): "The Gazette", a designed newspaper; front page is mockup 8c, with the
+row 9 pass (2026-10-09): readable type, a slim masthead, smaller headlines.**
 The mockup is board "8c" on the owner's design canvas (private; the build follows this spec, not
 the canvas, and the repo carries no copy because the mockup shows the owner's own pitches).
 - **Colors:** paper `#FBFAF7`, ink `#121212`, hairlines `#D9D5CC`, secondary text `#555`, and one red
-  accent `#C8102E`. Red is used only for urgent or live items (kickers, the awaiting-signature ear) and for
+  accent `#C8102E`. Red is used only for urgent or live items (kickers, the follow-up count) and for
   the nameplate's period, never as a fill. Review & sign is the only solid black button on the page.
-- **Type:** Bodoni Moda for the nameplate (112), headlines (lead 56; news and pitch 24–32), the
-  pitch quote in italic, and body text (18/28). Libre Franklin for UI text and buttons (13–16).
-  IBM Plex Mono for kickers, dates and counts (10–11, caps, tracked). Headlines use `text-wrap:
+- **Type:** Bodoni Moda only for the nameplate (64; 44 on inner pages and phones). Source Serif 4
+  for headlines (lead 26, phone 22; pitch title 20; news 17), the pitch quote in italic (20), and
+  body text (18/28). Libre Franklin for UI text, nav and buttons (14–16), and for kickers and tags
+  (11–12, bold caps, tracked 0.08em); IBM Plex Mono only for code. Headlines use `text-wrap:
   balance`, body uses `pretty`, and quotes are curly. Self-host the font files (CSP: no
   Google Fonts call).
-- **Grid:** at 1280, 64px margins and 12 columns of 74px with 24px gutters. Hairline column rules
-  sit centered in the gutter. Spacing scale is 4/8/16/24/32 only. The same relationship always
+- **Grid:** at 1280, 64px margins and 12 columns of 74px with 24px gutters; the front page uses 12
+  columns of 52px with 48px gutters so its hairline column rules, centered in the gutter, have room. Spacing scale is 4/8/16/24/32 only. The same relationship always
   gets the same gap: rule → kicker 8, kicker → headline 8, headline → body 16, body →
-  buttons 16, section → section 24. Every section opens with a 2px rule, then a mono kicker.
-- **Masthead:** a dateline row (issue number and date, the motto centered, nav on the right). Below it,
-  a left ear ("Awaiting your signature": count, a 44px Review & sign button, the companies), the
-  nameplate "Hussla." centered, and a right ear (overnight agent counts: applied, reviews,
-  profiles, plus "Read the agent wire →"). Then an 8px black rule over a 1px hairline under the title,
-  with no rule above it.
+  buttons 16, section → section 24 (32 on the front page; the lead kicker → headline is 20).
+  Every section opens with a 2px rule, then a kicker.
+- **Masthead:** one row: issue number and date on the left, the nameplate "Hussla." centered, the
+  motto on the right (never in the nav's row: they collided). Then an 8px black rule over a 1px
+  hairline, with no rule above the title. Under it, a 56px section bar: the nav on the left and, on
+  the front page, the briefing on the right (overnight counts linking to the agent wire, the
+  follow-up count, and a 32px Review & sign button that stays inside the bar).
 - **Body, 8 + 4 columns:**
   - **Lead story (left 8):** kicker, headline, and one body column (about 56 characters a
     line) with an outlined Open/Prep pair. Beside it sits an "<Company> at a glance" fact box
@@ -297,11 +300,13 @@ the canvas, and the repo carries no copy because the mockup shows the owner's ow
     jobs with status tags and an "All N jobs →" link). The rail's second rule sits on the same
     line as the pitch rule.
   - **Bottom:** both columns end on the same line.
-- **Phone (390):** the masthead, then the awaiting-signature ear first, the lead, the pitch, news, then the board.
+- **Phone (390):** the nameplate with the date and motto beside it, a nav that scrolls sideways, then
+  the briefing (follow-ups with a 44px Review & sign, then the overnight line), the lead, the pitch,
+  news, then the board.
 - **States:** Phase 5 designs and builds these.
   - **Day one:** no jobs and no pitches.
   - **No lead story:** the fact box is hidden.
-  - **Nothing to sign:** the ear says so, with no button.
+  - **Nothing to sign:** the briefing says so, with no button.
 - **Tokens:** these live in `src/shared/ui/`, not as literals in features.
 **Applies:** `react.mdc`; architecture "Client state".
 **Files:** `src/features/{jobs,companies,outbox,answers,activity,settings}/`, `src/shared/ui/*`,

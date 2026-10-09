@@ -15,6 +15,9 @@ Internal record of how Hussla was built, newest first. Every entry says **what**
 
 ## [Unreleased — dev only]
 
+### Web client
+
+- **Gazette type pass (mockup row 9).** Bodoni Moda now sets only the nameplate (`--font-nameplate`); `--font-display` is Source Serif 4 (self-hosted `@fontsource-variable/source-serif-4`), and the `kicker`/`tag` utilities are Libre Franklin bold caps instead of IBM Plex Mono. The type scale shrinks (lead 56 → 26, nameplate 112 → 64, news 24 → 17, quote 32 → 20, pitch box 224 → 144px). The masthead is one row (date · nameplate · motto) over a 56px section bar; the front page's briefing renders into the bar through a portal slot (`src/app/bar-slot.tsx`), replacing the two 120px ears. The front page grid moves to 48px gutters (52px columns; `ui-evidence.mjs` checks that grid). *Why:* Bodoni at text sizes was hard to read, the motto collided with the nav at in-between widths, and the header took too much of the screen.
 ### First NAS install fixes
 
 - **Mail setup saves and tests on separate clicks.** "Save and send me a test" asked for two passkey taps in one click; Firefox (Zen) refused the second prompt as "cancelled or timed out", because a passkey prompt must follow a click closely. Now **Save** and **Send me a test** are two buttons (`MailStep.test.tsx`). The same chain broke **Add a spare passkey** (confirm, then create, in one click): it is now two buttons in `AddSparePasskey.tsx`, used by setup and `/setup/passkeys` (`AddSparePasskey.test.tsx`). The setup-code hint says to use the newest `Setup code` line in the log. **Blank board after setup:** the HTTP API answered `null` for a job's or company's lists that were never set (storage keeps null apart from `[]`), where the contract promises arrays; the front page crashed on `reviews.filter`. the HTTP and MCP answers now write `[]` for those (`wire.EmptyListsForNull`, `internal/httpapi/lists_test.go`).
