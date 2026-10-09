@@ -15,6 +15,13 @@ Internal record of how Hussla was built, newest first. Every entry says **what**
 
 ## [Unreleased — dev only]
 
+### Phase 6 setup and packaging
+
+- **First run without a terminal.** A home-network page (`HUSSLA_HOME_PORT`, 8484 in the image) shows Tailscale's state (Connect, approval, the HTTPS switch, running), the ts.net address with a QR, the owner, Start over, and a 15-minute "Make it mine" link for the node's owner; the setup code stays as the fallback and can be reprinted from the setup screen; a lost-every-passkey owner recovers the same way. The tailnet is re-read every 15 s (rename, key expiry, logout), and `:80` redirects to the https name. *Why:* `reviews/first-run-claude.md` blockers 1–4; Bret picked "Both" (`docs/decisions/0015-first-run-window.md`).
+- **Setup wizard.** `/setup`: passkey, mail (provider catalog, save then a test to yourself), import, agent key, phone QR, key expiry, spare passkey; each skippable, progress kept server-side (`setup.wizard`). `/setup/passkeys` lists, removes (never the last) and adds passkeys; a key-expiry banner shows on every page. The composition root now wires mail setup and the outbox dispatcher, which the wizard needs. *Why:* Phase 6 of `docs/plans/hussla-v1.md`.
+- **Image, compose and binaries.** Multi-stage `Dockerfile` (Vite build, cgo-free Go cross-compile, distroless nonroot, `/data` owned by 65532, `HEALTHCHECK` via `hussla health`) with an `e2e` target linking a fake Tailscale (`-tags faketailnet`); `docker-compose.yml` with `image:`, a named volume and no required value; laptop and cloud variants in `deploy/`; `.github/workflows/publish-image.yml` pushes amd64+arm64 to GHCR on a `v*` tag and drafts a release with `scripts/release-binaries.sh`'s six binaries. *Why:* the 2026-10-08 NAS install (bind mounts, building on the NAS, placeholders).
+- **Evidence.** `pnpm e2e:setup` (Playwright + CDP virtual authenticator against `docker run` of the e2e image) and `pnpm smoke:container` (fresh volume, evil Host, wrong code, recreate keeps the sign-in); screenshots in `docs/screenshots/phase-6/`.
+
 ### Phase 5 UI
 
 - **Gazette React UI.** Pages: jobs front page, job, companies, compare, company, outbox, answers, activity, settings. Tokens in `src/shared/ui/tokens.css`, knobs in `src/config/ui.ts`, one sanitizing Markdown renderer for untrusted text, passkey step-up for owner-only actions, small History API router, `useResource` fetch hook (no client store). Evidence: `pnpm ui:evidence` (screenshots at 1280 and 390, grid and column-end DOM check) writes `docs/screenshots/phase-5/`. *Why:* Phase 5 of `docs/plans/hussla-v1.md`.

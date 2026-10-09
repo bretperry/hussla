@@ -89,7 +89,7 @@ mail must keep these true and test them.
 | 4 | Mail port, provider catalog, adapters, secret store, outbox pacing | 2 | deep (high) | landed (#4) |
 | 5 | React UI: jobs, job, companies, compare, company, outbox, answers, activity, settings | 1 | workhorse (medium) | |
 | 5b | Pitches: ten honed pitches, dashboard billboard, versions and side-by-side compare | 3b, 5 | workhorse (medium) | |
-| 6 | First-run wizard, prebuilt image, no-key no-terminal NAS install, binaries, install guides (NAS, laptop, cloud) | 3, 3b, 4, 5, 5b | workhorse (medium) | |
+| 6 | First-run wizard, prebuilt image, no-key no-terminal NAS install, binaries, install guides (NAS, laptop, cloud) | 3, 3b, 4, 5, 5b | workhorse (medium) | running (#10); built before 5b (Pitches): the pitch slot stays its placeholder; 10 human checks open |
 | 7 | Install on the NAS and accept on phone | 6; NAS model, Tailscale account | — (human) | |
 
 ## Phase 0 — Repo setup
@@ -384,9 +384,10 @@ Phase 3 fixes the code bugs it found, on PR #5):
   and QR. It accepts only a private source address and a `Host` that is a private IP, a bare name
   or `.local` (checked on the connection, against DNS rebinding), never grants identity, and is
   never published on a cloud host.
-- **First passkey without the log** (Bret's pick pending: first-start window, log code, or both):
+- **First passkey without the log** (Bret picked **Both**, 2026-10-08; `docs/decisions/0015-first-run-window.md`):
   window = never owned, within 15 minutes of start, the Tailscale node owner, from the LAN page's
-  one-time link; outside it, the setup code from the log. The code stays valid until a passkey is
+  one-time link; outside it, the setup code from the log, which the owner (by identity) can also
+  replace from the setup screen when the log is lost. The code stays valid until a passkey is
   stored, so a cancelled Face ID retries without a new code.
 - **Show who owns it.** Until the first passkey exists, the pages say "Owner: `<login>`, not you?
   Start over"; the person who'll use it must be the one who clicks Connect (family tailnets).
@@ -430,6 +431,11 @@ drives the LAN listener, not the container's loopback.
 - `hussla-p6-strangers` · Mac · 10 min · none — While setting up, open the LAN page from a second laptop first. It can't take ownership silently: the owner's login shows with Start over.
 - `hussla-p6-other-account` · iPhone · 5 min · none — Open Hussla on a phone signed in to Tailscale as another account. The page names the owner and the account it saw.
 - `hussla-p6-cloud` · Linux · 20 min · none — Install on a rented cloud server. No port is reachable from outside (nmap), and the job board opens on the phone.
+- `hussla-p6-ghcr-public` · decision · 2 min · none · waits hussla-p6-publish — Make the GHCR package public. After the first publish, github.com/bretperry/hussla → Packages → hussla → Package settings → Change visibility → Public, so a NAS pulls it with no login.
+- `hussla-p6-publish` · Linux · 15 min · none — Push the first version tag. `git tag v0.1.0 && git push origin v0.1.0`: the Publish workflow pushes `ghcr.io/bretperry/hussla` for amd64 and arm64 and drafts a release with six binaries; read the draft and press Publish.
+- `hussla-p6-signing` · decision · 10 min · none — Decide on signing the binaries. macOS shows "unidentified developer" for an unsigned binary (the laptop guide says right-click → Open); signing and notarizing need an Apple Developer account, Windows an Authenticode certificate.
+- `hussla-p6-update` · Mac · 10 min · none · waits hussla-p6-publish — Update a NAS install from Container Manager. Project → hussla → Action → Stop, Build, Start picks up a newer tag; the job board, passkeys and address are unchanged.
+- `hussla-p6-laptop` · Mac · 10 min · none · waits hussla-p6-publish — Follow docs/install/laptop.md on a Mac with Docker Desktop. The one-line start, localhost:8484, Connect and Make it mine reach the job board; `docker inspect` says healthy.
 - `hussla-p6-nas` · Mac · 10 min · none — Install on a fresh Synology with no terminal. Container Manager → Project → Create, paste the compose file, open the NAS address in a browser and click Connect; the job board opens on your phone within 5 minutes, with no auth key and no folders made by hand.
 
 ## Phase 7 — Install and accept

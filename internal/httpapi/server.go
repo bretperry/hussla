@@ -17,6 +17,8 @@ import (
 	"github.com/bretperry/hussla/internal/app/attachments"
 	"github.com/bretperry/hussla/internal/app/auth"
 	"github.com/bretperry/hussla/internal/app/mailbox"
+	"github.com/bretperry/hussla/internal/app/mailsetup"
+	"github.com/bretperry/hussla/internal/app/setup"
 	"github.com/bretperry/hussla/internal/app/tracker"
 )
 
@@ -44,6 +46,9 @@ type Config struct {
 	Hosts []string
 	// Peers answers WhoIs on the tailnet listener; nil on the local listener.
 	Peers auth.PeerIdentifier
+	// PlainHTTP serves the tailnet door over http (Origin http://<host>, no HSTS). Only the
+	// end-to-end test build sets it, for its fake tailnet on localhost; the real tailnet is HTTPS.
+	PlainHTTP bool
 }
 
 // Deps are the use-cases.
@@ -52,6 +57,10 @@ type Deps struct {
 	Tracker     *tracker.Service
 	Mail        *mailbox.Service
 	Attachments *attachments.Service
+	// Setup is the first run (home-network page, wizard, key expiry); nil serves those routes as off.
+	Setup *setup.Service
+	// MailSetup saves and shows the mail provider setup; nil answers its routes "not set up".
+	MailSetup *mailsetup.Service
 	// AgentsGuide is docs/agents-api.md, served at /api/docs.
 	AgentsGuide string
 	// UI is the built web app (index.html at its root); nil serves a placeholder page.
@@ -71,7 +80,7 @@ type api struct {
 // New builds one listener's handler.
 func New(config Config, deps Deps) http.Handler {
 	server := &api{config: config, deps: deps, hosts: map[string]bool{}, mux: http.NewServeMux(), scheme: "https"}
-	if config.Listener == ListenerLocal {
+	if config.Listener == ListenerLocal || config.PlainHTTP {
 		server.scheme = "http"
 	}
 	for _, host := range config.Hosts {
@@ -100,7 +109,11 @@ func (server *api) routes() {
 	server.handle("GET /api/setup", server.anyone(server.setupStatus))
 	server.handle("POST /api/setup/claim", server.anyone(server.setupClaim))
 	server.handle("GET /signin", server.anyone(server.signIn))
+	server.handle("POST /api/setup/code", server.anyone(server.setupNewCode))
+	server.handle("PATCH /api/setup/wizard", server.owner(server.markWizardStep))
+	server.handle("GET /api/setup/qr", server.owner(server.addressQR))
 	server.handle("GET /api/passkeys", server.owner(server.listPasskeys))
+	server.handle("DELETE /api/passkeys/{passkeyId}", server.ownerStepUp(server.removePasskey))
 	server.handle("POST /api/passkeys/register/begin", server.ownerStepUp(server.registerBegin))
 	server.handle("POST /api/passkeys/register/finish", server.owner(server.registerFinish))
 	server.handle("POST /api/stepup/begin", server.owner(server.stepUpBegin))
@@ -145,6 +158,9 @@ func (server *api) routes() {
 	server.handle("DELETE /api/tokens/{keyId}", server.ownerStepUp(server.revokeKey))
 	// mail
 	server.handle("GET /api/mail", server.member(server.mailStatus))
+	server.handle("GET /api/mail/providers", server.owner(server.mailProviders))
+	server.handle("GET /api/mail/settings", server.owner(server.mailSettings))
+	server.handle("PUT /api/mail/settings", server.ownerStepUp(server.saveMailSettings))
 	server.handle("POST /api/mail/test", server.ownerStepUp(server.sendTest))
 	server.handle("GET /api/emails", server.member(server.listEmails))
 	server.handle("PATCH /api/emails/{emailId}", server.member(server.editEmail))

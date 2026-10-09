@@ -1,6 +1,6 @@
 # What `docker build` never sends to the daemon: secrets, VCS, dependencies, and anything the image doesn't run.
 # In the app: every image build reads it; the build context is the repo root.
-# Used by: docker build (any Dockerfile here, and CI's image build).
+# Used by: docker build (the Dockerfile here, and .github/workflows/publish-image.yml).
 #
 # Every file sent is a file a `COPY . .` can bake into a layer forever, so secrets and state go
 # first. Add a project's own dirs (apps it doesn't ship, e2e suites, native projects) below.
@@ -38,3 +38,5 @@ docs
 infra
 *.md
 !README.md
+# The agent guide is embedded in the binary (assets.go), so the Go build needs it.
+!docs/agents-api.md

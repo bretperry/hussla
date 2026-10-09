@@ -141,3 +141,83 @@ func TestMCPIsMountedBesideTheAPI(t *testing.T) {
 		}
 	}
 }
+
+// ownerScript is a joined node whose owner changes between refreshes.
+type ownerScript struct {
+	mutex sync.Mutex
+	owner auth.TailnetPeer
+}
+
+func (node *ownerScript) Refresh(context.Context) error { return nil }
+
+func (node *ownerScript) NodeOwner() auth.TailnetPeer {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	return node.owner
+}
+
+func (node *ownerScript) set(owner auth.TailnetPeer) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	node.owner = owner
+}
+
+// TestSuperviseAdoptsTheNextOwnerAfterStartOver: after Start over, whoever logs the node in next owns it, without a restart.
+func TestSuperviseAdoptsTheNextOwnerAfterStartOver(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		service := auth.New(auth.Options{Store: fakes.New()})
+		first := auth.TailnetPeer{UserID: "2002", Login: "neighbor@example.com"}
+		second := auth.TailnetPeer{UserID: "1001", Login: "owner@example.com"}
+		if _, err := service.AdoptNodeOwner(ctx, first); err != nil {
+			t.Fatal(err)
+		}
+		node := &ownerScript{owner: first}
+		go superviseTailnet(ctx, node, service, slog.New(slog.DiscardHandler))
+
+		if err := service.StartOver(ctx); err != nil {
+			t.Fatal(err)
+		}
+		node.set(auth.TailnetPeer{}) // logged out
+		time.Sleep(config.TailnetRefresh)
+		node.set(second) // the right person signs in
+		time.Sleep(config.TailnetRefresh + time.Second)
+		synctest.Wait()
+		if login, err := service.OwnerLogin(ctx); err != nil || login != second.Login {
+			t.Fatalf("owner after start over: %q %v", login, err)
+		}
+	})
+}
+
+// TestTailnetDoorFollowsARename: a rename in the admin console moves the allowed Host, with no restart.
+func TestTailnetDoorFollowsARename(t *testing.T) {
+	var mutex sync.Mutex
+	name := "hussla.tail0000.ts.net"
+	door := &renamingHandler{
+		current: func() string { mutex.Lock(); defer mutex.Unlock(); return name },
+		build: func(host string) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Host != host {
+					w.WriteHeader(http.StatusMisdirectedRequest)
+				}
+			})
+		},
+	}
+	ask := func(host string) int {
+		request := httptest.NewRequest(http.MethodGet, "/", nil)
+		request.Host = host
+		recorder := httptest.NewRecorder()
+		door.ServeHTTP(recorder, request)
+		return recorder.Code
+	}
+	if ask("hussla.tail0000.ts.net") != http.StatusOK {
+		t.Fatal("the first name is refused")
+	}
+	mutex.Lock()
+	name = "jobs.tail0000.ts.net"
+	mutex.Unlock()
+	if ask("jobs.tail0000.ts.net") != http.StatusOK || ask("hussla.tail0000.ts.net") != http.StatusMisdirectedRequest {
+		t.Fatal("the door didn't follow the rename")
+	}
+}

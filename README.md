@@ -15,8 +15,14 @@ You stay in charge: nothing is emailed until you approve that exact message.
 
 ## Install
 
-Status: in development; the install guides (`docs/install/`) lands with the build plan's setup
-phase (`docs/plans/hussla-v1.md`).
+Pick the guide for where Hussla will live. Each is one path, start to finish, and ends with a
+check that it's running.
+
+- **Synology NAS**, no terminal: [docs/install/nas.md](docs/install/nas.md) (other always-on Linux boxes and Raspberry Pi too)
+- **Laptop or desktop** with Docker Desktop, or the plain binary: [docs/install/laptop.md](docs/install/laptop.md)
+- **Rented cloud server**, no open port: [docs/install/cloud.md](docs/install/cloud.md)
+
+You'll need a free Tailscale account and the Tailscale app on your phone.
 
 ## For developers
 

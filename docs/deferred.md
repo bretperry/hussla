@@ -304,39 +304,19 @@ merged block the sync owns, like AGENTS.md's.
 
 `open` · recorded 2026-10-08 · from Phase 3 (`docs/plans/hussla-v1.md`)
 
-File bytes live in `<DATA_DIR>/files/<id>` and résumés in `<DATA_DIR>/resumes/`, beside the database; the daily `VACUUM INTO` backups cover `hussla.db` only. **Why deferred:** copying the whole data directory off the device is the install guides' job (Phase 6), and a file's bytes never change after upload. **Where:** `internal/adapters/filestore`, `internal/adapters/sqlite` backups. **If we take it:** say in the install guides to copy the whole data directory (not only `backups/`), or add the two folders to an export.
+File bytes live in `<DATA_DIR>/files/<id>` and résumés in `<DATA_DIR>/resumes/`, beside the database; the daily `VACUUM INTO` backups cover `hussla.db` only. **Why deferred:** copying the whole data directory off the device is the install guides' job (Phase 6), and a file's bytes never change after upload. **Where:** `internal/adapters/filestore`, `internal/adapters/sqlite` backups. **If we take it:** add the two folders to an export. The install guides (Phase 6) already say to copy the whole data directory with `docker cp`.
 
-## Passkey delete, rename, and recovery when every passkey is lost
+## Passkey rename
 
-`open` · recorded 2026-10-08 · from Phase 3 (`docs/plans/hussla-v1.md`)
+`open` · recorded 2026-10-08 · from Phase 3 (`docs/plans/hussla-v1.md`); trimmed in Phase 6
 
-Passkeys can be added (setup code for the first on each address, then a tap with an existing one) and listed, not removed or renamed. An owner who loses every passkey for an address can still read and edit there, but no owner-only action (approve, delete, settings, keys) works on it until a passkey is added, and adding one needs a tap or a setup code, which that address no longer gets. **Why deferred:** Phase 3 is the API's security core; managing passkeys is a Settings screen (Phase 5), and two registered devices (phone and laptop) cover a single loss. **Where:** `internal/app/auth/passkeys.go`, settings key `auth.passkeys`. **If we take it:** `DELETE /api/passkeys/{id}` behind a tap with a *different* passkey (refuse removing the last one), and `PATCH` for the name; add both to `api/openapi.yaml` and the auth matrix. For recovery, a `hussla reset-passkeys` command (access to the data directory is the proof, like `hussla open`) that sets the address's passkeys aside so the setup screen issues a code again.
-
-## A lost log loses a live setup code
-
-`open` · recorded 2026-10-08 · from the first-run review (decision 0013)
-
-Only the setup code's hash is stored, so a restart reminds the owner of the code printed earlier instead of printing it again. If that log line is gone (the container recreated before setup finished), no code can be read and none is issued. **Why deferred:** the review asked for a hash, not the code, at rest; Phase 6 decides how the first passkey is authorized without the log (review blocker 1), which may retire the code. **Where:** `internal/app/auth/owner.go` (`issueSetupCode`), settings key `auth.setupCode`. **If we take it:** a `hussla new-setup-code` command (data-directory access is the proof, like `hussla open`) that replaces the stored hash and prints the new code.
+Passkeys can be added, listed and removed (never the last; `/setup/passkeys`), and an owner who lost every one gets a recovery code from the setup screen (decision 0015). They can't be renamed: the name is the one typed when it was made. **Why deferred:** a name only tells two devices apart, and removing and re-adding one renames it. **Where:** `internal/app/auth/passkeys.go`, settings key `auth.passkeys`. **If we take it:** `PATCH /api/passkeys/{id}` with `{name}` (owner, no tap), in `api/openapi.yaml` and the auth matrix.
 
 ## Front-page overview endpoint
 
 `open` · recorded 2026-10-08 · from Phase 5 (`docs/plans/hussla-v1.md`)
 
 The front page fetches one company detail per open job (N+1, capped by `FRONT_PAGE_COMPANY_DETAILS`). **Why deferred:** out of Phase 5's scope. **Where:** `src/features/jobs/use-front-page.ts`. **If we take it:** add one overview endpoint to `api/openapi.yaml` and drop the second fetch wave.
-
-
-## First-run setup gate, passkey registration, and wizard
-
-`open` · recorded 2026-10-08 · from Phase 5 (`docs/plans/hussla-v1.md`)
-
-The UI shows a gate on `setup-required` but cannot register a passkey yet. **Why deferred:** out of Phase 5's scope. **Where:** `src/app/App.tsx`. **If we take it:** Phase 6 builds the setup screen.
-
-
-## Vite build is not embedded in the Go binary
-
-`open` · recorded 2026-10-08 · from Phase 5 (`docs/plans/hussla-v1.md`)
-
-`pnpm build` output is not yet wired into `cmd/hussla/web`. **Why deferred:** out of Phase 5's scope. **Where:** `vite.config.ts`, `cmd/hussla`. **If we take it:** Phase 6 embeds it.
 
 
 ## Pitch billboard and Settings agent snippet
@@ -369,3 +349,20 @@ Then run the Human check `hussla-p3b-claude-code` from the plan and drop the "(u
 
 Agents can call these over HTTP but not as MCP tools: file upload and download, the activity feed and job-less events, `PUT` a job, `PATCH` an answer, edit or cancel an email, résumé list, export. `internal/mcpapi`'s route test names each with a reason. **Why deferred:** not in the Phase 3b tool list; file bytes don't fit a tool call; edit and cancel of drafts weren't asked for. **Where:** `notAsTools` in `internal/mcpapi/door_test.go`, `catalog()` in `internal/mcpapi/tools.go`. **If we take it:** add the tool, move its route from `notAsTools` to the catalog, list it in `docs/agents-api.md`. Rate limiting per key is also absent (the spec says servers should); add it beside the tools if an agent ever loops.
 
+## Existing installs see the setup wizard once after upgrading to Phase 6
+
+`open` · recorded 2026-10-09 · from Phase 6 (`docs/plans/hussla-v1.md`)
+
+The wizard's progress (`setup.wizard`) is new, so an install that already had a passkey before Phase 6 opens on the wizard's first step until the owner presses **Skip the rest** once. **Why deferred:** one install exists (Bret's), one click fixes it, and telling a pre-wizard install from a fresh one needs a marker it never wrote. **Where:** `internal/app/setup` (`readWizard`), `src/features/setup/setup-steps.ts` (`gateFor`). **If we take it:** a forward migration that marks every step skipped when passkeys exist and `setup.wizard` doesn't.
+
+## Settings doesn't link the passkey and mail setup pages
+
+`open` · recorded 2026-10-09 · from Phase 6 (`docs/plans/hussla-v1.md`)
+
+Phase 6 adds `/setup/passkeys` (list, remove, add, recovery code) and `/setup/mail` (change the provider or password), but Settings has no link to either; the owner reaches them by address. **Why deferred:** another worker owns `src/features/settings/` (the "Add an agent" snippet) at the same time; two edits to one file collide. **Where:** `src/features/settings/SettingsPage.tsx` (Security and Mail sections). **If we take it:** a "Manage passkeys" and an "Change mail setup" link in those sections.
+
+## Publish workflow's actions are pinned by tag, not commit
+
+`open` · recorded 2026-10-09 · from Phase 6 (`docs/plans/hussla-v1.md`)
+
+`.github/workflows/publish-image.yml` uses `docker/*@vN` and `actions/checkout@v7`, like `ci.yml`, not commit SHAs. It holds `packages: write` and `contents: write` on a tag push. **Why deferred:** the session that wrote it couldn't read the docker actions' repos to resolve SHAs, and `ci.yml` follows the same convention. **Where:** `.github/workflows/publish-image.yml`. **If we take it:** pin each to a full SHA with the tag in a comment, and let Dependabot bump them.
