@@ -1,5 +1,5 @@
 {
-  "base": "",
+  "base": "7cdca02a9a2ee6cb7d928bf49cb1904a46967282",
   "skip": {
     "src/domain/note.ts": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
     "src/domain/note.test.ts": "Template demo (note-sync); Hussla has its own domain. Don't bring it back.",
