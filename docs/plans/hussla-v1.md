@@ -88,7 +88,7 @@ mail must keep these true and test them.
 | 3b | MCP endpoint for agents, "Add an agent" setup snippet | 3, 5 | workhorse (high) | running (#6); snippet UI after Phase 5 (`docs/deferred.md`) |
 | 4 | Mail port, provider catalog, adapters, secret store, outbox pacing | 2 | deep (high) | landed (#4) |
 | 5 | React UI: jobs, job, companies, compare, company, outbox, answers, activity, settings | 1 | workhorse (medium) | |
-| 5b | Pitches: ten honed pitches, dashboard billboard, versions and side-by-side compare | 3b, 5 | workhorse (medium) | |
+| 5b | Pitches: ten honed pitches, dashboard billboard, versions and side-by-side compare | 3b, 5 | workhorse (medium) | running (#11) |
 | 6 | First-run wizard, prebuilt image, no-key no-terminal NAS install, binaries, install guides (NAS, laptop, cloud) | 3, 3b, 4, 5, 5b | workhorse (medium) | |
 | 7 | Install on the NAS and accept on phone | 6; NAS model, Tailscale account | — (human) | |
 
