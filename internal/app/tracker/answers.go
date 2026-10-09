@@ -273,7 +273,11 @@ func (s *Service) Import(ctx context.Context, actor Actor, body []byte) (imports
 	if err != nil {
 		return importseed.Report{}, fmt.Errorf("import: %w", err)
 	}
-	detail := fmt.Sprintf("%d jobs, %d companies, %d answers, %d events", report.Jobs.Created, report.Companies.Created, report.Answers.Created, report.Events.Created)
+	created := report.Jobs.Created + report.Companies.Created + report.Answers.Created + report.Events.Created + report.Emails.Created
+	if created == 0 && !report.ConfigStored {
+		return report, nil // a repeat import adds nothing, not even a log line
+	}
+	detail := fmt.Sprintf("%d jobs, %d companies, %d answers, %d events, %d emails", report.Jobs.Created, report.Companies.Created, report.Answers.Created, report.Events.Created, report.Emails.Created)
 	if _, err := s.LogEvent(ctx, actor, "", "Imported a bundle", detail); err != nil {
 		return report, err
 	}
