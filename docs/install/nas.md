@@ -147,7 +147,7 @@ from the copy on the NAS and you stay on the old version. Pin the exact version 
 it to update:
 
 1. Find the newest version on <https://github.com/bretperry/hussla/pkgs/container/hussla>
-   (for example `0.1.1`). **Settings** in Hussla shows the one you run, at the bottom.
+   (for example `0.1.1`; a new one is published by itself each time a change ships). **Settings** in Hussla shows the one you run, at the bottom.
 2. Container Manager → Project → hussla → **Action → Stop**.
 3. **YAML**: change the `image:` line to that version, for example
    `image: ghcr.io/bretperry/hussla:0.1.1` (no `v`), and save.
