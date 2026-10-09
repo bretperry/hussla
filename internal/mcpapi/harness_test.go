@@ -53,6 +53,7 @@ type rig struct {
 	local   http.Handler // the same on the local listener
 	signIn  *fakeauth.SignInTokens
 	clock   *fakeauth.Clock
+	deps    mcpapi.Deps // the use-cases behind both doors, for a test that builds its own door
 }
 
 func newRig(t *testing.T) *rig {
@@ -94,7 +95,7 @@ func newRig(t *testing.T) *rig {
 	}
 	localHosts := []string{localHost, "127.0.0.1:8484"}
 	r := &rig{
-		t: t, auth: authService, signIn: signIn, clock: clock,
+		t: t, auth: authService, signIn: signIn, clock: clock, deps: mcpDeps,
 		tailnet: mount(
 			httpapi.New(httpapi.Config{Listener: httpapi.ListenerTailnet, Hosts: []string{tailnetHost}, Peers: peers}, apiDeps),
 			mcpapi.New(mcpapi.Config{Hosts: []string{tailnetHost}, Secure: true}, mcpDeps)),

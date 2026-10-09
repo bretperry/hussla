@@ -9,7 +9,8 @@
 // the actor, so the rules that keep agents from clearing the owner's fields, approving or sending
 // mail live in the use-cases and hold for MCP exactly as for HTTP.
 //
-// Order is fixed: Host (closes DNS rebinding) → Origin → method → agent key → setup gate → body.
+// Order is fixed: Host (closes DNS rebinding) → Origin → method → agent key → setup gate → node
+// owner (agent door only) → body.
 
 package mcpapi
 
@@ -34,6 +35,15 @@ type Config struct {
 	Hosts []string
 	// Secure is true for the tailnet's HTTPS listener (its Origin is https://<host>), false for http://localhost.
 	Secure bool
+	// NodeOwner, on the agent door on Funnel, refuses a valid key while the node is logged in to
+	// Tailscale as someone other than the owner. It runs after the key check, so an anonymous
+	// caller only ever sees the 401. nil elsewhere (the tailnet door is wrapped whole instead).
+	NodeOwner NodeOwnerCheck
+}
+
+// NodeOwnerCheck reports whether the node is logged in as someone other than the owner (setup.Service).
+type NodeOwnerCheck interface {
+	OwnerMismatch(ctx context.Context) (bool, error)
 }
 
 // Deps are the use-cases the tools call.
@@ -42,6 +52,9 @@ type Deps struct {
 	Tracker *tracker.Service
 	Mail    *mailbox.Service
 }
+
+// errSomeoneElse is the refusal while the node is someone else's (the same words as httpapi's).
+const errSomeoneElse = "this Hussla belongs to someone else: it is signed in to a Tailscale account that isn't its owner's"
 
 type server struct {
 	config Config
@@ -94,6 +107,18 @@ func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	caller, ok := s.agent(w, r)
 	if !ok {
 		return
+	}
+	if s.config.NodeOwner != nil {
+		mismatch, err := s.config.NodeOwner.OwnerMismatch(r.Context())
+		if err != nil {
+			slog.Error("mcp: node owner check", "error", err)
+			writeFault(w, http.StatusInternalServerError, codeInvalidRequest, "something went wrong on the server; see its log", nil)
+			return
+		}
+		if mismatch {
+			writeFault(w, http.StatusForbidden, codeInvalidRequest, errSomeoneElse, nil)
+			return
+		}
 	}
 	s.serveMessage(w, r, caller)
 }

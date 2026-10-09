@@ -25,10 +25,10 @@ reason, then deleted).
 
 What. **Why deferred:** … **Where:** … **If we take it:** … -->
 
-## Agent door on Funnel: no limit on wrong keys
-`open` · recorded 2026-10-09 · from `docs/decisions/0016-agent-api-on-funnel.md`
+## Agent door on Funnel: no limit on wrong keys, no per-key scopes, rate limit or quota
+`open` · recorded 2026-10-09 · from `docs/decisions/0016-agent-api-on-funnel.md`; widened by the ship dynamite test (2026-10-09)
 
-The `:8443` agent door answers 401 to every wrong key with no per-address limit. **Why deferred:** a key is 256 random bits, so guessing isn't a real attack; a limit would only cut load and log noise, and Funnel's client addresses haven't been checked to be the real ones. **Where:** `internal/httpapi/guard.go` (the agent door's 401). **If we take it:** a per-address wrong-key counter with a lockout, knobs in `internal/config/auth.go`, like `SetupCodeAttempts`.
+The `:8443` agent door answers 401 to every wrong key with no per-address limit. A valid key has every agent route, with no per-key scope (read-only, no mail), no request rate limit and no storage quota: a leaked or looping key can create jobs, events and 25 MB files until the disk fills, and every request it makes is also a write (`Auth.Agent` touches the key's last-used time in a transaction), so request volume is SQLite write volume. **Why deferred:** a key is 256 random bits, so guessing isn't a real attack; the owner makes and revokes each key, and revoking stops it at once; a limit would cut load and log noise, and Funnel's client addresses haven't been checked to be the real ones. **Where:** `internal/httpapi/guard.go` (the agent door's 401), `internal/app/auth/service.go` (`Agent`, the `Touch`), `internal/app/attachments` (uploads). **If we take it:** a per-address wrong-key counter with a lockout and a per-key token bucket, knobs in `internal/config/auth.go` like `SetupCodeAttempts`; a per-key scope on the key record (`api/openapi.yaml`); a total-bytes quota on uploads; and `Touch` only when last-used is older than a knob (a minute), so reads stop costing a write.
 
 ## Settings → "Add an agent" doesn't show the Funnel address
 `open` · recorded 2026-10-09 · from `docs/decisions/0016-agent-api-on-funnel.md`
@@ -379,6 +379,12 @@ Phase 6 adds `/setup/passkeys` (list, remove, add, recovery code) and `/setup/ma
 `open` · recorded 2026-10-09 · from Phase 6 (`docs/plans/hussla-v1.md`)
 
 `.github/workflows/publish-image.yml` uses `docker/*@vN` and `actions/checkout@v7`, like `ci.yml`, not commit SHAs. It holds `packages: write` and `contents: write` on a release (`release.yml` calls it after each ship; a hand-pushed tag still runs it). **Why deferred:** the session that wrote it couldn't read the docker actions' repos to resolve SHAs, and `ci.yml` follows the same convention. **Where:** `.github/workflows/publish-image.yml`. **If we take it:** pin each to a full SHA with the tag in a comment, and let Dependabot bump them.
+
+## Prerelease tags move the image's `latest`
+
+`open` · recorded 2026-10-09 · from the ship dynamite test (finding 7, low, pre-existing)
+
+A hand-pushed prerelease tag (`v1.0.0-rc1`) runs `publish-image.yml`, whose `type=raw,value=latest` pushes `ghcr.io/bretperry/hussla:latest` for it too, so `:latest` can point at a release candidate. **Why deferred:** pre-existing, nobody pushes prerelease tags yet, and installs pin an exact tag (`docs/install/nas.md`). **Where:** `.github/workflows/publish-image.yml` (the Tags step). **If we take it:** enable the `latest` tag only when `TAG` matches `^v[0-9]+\.[0-9]+\.[0-9]+$`, and mark a hand-made release for such a tag `--prerelease`.
 
 ## Reconnect shows the Tailscale login link to the whole home network
 

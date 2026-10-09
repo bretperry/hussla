@@ -14,6 +14,7 @@ import (
 	"encoding/base64"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"sort"
 	"strings"
@@ -416,5 +417,44 @@ func TestNoSecretInResultsOrLogs(t *testing.T) {
 		if strings.Contains(haystack, secret) || strings.Contains(haystack, strings.TrimPrefix(secret, auth.AgentKeyPrefix)) {
 			t.Fatal("the key appeared in a result or a log line")
 		}
+	}
+}
+
+// nodeOwner is a settable NodeOwnerCheck.
+type nodeOwner struct{ mismatch bool }
+
+func (check *nodeOwner) OwnerMismatch(context.Context) (bool, error) { return check.mismatch, nil }
+
+// On the agent door, the node-owner check runs after the key: while the node is someone else's, a
+// caller without a key still gets the plain 401 and a valid key gets a JSON-RPC 403.
+func TestNodeOwnerCheckRunsAfterTheKey(t *testing.T) {
+	r := newRig(t)
+	_, secret := r.key("cloud")
+	check := &nodeOwner{}
+	door := mcpapi.New(mcpapi.Config{Hosts: []string{tailnetHost}, Secure: true, NodeOwner: check}, r.deps)
+	serve := func(headers map[string]string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, config.MCPPath, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+		request.Host = tailnetHost
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Accept", "application/json, text/event-stream")
+		for name, value := range headers {
+			request.Header.Set(name, value)
+		}
+		recorder := httptest.NewRecorder()
+		door.ServeHTTP(recorder, request)
+		return recorder
+	}
+	if got := serve(bearer(secret)); got.Code != http.StatusOK {
+		t.Fatalf("the owner's own node: %d %s", got.Code, got.Body)
+	}
+	check.mismatch = true
+	if got := serve(nil); got.Code != http.StatusUnauthorized || strings.Contains(got.Body.String(), "someone else") {
+		t.Fatalf("no key while the node is someone else's: %d %s", got.Code, got.Body)
+	}
+	if got := serve(bearer("hussla_wrong")); got.Code != http.StatusUnauthorized {
+		t.Fatalf("a wrong key while the node is someone else's: %d %s", got.Code, got.Body)
+	}
+	if got := serve(bearer(secret)); got.Code != http.StatusForbidden || !strings.Contains(got.Body.String(), "someone else") {
+		t.Fatalf("a valid key while the node is someone else's: %d %s", got.Code, got.Body)
 	}
 }

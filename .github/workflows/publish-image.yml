@@ -102,7 +102,8 @@ jobs:
           go-version-file: go.mod
       - name: Build every platform
         run: bash scripts/release-binaries.sh "$TAG"
-      # Onto the published release: release.yml made it already; a hand-pushed tag has none yet.
+      # Onto the release: release.yml made it already, as a draft it publishes after this job (gh
+      # finds a draft by its tag); a hand-pushed tag has none yet, so this makes it.
       # --clobber so a re-run of this job replaces its own files. Binaries are unsigned (laptop.md).
       - name: Attach to the release
         env:

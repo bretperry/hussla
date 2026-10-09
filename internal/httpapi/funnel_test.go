@@ -154,3 +154,38 @@ func TestFunnelAgentCreatesAndPatchesAJob(t *testing.T) {
 	wrongHost.host = tailnetHost
 	r.must(http.StatusMisdirectedRequest, wrongHost)
 }
+
+// While the node is logged in as someone else, the agent door checks the key first: no key is the
+// plain 401 (never the "Not your Hussla" page), and a valid key is a JSON 403.
+func TestFunnelNodeOwnerCheckRunsAfterTheKey(t *testing.T) {
+	r := newRig(t).enroll()
+	secret := r.agentKey("cloud")
+	r.node.setOwner(ownerPeer)
+	r.must(http.StatusOK, onFunnel(secret, http.MethodGet, "/api/jobs", nil))
+	r.node.setOwner(otherPeer)
+	for _, request := range []call{
+		{path: "/api/jobs", funnel: true},
+		{path: "/", funnel: true},
+		{path: "/api/jobs", funnel: true, headers: map[string]string{"Authorization": "Bearer hussla_wrong"}},
+	} {
+		got := r.must(http.StatusUnauthorized, request)
+		if strings.Contains(string(got.body), "someone else") || got.header.Get("WWW-Authenticate") == "" {
+			t.Fatalf("%s: %s (WWW-Authenticate %q)", request.path, got.body, got.header.Get("WWW-Authenticate"))
+		}
+	}
+	got := r.must(http.StatusForbidden, onFunnel(secret, http.MethodGet, "/api/jobs", nil))
+	if !strings.Contains(string(got.body), "someone else") || !strings.HasPrefix(got.header.Get("Content-Type"), "application/json") {
+		t.Fatalf("a valid key while the node is someone else's: %s %s", got.header.Get("Content-Type"), got.body)
+	}
+}
+
+// An Authorization that isn't Bearer is a 401 that names the scheme it wants, on every door.
+func TestNonBearerAuthorizationSaysBearer(t *testing.T) {
+	r := newRig(t).enroll()
+	for _, funnel := range []bool{false, true} {
+		got := r.must(http.StatusUnauthorized, call{path: "/api/jobs", funnel: funnel, headers: map[string]string{"Authorization": "Basic YWdlbnQ6eA=="}})
+		if !strings.HasPrefix(got.header.Get("WWW-Authenticate"), "Bearer") {
+			t.Fatalf("funnel=%v: WWW-Authenticate %q", funnel, got.header.Get("WWW-Authenticate"))
+		}
+	}
+}

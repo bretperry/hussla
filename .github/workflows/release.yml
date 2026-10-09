@@ -1,15 +1,17 @@
-# Cuts a release on every push to main: next version tag, a published GitHub release, then the image and binaries.
+# Cuts a release on every push to main: next version tag, a draft GitHub release, the image and binaries, then publishes the release.
 # In the app: what makes a new `ghcr.io/bretperry/hussla:<version>` and its downloads exist after a ship, with no one opening GitHub.
 # Used by: GitHub Actions on a push to main (the dev → main ship merge, ship.mdc).
 # Uses: git tags, gh (the built-in GITHUB_TOKEN), .github/workflows/publish-image.yml (workflow_call).
 #
 # Version: the newest vX.Y.Z tag, patch bumped. The ship PR's title opts into a bigger bump with
-# `release:minor` or `release:major` (a merge commit's message carries the PR title); the
-# convention is in .cursor/rules/ship.project.mdc. No tag yet → v0.1.0.
+# `release:minor` or `release:major` as a word of its own (a merge commit's message carries the PR
+# title on its third line); the convention is in .cursor/rules/ship.project.mdc. No tag yet → v0.1.0.
 # A tag made with GITHUB_TOKEN starts no other workflow, so the tag trigger in publish-image.yml
 # never fires for these: this calls it directly instead.
-# Idempotent: when main's head already carries a vX.Y.Z tag, nothing runs. A failed image or
-# binaries job is retried with "Re-run failed jobs" (the tag and release already exist).
+# The release is made as a draft and published (and marked Latest) only once the image and the
+# binaries are up, so nobody sees a release whose downloads or image aren't there.
+# Resumable: when main's head already carries a vX.Y.Z tag, a published release means done; a
+# draft or missing release means an earlier run stopped part way, so this run publishes it.
 
 name: Release
 
@@ -17,7 +19,10 @@ on:
   push:
     branches: [main]
 
-# One release at a time, never cancelled: two quick ships tag in order, each from the tags before it.
+# One release at a time, never cancelled mid-run: two quick ships tag in order, each from the tags
+# before it. GitHub keeps one pending run per group, so a third ship while one runs and one waits
+# replaces the waiting one; that is fine, because the newest run releases main's head, which holds
+# the replaced ship's commits too (its notes list them).
 concurrency:
   group: release
   cancel-in-progress: false
@@ -44,15 +49,24 @@ jobs:
         env:
           # Through env, not inline `${{ }}`, so a PR title can't inject shell.
           MESSAGE: ${{ github.event.head_commit.message }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Stop on the first failure, an unset variable, or a failed pipe stage.
           set -euo pipefail
           # Only plain vX.Y.Z tags count; a prerelease like v1.0.0-rc1 is neither latest nor a skip.
           strict='^v([0-9]+)\.([0-9]+)\.([0-9]+)$'
-          # Already released (a rerun, or a tag a person pushed): do nothing.
+          # Main's head already has a version: finished, or resume a run that stopped part way.
           for t in $(git tag --points-at HEAD 'v*'); do
             if [[ "$t" =~ $strict ]]; then
-              echo "HEAD is already $t; nothing to release."
+              # gh finds a draft by its tag too; no release at all prints nothing.
+              draft="$(gh release view "$t" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)"
+              if [ "$draft" = "false" ]; then
+                echo "HEAD is already $t, and its release is published; nothing to release."
+                exit 0
+              fi
+              echo "::warning::HEAD is already $t but its release isn't published (${draft:-no release}); resuming the publish."
+              echo "tag=$t" >> "$GITHUB_OUTPUT"
+              echo "resume=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           done
@@ -66,10 +80,16 @@ jobs:
           else
             [[ "$latest" =~ $strict ]]
             major="${BASH_REMATCH[1]}"; minor="${BASH_REMATCH[2]}"; patch="${BASH_REMATCH[3]}"
-            # The marker is read from the head commit only: the ship merge, whose message holds the PR title.
-            if grep -q 'release:major' <<<"$MESSAGE"; then
+            # The marker is read from the PR title only: the third line of a merge commit
+            # ("Merge pull request #N from …", blank, title), else the first line (a squash merge).
+            title="$(head -n 1 <<<"$MESSAGE")"
+            if [[ "$title" == "Merge pull request #"* ]]; then
+              title="$(sed -n 3p <<<"$MESSAGE")"
+            fi
+            # A whole word only: `release:minor`, not `prerelease:minor` or `release:minority`.
+            if [[ "$title" =~ (^|[[:space:]])release:major([[:space:]]|$) ]]; then
               next="v$((major + 1)).0.0"
-            elif grep -q 'release:minor' <<<"$MESSAGE"; then
+            elif [[ "$title" =~ (^|[[:space:]])release:minor([[:space:]]|$) ]]; then
               next="v${major}.$((minor + 1)).0"
             else
               next="v${major}.${minor}.$((patch + 1))"
@@ -77,14 +97,26 @@ jobs:
           fi
           echo "Releasing $next (previous: ${latest:-none})."
           echo "tag=$next" >> "$GITHUB_OUTPUT"
-      # gh creates the tag on this exact commit and publishes the release (notes from merged PRs).
-      # The binaries job attaches its files to this release once they are built.
-      - name: Create tag and release
+      # The tag first (through the API, on this exact commit), so the publish job can check it out:
+      # a draft release alone makes no tag until it is published.
+      - name: Create tag
+        if: steps.next.outputs.tag != '' && steps.next.outputs.resume != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.next.outputs.tag }}
+        run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$GITHUB_SHA" > /dev/null
+      # A draft release (notes from merged PRs) for the binaries to attach to; a resumed run makes
+      # it when the stopped one never got this far.
+      - name: Create draft release
         if: steps.next.outputs.tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.next.outputs.tag }}
-        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "$TAG" --generate-notes
+          fi
 
   publish:
     name: Publish
@@ -97,3 +129,18 @@ jobs:
     uses: ./.github/workflows/publish-image.yml
     with:
       tag: ${{ needs.tag.outputs.tag }}
+
+  # Only now does the release show: published, and marked Latest.
+  release:
+    name: Publish release
+    needs: [tag, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
