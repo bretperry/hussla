@@ -51,7 +51,7 @@ func jobJSON(job domain.Job) wire.Object {
 
 func companyJSON(company domain.Company) wire.Object {
 	object := wire.CompanyObject(company)
-	wire.EmptyListsForNull(object, wire.CompanyListFields)
+	wire.EmptyCompanyListsForNull(object)
 	object["writers"] = wire.WritersObject(company.Writers)
 	return object
 }

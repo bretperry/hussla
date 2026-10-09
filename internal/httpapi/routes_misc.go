@@ -178,7 +178,9 @@ func (server *api) export(w http.ResponseWriter, r *http.Request, _ auth.Princip
 	}
 	companies := make([]wire.Object, 0, len(bundle.Companies))
 	for _, company := range bundle.Companies {
-		companies = append(companies, wire.CompanyObject(company))
+		object := wire.CompanyObject(company)
+		wire.EmptyNestedCompanyListsForNull(object) // top-level null lists stay null in a backup; nested ones are arrays in the contract
+		companies = append(companies, object)
 	}
 	answers := make([]wire.Object, 0, len(bundle.Answers))
 	for _, answer := range bundle.Answers {

@@ -246,6 +246,45 @@ func EmptyListsForNull(object Object, keys []string) {
 	}
 }
 
+// EmptyCompanyListsForNull is EmptyListsForNull for a company, its nested lists included.
+func EmptyCompanyListsForNull(object Object) {
+	EmptyListsForNull(object, CompanyListFields)
+	EmptyNestedCompanyListsForNull(object)
+}
+
+// EmptyNestedCompanyListsForNull writes [] for the null lists inside a company's records: the
+// financials' investors and layoffs, the last round's lead investors, each review's pros and cons.
+// The contract types those as arrays everywhere, the backup bundle included, while a company's own
+// top-level lists may be null there (CompanyPatch); the response-contract test found them null.
+func EmptyNestedCompanyListsForNull(object Object) {
+	var financials Object
+	if json.Unmarshal(object["financials"], &financials) == nil && financials != nil {
+		EmptyListsForNull(financials, []string{"investors", "layoffs"})
+		var round Object
+		if json.Unmarshal(financials["lastRound"], &round) == nil && round != nil {
+			EmptyListsForNull(round, []string{"leadInvestors"})
+			financials["lastRound"] = mustMarshal(round)
+		}
+		object["financials"] = mustMarshal(financials)
+	}
+	var reviews []Object
+	if json.Unmarshal(object["reviews"], &reviews) == nil && len(reviews) > 0 {
+		for _, review := range reviews {
+			EmptyListsForNull(review, []string{"pros", "cons"})
+		}
+		object["reviews"] = mustMarshal(reviews)
+	}
+}
+
+// mustMarshal encodes an Object (or a list of them) it just decoded; that can't fail.
+func mustMarshal(value any) json.RawMessage {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		panic(fmt.Sprintf("wire: re-encode: %v", err))
+	}
+	return encoded
+}
+
 // EncodeWriters is how a record's per-field writers are stored: the names of the owner-written
 // fields only, since agent is the default (decision 0009).
 func EncodeWriters(writers domain.FieldWriters) string {
