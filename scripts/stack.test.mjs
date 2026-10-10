@@ -24,7 +24,20 @@ const STACK = join(REPO, "scripts/stack.mjs");
 const CHECK_EDITED = join(REPO, "scripts/check-edited.mjs");
 
 // A throwaway git identity, so commits work on a machine (or CI runner) with none configured.
-const GIT_ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
+// Auto gc and auto maintenance are off: a commit can start a detached repack that deletes loose
+// objects while the next step clones that repo, and the clone fails with "failed to copy file".
+const GIT_ENV = {
+  ...process.env,
+  GIT_AUTHOR_NAME: "t",
+  GIT_AUTHOR_EMAIL: "t@t",
+  GIT_COMMITTER_NAME: "t",
+  GIT_COMMITTER_EMAIL: "t@t",
+  GIT_CONFIG_COUNT: "2",
+  GIT_CONFIG_KEY_0: "gc.auto",
+  GIT_CONFIG_VALUE_0: "0",
+  GIT_CONFIG_KEY_1: "maintenance.auto",
+  GIT_CONFIG_VALUE_1: "false",
+};
 
 // Runs git in `cwd` and returns stdout.
 const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8", env: GIT_ENV, stdio: ["ignore", "pipe", "pipe"] });
