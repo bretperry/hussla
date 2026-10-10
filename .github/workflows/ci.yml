@@ -23,7 +23,8 @@
 #
 # Runners: Checks and Build run on the repo variable LINUX_RUNNER when it is set (a JSON label
 # list, e.g. ["self-hosted","Linux","thinkpad"]), else ubuntu-latest. Change scope stays hosted: it
-# gates everything, so an offline machine must not stall it. Rollback when the machine is offline
+# gates everything, so an offline machine must not stall it. A PR from a fork always runs hosted:
+# the repo is public, and a fork's code must never run on Bret's machine. Rollback when the machine is offline
 # and required checks stall: delete the variable; no commit needed. Machine prerequisites and the
 # one-instance rule for machine-wide resources: branch-protection.mdc → Self-hosted runners.
 
@@ -80,7 +81,7 @@ jobs:
     name: Checks
     needs: [scope]
     if: ${{ !cancelled() }}
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.LINUX_RUNNER || '"ubuntu-latest"') }}
     # Every pack's checks in one job: about 10 minutes on dev before the Android app, and a cold
     # Gradle cache (a PR can't write it) adds AGP, lint, and the SDK platform. The ceiling stops a
     # hung step, not a normal run.
@@ -154,7 +155,7 @@ jobs:
     # `!cancelled()` so a failed scope job still runs Build (fail closed): `heavy` is then empty,
     # and empty != 'false'. `.draft` is null on push/dispatch, and `!null` is true.
     if: ${{ !cancelled() && !github.event.pull_request.draft && (github.event_name == 'workflow_dispatch' || github.base_ref == 'main' || needs.scope.outputs.heavy != 'false') }}
-    runs-on: ${{ fromJSON(vars.LINUX_RUNNER || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.LINUX_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7

@@ -9,6 +9,11 @@
 # private: a person makes it public once (Package settings → Change visibility), or a NAS pull asks for a login.
 # The PR run is the only proof the Dockerfile still builds for arm64 before a tag needs it; it runs
 # only when the Dockerfile, .dockerignore or this file change.
+#
+# Runners: both jobs run on the repo variable LINUX_RUNNER when it is set, else ubuntu-latest; a PR
+# from a fork always runs hosted (ci.yml → Runners). A self-hosted machine needs Docker with buildx
+# (runner user in the `docker` group) for Image, and git, gh and bash for Binaries; Go and Node
+# come from their setup actions. No QEMU either way: the Dockerfile cross-compiles.
 
 name: Publish
 
@@ -47,7 +52,7 @@ env:
 jobs:
   image:
     name: Image
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.LINUX_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -94,7 +99,7 @@ jobs:
   binaries:
     name: Binaries
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.LINUX_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 20
     permissions:
       contents: write

@@ -15,6 +15,9 @@
 # Only the newest version takes Latest and the `latest`/X.Y image tags, so resuming an older run
 # after a newer ship never rolls them back. A new version is cut only from main's current head,
 # so re-running an old, untagged run releases nothing rather than tagging old code as newest.
+# Runners: the repo variable LINUX_RUNNER when it is set, else ubuntu-latest (ci.yml → Runners);
+# a self-hosted machine needs git and gh. An offline machine holds the release until it is back,
+# or until the variable is deleted and the run re-run.
 
 name: Release
 
@@ -35,7 +38,7 @@ permissions: {}
 jobs:
   tag:
     name: Tag and release
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.LINUX_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 5
     permissions:
       contents: write
@@ -177,7 +180,7 @@ jobs:
   release:
     name: Publish release
     needs: [tag, publish]
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON((github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.LINUX_RUNNER || '"ubuntu-latest"') }}
     timeout-minutes: 5
     permissions:
       contents: write
