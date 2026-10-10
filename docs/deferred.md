@@ -25,6 +25,11 @@ reason, then deleted).
 
 What. **Why deferred:** … **Where:** … **If we take it:** … -->
 
+## Search now: no way to clear the routine or its token
+`open` · recorded 2026-10-10 · from PR #27's dynamite test
+
+Settings → Job search routine can replace the routine and token but not remove them, and the `SecretStore` port has no delete. **Why deferred:** the owner can revoke the token on the routine's page at claude.ai (that stops it at once) or save another routine; clearing needs a new port method and a new route. **Where:** `internal/app/mailsetup` (`SecretStore`), `internal/adapters/secretfile`, `internal/app/searchrun`, `api/openapi.yaml`. **If we take it:** `SecretStore.Delete`, `DELETE /api/search` (passkey tap), and a "Remove" button beside Save routine.
+
 ## Agent door on Funnel: no limit on wrong keys, no per-key scopes, rate limit or quota
 `open` · recorded 2026-10-09 · from `docs/decisions/0016-agent-api-on-funnel.md`; widened by the ship dynamite test (2026-10-09)
 

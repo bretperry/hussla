@@ -42,6 +42,8 @@ var ErrRateLimited = errors.New("the hourly limit for starting this routine is u
 // FireError is any other failed fire; Reason names what happened, never the token.
 type FireError struct {
 	Reason string
+	// MaybeStarted: the request may have reached Claude (no answer, or a 5xx), so a run may be going.
+	MaybeStarted bool
 }
 
 func (fireError *FireError) Error() string { return fireError.Reason }

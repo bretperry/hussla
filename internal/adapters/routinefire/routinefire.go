@@ -68,8 +68,8 @@ type fireReply struct {
 
 // Fire starts one run. Errors: searchrun.ErrTokenRejected, ErrRoutineNotFound, ErrRateLimited, or a *searchrun.FireError.
 func (client *Client) Fire(ctx context.Context, routineID string, token mailsetup.Secret, text string) (searchrun.Fired, error) {
-	// searchrun.ParseRoutineID already allows only letters, digits and "_"; escaping again keeps a
-	// future caller from steering the path.
+	// searchrun.ParseRoutineID already allows only letters, digits, "_" and "-"; escaping again keeps
+	// a future caller from steering the path.
 	endpoint := client.baseURL + "/v1/claude_code/routines/" + url.PathEscape(routineID) + "/fire"
 	body, err := json.Marshal(map[string]string{"text": text})
 	if err != nil {
@@ -85,7 +85,8 @@ func (client *Client) Fire(ctx context.Context, routineID string, token mailsetu
 	request.Header.Set("Content-Type", "application/json")
 	response, err := client.http.Do(request)
 	if err != nil {
-		return searchrun.Fired{}, &searchrun.FireError{Reason: "couldn't reach Claude: " + mailsetup.Redact(err.Error(), token)}
+		// A timeout or a dropped connection may come after Claude took the request.
+		return searchrun.Fired{}, &searchrun.FireError{Reason: "no answer from Claude: " + mailsetup.Redact(err.Error(), token), MaybeStarted: true}
 	}
 	defer func() { _ = response.Body.Close() }()
 	reply, readErr := io.ReadAll(io.LimitReader(response.Body, maxReplyBytes))
@@ -106,11 +107,12 @@ func (client *Client) Fire(ctx context.Context, routineID string, token mailsetu
 	}
 	reason := fmt.Sprintf("Claude answered %d %s", response.StatusCode, http.StatusText(response.StatusCode))
 	if readErr == nil {
-		if text := excerpt(reply); text != "" {
-			reason += ": " + mailsetup.Redact(text, token)
+		// Redact before cutting: a token split by the cut would no longer match and its start would leak.
+		if text := excerpt([]byte(mailsetup.Redact(string(reply), token))); text != "" {
+			reason += ": " + text
 		}
 	}
-	return searchrun.Fired{}, &searchrun.FireError{Reason: reason}
+	return searchrun.Fired{}, &searchrun.FireError{Reason: reason, MaybeStarted: response.StatusCode >= http.StatusInternalServerError}
 }
 
 // excerpt is the start of a reply, on one line, for a failure reason.

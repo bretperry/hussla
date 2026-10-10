@@ -26,20 +26,26 @@ import (
 	"github.com/bretperry/hussla/internal/domain"
 )
 
-// SettingsKey is where the routine id and the last run are stored, as JSON.
+// SettingsKey is where the last run is stored, as JSON.
 const SettingsKey = "search-routine"
 
-// SecretName is the SecretStore name of the routine's API trigger token.
+// SecretName is the SecretStore name of the routine id and its API trigger token, kept as one
+// value ("id\ntoken") so one write replaces both: a token can never be paired with another routine.
 const SecretName = "search.routine-token"
 
 // routinePrefix starts every routine id ("trig_01…").
 const routinePrefix = "trig_"
 
-// stored is the settings row.
+// stored is the settings row: the last run.
 type stored struct {
-	RoutineID      string `json:"routineId"`
 	LastRunAt      string `json:"lastRunAt,omitempty"`
 	LastSessionURL string `json:"lastSessionUrl,omitempty"`
+}
+
+// credential is the routine id and its token, as the SecretStore holds them.
+type credential struct {
+	routineID string
+	token     mailsetup.Secret
 }
 
 // View is the setup and the last run, without the token.
@@ -107,102 +113,106 @@ func (service *Service) View(ctx context.Context) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
-	hasToken, err := service.hasToken(ctx)
+	saved, found, err := service.loadCredential(ctx)
 	if err != nil {
 		return View{}, err
 	}
-	return viewOf(current, hasToken)
+	return viewOf(current, saved.routineID, found)
 }
 
-// Save stores the routine (and a new token when given) and logs the change, without the token.
-// Owner only; the HTTP layer checks the passkey tap.
+// Save stores the routine and its token (or keeps the stored token for the same routine) and logs
+// the change, without the token. Owner only; the HTTP layer checks the passkey tap.
 func (service *Service) Save(ctx context.Context, input SaveInput, actor string) (View, error) {
 	routineID, err := ParseRoutineID(input.Routine)
 	if err != nil {
 		return View{}, err
 	}
-	previous, err := service.load(ctx)
+	saved, found, err := service.loadCredential(ctx)
 	if err != nil {
 		return View{}, err
 	}
-	if input.Token != nil {
-		if strings.TrimSpace(input.Token.Reveal()) == "" {
-			return View{}, &domain.ValidationError{Field: "token", Problem: "is empty"}
-		}
-	} else {
-		hasToken, err := service.hasToken(ctx)
-		if err != nil {
-			return View{}, err
-		}
-		if !hasToken || previous.RoutineID != routineID {
+	detail := "Routine " + routineID
+	if input.Token == nil {
+		if !found || saved.routineID != routineID {
 			return View{}, &domain.ValidationError{Field: "token", Problem: "is required for a new routine (each routine has its own token)"}
 		}
-	}
-	// The token first: if the settings write then fails, the next save sends both again.
-	if input.Token != nil {
-		token := mailsetup.NewSecret(strings.TrimSpace(input.Token.Reveal()))
-		if err := service.secrets.Put(ctx, SecretName, token); err != nil {
+	} else {
+		token := strings.TrimSpace(input.Token.Reveal())
+		if token == "" || strings.ContainsAny(token, " \t\r\n") {
+			return View{}, &domain.ValidationError{Field: "token", Problem: "must be the token as Claude showed it, with no spaces"}
+		}
+		if err := service.secrets.Put(ctx, SecretName, mailsetup.NewSecret(routineID+"\n"+token)); err != nil {
 			return View{}, fmt.Errorf("store the routine token: %w", err)
 		}
-	}
-	next := previous
-	next.RoutineID = routineID
-	detail := "Routine " + routineID
-	if input.Token != nil {
 		detail += " (new token)"
 	}
-	if err := service.write(ctx, next, actor, "Set up the search button", detail); err != nil {
+	current, err := service.load(ctx)
+	if err != nil {
 		return View{}, err
 	}
-	return viewOf(next, true)
+	if err := service.write(ctx, nil, actor, "Set up the search button", detail); err != nil {
+		return View{}, err
+	}
+	return viewOf(current, routineID, true)
 }
 
-// Run starts the routine now, unless a search started within config.SearchRunCooldown.
+// Run starts the routine now, unless a search started (or may have) within config.SearchRunCooldown.
 // Errors: ErrNotConfigured, ErrTooSoon, and the Firer's.
 func (service *Service) Run(ctx context.Context, actor string) (Run, error) {
 	service.running.Lock()
 	defer service.running.Unlock()
-	current, err := service.load(ctx)
+	saved, found, err := service.loadCredential(ctx)
 	if err != nil {
 		return Run{}, err
 	}
-	if current.RoutineID == "" {
+	if !found {
 		return Run{}, ErrNotConfigured
 	}
-	token, err := service.secrets.Get(ctx, SecretName)
-	if errors.Is(err, mailsetup.ErrSecretNotFound) {
-		return Run{}, ErrNotConfigured
-	}
+	current, err := service.load(ctx)
 	if err != nil {
-		return Run{}, fmt.Errorf("read the routine token: %w", err)
+		return Run{}, err
 	}
 	now := domain.NormalizeTime(service.now())
 	lastRunAt, err := domain.ParseTimestamp(current.LastRunAt)
 	if err != nil {
 		return Run{}, fmt.Errorf("stored search run: %w", err)
 	}
-	if !lastRunAt.IsZero() && now.Sub(lastRunAt) < config.SearchRunCooldown {
+	// A last run in the future means the clock went back; counting it would block the button until
+	// the clock caught up, so it counts as past the cooldown.
+	if !lastRunAt.IsZero() && !lastRunAt.After(now) && now.Sub(lastRunAt) < config.SearchRunCooldown {
 		return Run{}, ErrTooSoon
 	}
+	// Detached from the request: a closed tab must not cut off a fire Claude may already have
+	// taken, nor the record that starts the cooldown.
+	ctx = context.WithoutCancel(ctx)
 	text := "Started from " + config.ProductName + "'s Search now button by " + actor + " at " + domain.FormatTimestamp(now) + "."
-	fired, err := service.firer.Fire(ctx, current.RoutineID, token, text)
+	fired, err := service.firer.Fire(ctx, saved.routineID, saved.token, text)
 	if err != nil {
-		service.logger.Warn("search routine didn't start", "routine", current.RoutineID, "error", err)
+		service.logger.Warn("search routine didn't start", "routine", saved.routineID, "error", err)
+		var fireError *FireError
+		if errors.As(err, &fireError) && fireError.MaybeStarted {
+			// It may be running: start the cooldown so the next click can't start a second paid run.
+			current.LastRunAt = domain.FormatTimestamp(now)
+			current.LastSessionURL = ""
+			if recordErr := service.write(ctx, &current, actor, "Search may have started", fireError.Reason); recordErr != nil {
+				service.logger.Error("record the search run", "error", recordErr)
+			}
+		}
 		return Run{}, fmt.Errorf("start the search routine: %w", err)
 	}
-	service.logger.Info("search routine started", "routine", current.RoutineID, "session", fired.SessionURL)
+	service.logger.Info("search routine started", "routine", saved.routineID, "session", fired.SessionURL)
 	run := Run{StartedAt: now, SessionURL: fired.SessionURL}
 	current.LastRunAt = domain.FormatTimestamp(now)
 	current.LastSessionURL = fired.SessionURL
 	// The run has started whatever happens next, so a failed record is logged, not returned: the
 	// owner still gets the link, and only the cooldown and the activity line miss it.
-	if err := service.write(ctx, current, actor, "Started a job search", fired.SessionURL); err != nil {
+	if err := service.write(ctx, &current, actor, "Started a job search", fired.SessionURL); err != nil {
 		service.logger.Error("record the search run", "error", err)
 	}
 	return run, nil
 }
 
-// ParseRoutineID finds the routine id ("trig_" and letters and digits) in an id or a URL that holds one.
+// ParseRoutineID finds the routine id ("trig_" then letters, digits, "_" or "-") in an id or a URL that holds one.
 func ParseRoutineID(text string) (string, error) {
 	invalid := &domain.ValidationError{Field: "routine", Problem: "must be the routine's API URL or its id (it starts with " + routinePrefix + ")"}
 	start := strings.Index(text, routinePrefix)
@@ -220,15 +230,16 @@ func ParseRoutineID(text string) (string, error) {
 }
 
 func isIDCharacter(character byte) bool {
-	return character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9'
+	return character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' ||
+		character == '_' || character == '-'
 }
 
-func viewOf(current stored, hasToken bool) (View, error) {
+func viewOf(current stored, routineID string, hasToken bool) (View, error) {
 	lastRunAt, err := domain.ParseTimestamp(current.LastRunAt)
 	if err != nil {
 		return View{}, fmt.Errorf("stored search run: %w", err)
 	}
-	return View{RoutineID: current.RoutineID, HasToken: hasToken, LastRunAt: lastRunAt, LastSessionURL: current.LastSessionURL}, nil
+	return View{RoutineID: routineID, HasToken: hasToken, LastRunAt: lastRunAt, LastSessionURL: current.LastSessionURL}, nil
 }
 
 // load reads the settings row; a missing row is the zero setup.
@@ -252,15 +263,17 @@ func (service *Service) load(ctx context.Context) (stored, error) {
 	return current, nil
 }
 
-// write stores the settings row and its activity line in one unit of work.
-func (service *Service) write(ctx context.Context, next stored, actor, action, detail string) error {
+// write stores the settings row (when next isn't nil) and the activity line in one unit of work.
+func (service *Service) write(ctx context.Context, next *stored, actor, action, detail string) error {
 	encoded, err := json.Marshal(next)
 	if err != nil {
 		return fmt.Errorf("encode the search routine: %w", err)
 	}
 	err = service.store.Atomically(ctx, func(tx store.Tx) error {
-		if err := tx.Settings().Set(ctx, SettingsKey, string(encoded)); err != nil {
-			return fmt.Errorf("save the search routine: %w", err)
+		if next != nil {
+			if err := tx.Settings().Set(ctx, SettingsKey, string(encoded)); err != nil {
+				return fmt.Errorf("save the search routine: %w", err)
+			}
 		}
 		event, err := domain.NewEvent("", actor, action, detail, service.now())
 		if err != nil {
@@ -274,14 +287,18 @@ func (service *Service) write(ctx context.Context, next stored, actor, action, d
 	return err //nolint:wrapcheck // the work's errors are wrapped where they arise; the store's own failure passes through
 }
 
-func (service *Service) hasToken(ctx context.Context) (bool, error) {
-	_, err := service.secrets.Get(ctx, SecretName)
-	switch {
-	case err == nil:
-		return true, nil
-	case errors.Is(err, mailsetup.ErrSecretNotFound):
-		return false, nil
-	default:
-		return false, fmt.Errorf("read the routine token: %w", err)
+// loadCredential reads the routine id and token; found is false when none is saved.
+func (service *Service) loadCredential(ctx context.Context) (credential, bool, error) {
+	secret, err := service.secrets.Get(ctx, SecretName)
+	if errors.Is(err, mailsetup.ErrSecretNotFound) {
+		return credential{}, false, nil
 	}
+	if err != nil {
+		return credential{}, false, fmt.Errorf("read the routine token: %w", err)
+	}
+	routineID, token, ok := strings.Cut(secret.Reveal(), "\n")
+	if !ok || routineID == "" || token == "" {
+		return credential{}, false, errors.New("read the routine token: the stored value is damaged; save the routine again")
+	}
+	return credential{routineID: routineID, token: mailsetup.NewSecret(token)}, true, nil
 }

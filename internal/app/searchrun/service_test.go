@@ -28,10 +28,13 @@ type fakeFirer struct {
 	err   error
 }
 
-type fire struct{ routineID, token, text string }
+type fire struct {
+	routineID, token, text string
+	cancelled              bool // the fire's context was already done
+}
 
-func (firer *fakeFirer) Fire(_ context.Context, routineID string, token mailsetup.Secret, text string) (searchrun.Fired, error) {
-	firer.fires = append(firer.fires, fire{routineID: routineID, token: token.Reveal(), text: text})
+func (firer *fakeFirer) Fire(ctx context.Context, routineID string, token mailsetup.Secret, text string) (searchrun.Fired, error) {
+	firer.fires = append(firer.fires, fire{routineID: routineID, token: token.Reveal(), text: text, cancelled: ctx.Err() != nil})
 	if firer.err != nil {
 		return searchrun.Fired{}, firer.err
 	}
@@ -78,6 +81,9 @@ func TestParseRoutineID(t *testing.T) {
 		"with spaces":       "  trig_01ABCdef234\n",
 		"the routines page": "https://claude.ai/code/routines/trig_01ABCdef234",
 	}
+	if got, err := searchrun.ParseRoutineID("https://api.anthropic.com/v1/claude_code/routines/trig_01a_b-C/fire"); err != nil || got != "trig_01a_b-C" {
+		t.Errorf("an id with _ and -: got %q, %v", got, err)
+	}
 	for name, input := range good {
 		got, err := searchrun.ParseRoutineID(input)
 		if err != nil || got != "trig_01ABCdef234" {
@@ -115,7 +121,7 @@ func TestSaveNeedsATokenForANewRoutine(t *testing.T) {
 		t.Fatalf("new routine without a token: want a ValidationError, got %v", err)
 	}
 	stored, err := r.secrets.Get(ctx, searchrun.SecretName)
-	if err != nil || stored.Reveal() != "sk-ant-oat01-secret" {
+	if err != nil || stored.Reveal() != "trig_01ABCdef234\nsk-ant-oat01-secret" {
 		t.Fatalf("stored token: %v", err)
 	}
 	for _, event := range r.events(t) {
@@ -195,5 +201,62 @@ func TestAFailedFireStartsNoCooldown(t *testing.T) {
 	r.firer.err = nil
 	if _, err := r.service.Run(ctx, "Owner"); err != nil {
 		t.Fatalf("retry after a failed fire: %v", err)
+	}
+}
+
+func TestAMaybeStartedFireStartsTheCooldown(t *testing.T) {
+	r := newRig()
+	ctx := context.Background()
+	if _, err := r.service.Save(ctx, searchrun.SaveInput{Routine: routineURL, Token: token("tok")}, "Owner"); err != nil {
+		t.Fatal(err)
+	}
+	r.firer.err = &searchrun.FireError{Reason: "no answer from Claude: timeout", MaybeStarted: true}
+	if _, err := r.service.Run(ctx, "Owner"); err == nil {
+		t.Fatal("want the fire's error")
+	}
+	r.firer.err = nil
+	if _, err := r.service.Run(ctx, "Owner"); !errors.Is(err, searchrun.ErrTooSoon) {
+		t.Fatalf("after a fire that may have started: want ErrTooSoon, got %v", err)
+	}
+	if latest := r.events(t)[0]; latest.Action != "Search may have started" {
+		t.Fatalf("activity: %+v", latest)
+	}
+}
+
+func TestRunOutlivesTheRequest(t *testing.T) {
+	r := newRig()
+	if _, err := r.service.Save(context.Background(), searchrun.SaveInput{Routine: routineURL, Token: token("tok")}, "Owner"); err != nil {
+		t.Fatal(err)
+	}
+	closedTab, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := r.service.Run(closedTab, "Owner"); err != nil {
+		t.Fatal(err)
+	}
+	if r.firer.fires[0].cancelled {
+		t.Fatal("the fire ran on the cancelled request context")
+	}
+}
+
+func TestAClockThatWentBackDoesNotBlockTheButton(t *testing.T) {
+	r := newRig()
+	ctx := context.Background()
+	if _, err := r.service.Save(ctx, searchrun.SaveInput{Routine: routineURL, Token: token("tok")}, "Owner"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.service.Run(ctx, "Owner"); err != nil {
+		t.Fatal(err)
+	}
+	r.now = r.now.Add(-time.Hour)
+	if _, err := r.service.Run(ctx, "Owner"); err != nil {
+		t.Fatalf("with the last run in the future: %v", err)
+	}
+}
+
+func TestSaveRefusesATokenWithSpaces(t *testing.T) {
+	r := newRig()
+	var validation *domain.ValidationError
+	if _, err := r.service.Save(context.Background(), searchrun.SaveInput{Routine: routineURL, Token: token("sk-ant\nmore")}, "Owner"); !errors.As(err, &validation) {
+		t.Fatalf("want a ValidationError, got %v", err)
 	}
 }

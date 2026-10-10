@@ -110,6 +110,8 @@ func statusFor(err error) (int, errorBody) {
 		return http.StatusTooManyRequests, errorBody{Error: searchrun.ErrRateLimited.Error()}
 	case errors.Is(err, searchrun.ErrTokenRejected), errors.Is(err, searchrun.ErrRoutineNotFound):
 		return http.StatusBadGateway, errorBody{Error: rootMessage(err)}
+	case errors.As(err, &fireError) && fireError.MaybeStarted:
+		return http.StatusBadGateway, errorBody{Error: "the search may have started (" + fireError.Reason + "): check your routine's runs at claude.ai/code/routines before trying again"}
 	case errors.As(err, &fireError):
 		return http.StatusBadGateway, errorBody{Error: "the search didn't start: " + fireError.Reason}
 	case errors.Is(err, attachments.ErrTooLarge), errors.As(err, &tooLarge):

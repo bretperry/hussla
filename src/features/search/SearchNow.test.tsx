@@ -24,6 +24,12 @@ describe("SearchNowButton", () => {
     expect(await screen.findByRole("link", { name: "Set up Search now" })).toHaveAttribute("href", "/settings");
   });
 
+  it("says so when the setup can't be read", async () => {
+    vi.spyOn(api, "getSearchRoutine").mockRejectedValue(new ApiError("Can't reach Hussla.", 0));
+    render(<SearchNowButton />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Can't reach Hussla.");
+  });
+
   it("starts a search and links to the run", async () => {
     vi.spyOn(api, "getSearchRoutine").mockResolvedValue(ready);
     const run = vi.spyOn(api, "runSearch").mockResolvedValue({ startedAt: "2026-10-10T03:00:00.000Z", sessionUrl: "https://claude.ai/code/session_01X" });

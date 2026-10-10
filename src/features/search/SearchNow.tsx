@@ -28,7 +28,9 @@ export const SearchNowButton = () => {
   const [busy, setBusy] = useState(false);
   const [started, setStarted] = useState<SearchRun | null>(null);
   const toast = useToast();
-  if (routine.data === null) return null;
+  if (routine.data === null) {
+    return routine.error === null ? null : <span role="alert" className="self-center text-small text-accent">Search now: {describeError(routine.error)}</span>;
+  }
   if (!routine.data.configured) {
     return <LinkButton to="/settings">Set up Search now</LinkButton>;
   }
@@ -82,7 +84,7 @@ export const SearchRoutineSettings = () => {
   };
   return (
     <Section kicker="Job search routine">
-      {current === null ? <LoadingLine /> : (
+      {current === null ? (routine.error === null ? <LoadingLine /> : <ErrorLine message={describeError(routine.error)} />) : (
         <>
           {current.configured ? (
             <p>

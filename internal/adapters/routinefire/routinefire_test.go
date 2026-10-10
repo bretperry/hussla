@@ -83,8 +83,38 @@ func TestFireErrorNeverHoldsTheToken(t *testing.T) {
 	if !errors.As(err, &fireError) {
 		t.Fatalf("want a FireError, got %v", err)
 	}
-	if strings.Contains(fireError.Reason, secretToken) || !strings.Contains(fireError.Reason, "500") {
-		t.Fatalf("reason: %q", fireError.Reason)
+	if strings.Contains(fireError.Reason, secretToken) || !strings.Contains(fireError.Reason, "500") || !fireError.MaybeStarted {
+		t.Fatalf("reason: %q, maybe started %v", fireError.Reason, fireError.MaybeStarted)
+	}
+}
+
+// A token that straddles the excerpt's cut must not leak its start.
+func TestFireErrorRedactsBeforeCutting(t *testing.T) {
+	_, err := fireAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(strings.Repeat("x", 289) + " Bearer " + secretToken))
+	})
+	var fireError *searchrun.FireError
+	if !errors.As(err, &fireError) {
+		t.Fatalf("want a FireError, got %v", err)
+	}
+	if strings.Contains(fireError.Reason, "sk-") || fireError.MaybeStarted {
+		t.Fatalf("reason: %q, maybe started %v", fireError.Reason, fireError.MaybeStarted)
+	}
+}
+
+func TestADroppedConnectionMayHaveStarted(t *testing.T) {
+	_, err := fireAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+		connection, _, hijackErr := http.NewResponseController(w).Hijack()
+		if hijackErr != nil {
+			t.Error(hijackErr)
+			return
+		}
+		_ = connection.Close()
+	})
+	var fireError *searchrun.FireError
+	if !errors.As(err, &fireError) || !fireError.MaybeStarted {
+		t.Fatalf("want a FireError that may have started, got %v", err)
 	}
 }
 
