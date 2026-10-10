@@ -75,7 +75,7 @@ export const PasskeyStep = ({ status, onDone, mode = "first" }: PasskeyStepProps
   const someoneElse = status.ownerLogin !== "" && status.seenLogin !== "" && status.ownerLogin !== status.seenLogin;
   return (
     <form className="flex max-w-prose flex-col gap-4" onSubmit={submit} aria-label="Add your passkey">
-      <h2 className="font-display text-lead-phone font-black">{mode === "first" ? "Make this Hussla yours" : "Add a new passkey"}</h2>
+      <h2 className="font-display text-lead-phone font-bold">{mode === "first" ? "Make this Hussla yours" : "Add a new passkey"}</h2>
       <p>
         {mode === "first"
           ? "A passkey (Face ID, Touch ID, Windows Hello or your phone) is how Hussla knows it's you. Nothing is stored but a public key."

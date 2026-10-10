@@ -6,7 +6,8 @@
 */
 // oxlint-disable import/no-unassigned-import -- CSS and font files register by being imported
 import "@fontsource-variable/bodoni-moda/opsz.css";
-import "@fontsource-variable/bodoni-moda/opsz-italic.css";
+import "@fontsource-variable/source-serif-4/opsz.css";
+import "@fontsource-variable/source-serif-4/opsz-italic.css";
 import "@fontsource-variable/libre-franklin/wght.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "@/shared/ui/tokens.css";

@@ -46,7 +46,7 @@ export const ReviewCard = ({ review }: { review: Review }) => (
         <span className="text-small text-muted">no rating</span>
       ) : (
         <span>
-          <span className="font-display text-title font-black">{review.rating}</span>
+          <span className="font-display text-title font-bold">{review.rating}</span>
           <span className="text-muted"> / {review.ratingScale}</span>
         </span>
       )}

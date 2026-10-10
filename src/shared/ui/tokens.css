@@ -7,7 +7,8 @@
   Spec: docs/plans/hussla-v1.md → Phase 5 (mockup 8c). Spacing is Tailwind's 4px scale, and the
   Gazette uses only 4/8/16/24/32 of it (p-1, p-2, p-4, p-6, p-8): the same relationship always gets
   the same gap. At 1280 the page is 64px margins and 12 columns of 74px with 24px gutters, which is
-  max-w-page with px-16 and grid-cols-12 gap-x-6.
+  max-w-page with px-16 and grid-cols-12 gap-x-6; the front page widens its gutters to 48px (52px
+  columns, gap-x-12) so the column rules get room on both sides.
 */
 @import "tailwindcss";
 
@@ -23,82 +24,82 @@
   --color-body: #333333;
   --color-accent: #c8102e;
 
-  --font-display: "Bodoni Moda Variable", "Bodoni Moda", Didot, "Times New Roman", serif;
+  /* Bodoni is for the nameplate only; headlines and reading text are Source Serif 4, which keeps Bodoni's contrast but reads at small sizes. */
+  --font-nameplate: "Bodoni Moda Variable", "Bodoni Moda", Didot, "Times New Roman", serif;
+  --font-display: "Source Serif 4 Variable", "Source Serif 4", Georgia, serif;
   --font-ui: "Libre Franklin Variable", "Libre Franklin", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
 
   /* Type scale: size / line height / tracking, by role. */
-  --text-nameplate: 112px;
-  --text-nameplate--line-height: 168px;
-  --text-nameplate--letter-spacing: -3px;
-  --text-nameplate-phone: 72px;
-  --text-nameplate-phone--line-height: 104px;
-  --text-nameplate-phone--letter-spacing: -2px;
-  --text-nameplate-inner: 56px;
-  --text-nameplate-inner--line-height: 64px;
+  --text-nameplate: 64px;
+  --text-nameplate--line-height: 72px;
+  --text-nameplate--letter-spacing: -2px;
+  --text-nameplate-phone: 44px;
+  --text-nameplate-phone--line-height: 52px;
+  --text-nameplate-phone--letter-spacing: -1.5px;
+  --text-nameplate-inner: 44px;
+  --text-nameplate-inner--line-height: 52px;
   --text-nameplate-inner--letter-spacing: -2px;
-  --text-lead: 56px;
-  --text-lead--line-height: 62px;
-  --text-lead--letter-spacing: -0.5px;
-  --text-lead-phone: 40px;
-  --text-lead-phone--line-height: 48px;
-  --text-lead-phone--letter-spacing: -0.5px;
-  --text-page: 40px;
-  --text-page--line-height: 48px;
-  --text-page--letter-spacing: -0.5px;
-  --text-headline: 32px;
-  --text-headline--line-height: 40px;
-  --text-headline-phone: 28px;
-  --text-headline-phone--line-height: 32px;
-  --text-title: 24px;
-  --text-title--line-height: 32px;
-  --text-news: 24px;
-  --text-news--line-height: 28px;
-  --text-news-phone: 20px;
-  --text-news-phone--line-height: 28px;
-  --text-quote: 32px;
-  --text-quote--line-height: 44px;
-  --text-quote-phone: 24px;
-  --text-quote-phone--line-height: 32px;
+  --text-lead: 26px;
+  --text-lead--line-height: 32px;
+  --text-lead--letter-spacing: 0;
+  --text-lead-phone: 22px;
+  --text-lead-phone--line-height: 28px;
+  --text-lead-phone--letter-spacing: 0;
+  --text-page: 28px;
+  --text-page--line-height: 34px;
+  --text-page--letter-spacing: 0;
+  --text-headline: 22px;
+  --text-headline--line-height: 28px;
+  --text-headline-phone: 20px;
+  --text-headline-phone--line-height: 26px;
+  --text-title: 20px;
+  --text-title--line-height: 28px;
+  --text-news: 17px;
+  --text-news--line-height: 23px;
+  --text-news-phone: 17px;
+  --text-news-phone--line-height: 23px;
+  --text-quote: 20px;
+  --text-quote--line-height: 30px;
+  --text-quote-phone: 18px;
+  --text-quote-phone--line-height: 27px;
   /* A long pitch (over PITCH_LONG_CHARACTERS) drops to these so the longest the server allows still fits the box. */
-  --text-quote-long: 24px;
-  --text-quote-long--line-height: 32px;
-  --text-quote-long-phone: 18px;
+  --text-quote-long: 18px;
+  --text-quote-long--line-height: 26px;
+  --text-quote-long-phone: 16px;
   --text-quote-long-phone--line-height: 24px;
   --text-prose: 18px;
   --text-prose--line-height: 28px;
-  --text-stat: 32px;
-  --text-stat--line-height: 40px;
+  --text-stat: 24px;
+  --text-stat--line-height: 32px;
   --text-row: 16px;
   --text-row--line-height: 24px;
   --text-form: 16px;
   --text-form--line-height: 24px;
   --text-ui: 14px;
   --text-ui--line-height: 20px;
-  --text-small: 13px;
-  --text-small--line-height: 16px;
-  --text-kicker: 11px;
+  --text-small: 14px;
+  --text-small--line-height: 20px;
+  --text-kicker: 12px;
   --text-kicker--line-height: 16px;
-  --text-kicker--letter-spacing: 1.5px;
-  --text-tag: 10px;
+  --text-kicker--letter-spacing: 0.08em;
+  --text-tag: 11px;
   --text-tag--line-height: 16px;
-  --text-tag--letter-spacing: 1.5px;
+  --text-tag--letter-spacing: 0.08em;
 
   /* The page: 1280 wide, so 64px margins leave 12 columns of 74px and 11 gutters of 24px. */
   --container-page: 1280px;
   /* Touch target for buttons and links on a phone. */
   --spacing-touch: 44px;
   /* The pitch box is sized to the longest pitch the server allows (internal/config PitchMaxCharacters, at the long type size), so rotation never reflows. */
-  --spacing-pitch: 224px;
-  --spacing-pitch-phone: 360px;
-  /* The masthead ears are 120px tall; the 168px nameplate line is trimmed so it sits between them. */
-  --spacing-ear: 120px;
-  --spacing-nameplate-trim-top: 7px;
-  --spacing-nameplate-trim-bottom: 71px;
+  --spacing-pitch: 144px;
+  --spacing-pitch-phone: 224px;
+  /* The section bar under the nameplate rule: the nav, and on the front page the briefing. */
+  --spacing-bar: 56px;
   /* The board's right column holds a status tag. */
   --spacing-tag-column: 72px;
-  /* The lead story's fact box and the rail sit in the gutter's middle: half a gutter back. */
-  --spacing-half-gutter: 12px;
+  /* The lead story's fact box and the rail sit in the middle of the front page's 48px gutter: half a gutter back. */
+  --spacing-half-gutter: 24px;
 
   /* The billboard's slow cross-fade between pitches; none under prefers-reduced-motion. PITCH_FADE_MS (src/config/ui.ts) matches the 900ms. */
   --animate-pitch-in: pitch-in 900ms ease-in-out both;
@@ -122,8 +123,8 @@
 }
 
 @utility kicker {
-  font-family: var(--font-mono);
-  font-weight: 500;
+  font-family: var(--font-ui);
+  font-weight: 700;
   font-size: var(--text-kicker);
   line-height: var(--text-kicker--line-height);
   letter-spacing: var(--text-kicker--letter-spacing);
@@ -131,8 +132,8 @@
 }
 
 @utility tag {
-  font-family: var(--font-mono);
-  font-weight: 500;
+  font-family: var(--font-ui);
+  font-weight: 700;
   font-size: var(--text-tag);
   line-height: var(--text-tag--line-height);
   letter-spacing: var(--text-tag--letter-spacing);

@@ -149,7 +149,7 @@ const PitchCard = ({ pitch, settings, open, onToggle, run }: { pitch: Pitch; set
     <>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-2">
-          <h2 className="font-display text-headline-phone font-black lg:text-headline">{pitch.title}</h2>
+          <h2 className="font-display text-headline-phone font-bold lg:text-headline">{pitch.title}</h2>
           {pitch.when === "" ? null : <p className="text-muted">When: {pitch.when}</p>}
         </div>
         <Button size="sm" onClick={onToggle} aria-expanded={open}>
