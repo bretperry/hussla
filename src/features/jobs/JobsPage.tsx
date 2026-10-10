@@ -1,11 +1,12 @@
 /*
-  The jobs table: five counts, a search box, status chips, and every job as a row.
+  The jobs table: five counts, a search box, status chips, every job as a row, and the Search now button.
   In the app: "/jobs"; the front page's "All N jobs" lands here.
   Used by: src/app/App.tsx.
-  Uses: src/config/ui.ts for the chips, localStorage (via storage.ts) to remember the chip.
+  Uses: src/config/ui.ts for the chips, localStorage (via storage.ts) to remember the chip, SearchNowButton.
 */
 import { useState } from "react";
 import { DEFAULT_JOB_GROUP, FOLLOW_UP_DUE_STATUSES, JOB_GROUPS, STATUS_LABEL, STORAGE_KEYS } from "@/config/ui";
+import { SearchNowButton } from "@/features/search/SearchNow";
 import { api, describeError } from "@/shared/api";
 import type { JobListItem } from "@/shared/api";
 import { cn } from "@/shared/lib/cn";
@@ -70,7 +71,7 @@ export const JobsPage = () => {
 
   return (
     <>
-      <PageHead kicker="Jobs" title="Every job on the board" actions={<LinkButton to="/jobs/new" variant="primary">+ Add job</LinkButton>} />
+      <PageHead kicker="Jobs" title="Every job on the board" actions={<div className="flex flex-wrap gap-2"><SearchNowButton /><LinkButton to="/jobs/new" variant="primary">+ Add job</LinkButton></div>} />
       {jobs.error !== null && jobs.data === null ? <ErrorLine message={describeError(jobs.error)} /> : null}
       {jobs.data === null ? (
         jobs.error === null ? <LoadingLine /> : null

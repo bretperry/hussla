@@ -481,6 +481,41 @@ export interface paths {
         patch: operations["patchSearchConfig"];
         trace?: never;
     };
+    "/api/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Owner only. The Claude routine the Search now button starts; `hasToken` says whether its token is stored, never what it is. */
+        get: operations["getSearchRoutine"];
+        /** Owner only, with a passkey tap. Saves the routine the Search now button starts. `routine` is its API URL or its id (trig_…); `token` is its API trigger token, left out to keep the stored one (same routine only). The token is stored encrypted, sent only to api.anthropic.com, and never returned. */
+        put: operations["saveSearchRoutine"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Owner only. Starts the job-search routine now (a new Claude cloud session that writes back over the agent API). Refused with 429 within a few minutes of the last start. */
+        post: operations["runSearch"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/resumes": {
         parameters: {
             query?: never;
@@ -1520,6 +1555,30 @@ export interface components {
         PitchLive: {
             version: number;
         };
+        SearchRoutine: {
+            /** @description A routine and its token are saved */
+            configured: boolean;
+            /** @description The routine's id (trig_…); empty when none is saved. */
+            routineId: string;
+            /** @description The routine's token is stored (it is never returned). */
+            hasToken: boolean;
+            /** Format: date-time */
+            lastRunAt: string | null;
+            /** @description Where the last run can be watched (claude.ai). */
+            lastSessionUrl: string | null;
+        };
+        SearchRoutineSave: {
+            /** @description The routine's API URL or its id (trig_…). */
+            routine: string;
+            /** @description The routine's API trigger token; leave out to keep the stored one. */
+            token?: string;
+        };
+        SearchRun: {
+            /** Format: date-time */
+            startedAt: string;
+            /** @description Where the run can be watched; null when Claude's reply didn't say. */
+            sessionUrl: string | null;
+        };
         /** @description The search settings agents follow. Free-form beyond `paused`; PATCH merges top-level keys. */
         SearchConfig: {
             /** @description When true */
@@ -1883,7 +1942,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description The mail provider refused or failed. */
+        /** @description The mail provider, or Claude's routine endpoint, refused or failed. */
         BadGateway: {
             headers: {
                 [name: string]: unknown;
@@ -2904,6 +2963,83 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getSearchRoutine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The setup and the last run (empty when none is saved). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchRoutine"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    saveSearchRoutine: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A one-use token from POST /api/stepup/finish, granted for exactly this method and path. */
+                "X-Hussla-Step-Up": components["parameters"]["StepUp"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SearchRoutineSave"];
+            };
+        };
+        responses: {
+            /** @description Saved. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchRoutine"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    runSearch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Started. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchRun"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooSoon"];
+            502: components["responses"]["BadGateway"];
         };
     };
     listResumes: {

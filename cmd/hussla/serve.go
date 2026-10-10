@@ -1,7 +1,7 @@
 // The composition root: takes the data-directory lock, opens storage, builds the use-cases, and serves its listeners until a signal.
 // In the app: everything `hussla serve` does between start and stop.
 // Used by: main.go.
-// Uses: every adapter (sqlite, tailnet, passkey, filestore, signinfile, datadir, secretfile, mailfactory) and every use-case; httpapi for the handlers.
+// Uses: every adapter (sqlite, tailnet, passkey, filestore, signinfile, datadir, secretfile, mailfactory, routinefire) and every use-case; httpapi for the handlers.
 //
 // Start order is for speed and safety: lock first (a second process stops before touching
 // anything), then storage, then the local and home-network listeners (serving in well under a
@@ -34,6 +34,7 @@ import (
 	"github.com/bretperry/hussla/internal/adapters/filestore"
 	"github.com/bretperry/hussla/internal/adapters/mailfactory"
 	"github.com/bretperry/hussla/internal/adapters/passkey"
+	"github.com/bretperry/hussla/internal/adapters/routinefire"
 	"github.com/bretperry/hussla/internal/adapters/secretfile"
 	"github.com/bretperry/hussla/internal/adapters/signinfile"
 	"github.com/bretperry/hussla/internal/adapters/sqlite"
@@ -43,6 +44,7 @@ import (
 	"github.com/bretperry/hussla/internal/app/mailbox"
 	"github.com/bretperry/hussla/internal/app/mailsetup"
 	"github.com/bretperry/hussla/internal/app/outbox"
+	"github.com/bretperry/hussla/internal/app/searchrun"
 	"github.com/bretperry/hussla/internal/app/setup"
 	"github.com/bretperry/hussla/internal/app/tracker"
 	"github.com/bretperry/hussla/internal/config"
@@ -583,6 +585,7 @@ func buildServices(dataDir string, storage *sqlite.Store, logger *slog.Logger, o
 		Attachments: attachments.New(storage, blobs, resumes, config.UploadMaxBytes, nil),
 		Setup:       setup.New(setupOptions),
 		MailSetup:   mailSetup,
+		Search:      searchrun.New(searchrun.Dependencies{Store: storage, Secrets: secrets, Firer: routinefire.New(), Logger: logger}),
 		AgentsGuide: hussla.AgentsGuide,
 		UI:          ui,
 	}, dispatcher, nil

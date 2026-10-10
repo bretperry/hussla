@@ -216,6 +216,7 @@ var ownerActions = []string{
 	"POST /api/pitches/{slot}/live", "DELETE /api/pitches/{slot}/versions/{version}",
 	"DELETE /api/passkeys/{passkeyId}", "POST /api/setup/code", "PATCH /api/setup/wizard", "GET /api/setup/qr",
 	"GET /api/mail/providers", "GET /api/mail/settings", "PUT /api/mail/settings",
+	"GET /api/search", "PUT /api/search", "POST /api/search/run",
 }
 
 // notAsTools are routes an agent may call over HTTP that have no MCP tool, and why.

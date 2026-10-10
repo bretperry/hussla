@@ -27,6 +27,7 @@ import (
 	"github.com/bretperry/hussla/internal/app/attachments"
 	"github.com/bretperry/hussla/internal/app/auth"
 	"github.com/bretperry/hussla/internal/app/mailbox"
+	"github.com/bretperry/hussla/internal/app/searchrun"
 	"github.com/bretperry/hussla/internal/app/setup"
 	"github.com/bretperry/hussla/internal/app/tracker"
 	"github.com/bretperry/hussla/internal/config"
@@ -74,6 +75,7 @@ type rig struct {
 	localUI   http.Handler
 	funnelUI  http.Handler // the agent door (ListenerFunnel)
 	key       *virtualauthn.Authenticator
+	firer     *fakeFirer // the Search now button's routine endpoint
 }
 
 func newRig(t *testing.T) *rig { return newRigPinned(t, "") }
@@ -90,6 +92,7 @@ func newRigPinned(t *testing.T, ownerLogin string) *rig {
 	r.tailnet.Add(otherAddr, otherPeer)
 	r.tailnet.Add(taggedAddr, taggedPeer)
 	r.ownerPin = ownerLogin
+	r.firer = &fakeFirer{}
 	dir := t.TempDir()
 	blobs, err := filestore.NewBlobs(filepath.Join(dir, "files"))
 	if err != nil {
@@ -107,6 +110,7 @@ func newRigPinned(t *testing.T, ownerLogin string) *rig {
 		Tracker:     tracker.New(r.store, r.clock.Now),
 		Mail:        mailbox.New(mailbox.Options{Store: r.store, Location: location, Now: r.clock.Now}),
 		Attachments: attachments.New(r.store, blobs, resumes, config.UploadMaxBytes, r.clock.Now),
+		Search:      searchrun.New(searchrun.Dependencies{Store: r.store, Secrets: &fakes.SecretStore{}, Firer: r.firer, Now: r.clock.Now}),
 		AgentsGuide: "# guide",
 	}
 	return r.restart()

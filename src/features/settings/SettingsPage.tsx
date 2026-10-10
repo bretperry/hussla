@@ -1,12 +1,13 @@
 /*
-  Settings: "Add an agent", agent keys, email sending, search settings, passkeys, backup and import, and the running version.
+  Settings: "Add an agent", agent keys, email sending, search settings, the Search now routine, passkeys, backup and import, and the running version.
   In the app: "/settings". Every change here is owner-only and asks for a passkey tap first.
   Used by: src/app/App.tsx.
-  Uses: api.* for keys, mail, config, passkeys and sessions; AddAgent for the key-and-snippet flow.
+  Uses: api.* for keys, mail, config, passkeys and sessions; AddAgent for the key-and-snippet flow; SearchRoutineSettings.
 
   A new key's secret is shown once, in AddAgent, and never again (the server keeps only its hash).
 */
 import { useState } from "react";
+import { SearchRoutineSettings } from "@/features/search/SearchNow";
 import { api, describeError } from "@/shared/api";
 import type { AgentKey, Me } from "@/shared/api";
 import { formatWhen } from "@/shared/lib/format";
@@ -146,6 +147,7 @@ export const SettingsPage = ({ me }: { me: Me }) => {
       <AgentKeys keys={keys} />
       <Mail />
       <SearchSettings />
+      <SearchRoutineSettings />
       <Security me={me} />
       <ImportFromOldTracker />
       <p className="text-small text-muted">{me.appName} {me.version}</p>

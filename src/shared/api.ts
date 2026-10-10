@@ -35,6 +35,8 @@ export type Passkey = Schemas["Passkey"];
 export type Resume = Schemas["Resume"];
 export type FileRecord = Schemas["FileRecord"];
 export type SearchConfig = Schemas["SearchConfig"];
+export type SearchRoutine = Schemas["SearchRoutine"];
+export type SearchRun = Schemas["SearchRun"];
 export type ImportResult = Schemas["ImportResult"];
 export type JobStatus = Schemas["JobStatus"];
 export type SetupStatus = Schemas["SetupStatus"];
@@ -181,6 +183,10 @@ export const api = {
 
   getSearchConfig: (): Promise<SearchConfig> => send("GET", "/api/config"),
   setPaused: (paused: boolean): Promise<SearchConfig> => send("PATCH", "/api/config", { body: { paused }, stepUp: true }),
+  getSearchRoutine: (): Promise<SearchRoutine> => send("GET", "/api/search"),
+  // Leave the token out to keep the stored one (same routine only).
+  saveSearchRoutine: (body: Schemas["SearchRoutineSave"]): Promise<SearchRoutine> => send("PUT", "/api/search", { body, stepUp: true }),
+  runSearch: (): Promise<SearchRun> => send("POST", "/api/search/run"),
 
   listAgentKeys: (): Promise<AgentKey[]> => send("GET", "/api/tokens"),
   createAgentKey: (name: string): Promise<AgentKeyCreated> => send("POST", "/api/tokens", { body: { name }, stepUp: true }),

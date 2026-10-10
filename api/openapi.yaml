@@ -742,6 +742,62 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /api/search:
+    get:
+      tags: [settings]
+      operationId: getSearchRoutine
+      summary: Owner only. The Claude routine the Search now button starts; `hasToken` says whether its token is stored, never what it is.
+      responses:
+        "200":
+          description: The setup and the last run (empty when none is saved).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchRoutine" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      tags: [settings]
+      operationId: saveSearchRoutine
+      summary: >-
+        Owner only, with a passkey tap. Saves the routine the Search now button starts. `routine` is its
+        API URL or its id (trig_…); `token` is its API trigger token, left out to keep the stored one
+        (same routine only). The token is stored encrypted, sent only to api.anthropic.com, and never returned.
+      parameters:
+        - $ref: "#/components/parameters/StepUp"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SearchRoutineSave" }
+      responses:
+        "200":
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchRoutine" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/search/run:
+    post:
+      tags: [settings]
+      operationId: runSearch
+      summary: >-
+        Owner only. Starts the job-search routine now (a new Claude cloud session that writes back over the
+        agent API). Refused with 429 within a few minutes of the last start.
+      responses:
+        "200":
+          description: Started.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchRun" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooSoon" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+
   /api/resumes:
     get:
       tags: [files]
@@ -1366,7 +1422,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     BadGateway:
-      description: The mail provider refused or failed.
+      description: The mail provider, or Claude's routine endpoint, refused or failed.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
@@ -2085,6 +2141,27 @@ components:
       additionalProperties: false
       properties:
         version: { type: integer, minimum: 1 }
+    SearchRoutine:
+      type: object
+      required: [configured, routineId, hasToken, lastRunAt, lastSessionUrl]
+      properties:
+        configured: { type: boolean, description: A routine and its token are saved, so the button can start a search. }
+        routineId: { type: string, description: The routine's id (trig_…); empty when none is saved. }
+        hasToken: { type: boolean, description: The routine's token is stored (it is never returned). }
+        lastRunAt: { type: [string, "null"], format: date-time }
+        lastSessionUrl: { type: [string, "null"], description: Where the last run can be watched (claude.ai). }
+    SearchRoutineSave:
+      type: object
+      required: [routine]
+      properties:
+        routine: { type: string, description: The routine's API URL or its id (trig_…). }
+        token: { type: string, writeOnly: true, description: The routine's API trigger token; leave out to keep the stored one. }
+    SearchRun:
+      type: object
+      required: [startedAt, sessionUrl]
+      properties:
+        startedAt: { type: string, format: date-time }
+        sessionUrl: { type: [string, "null"], description: Where the run can be watched; null when Claude's reply didn't say. }
     SearchConfig:
       type: object
       description: The search settings agents follow. Free-form beyond `paused`; PATCH merges top-level keys.
