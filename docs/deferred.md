@@ -30,6 +30,11 @@ What. **Why deferred:** … **Where:** … **If we take it:** … -->
 
 Settings → Job search routine can replace the routine and token but not remove them, and the `SecretStore` port has no delete. **Why deferred:** the owner can revoke the token on the routine's page at claude.ai (that stops it at once) or save another routine; clearing needs a new port method and a new route. **Where:** `internal/app/mailsetup` (`SecretStore`), `internal/adapters/secretfile`, `internal/app/searchrun`, `api/openapi.yaml`. **If we take it:** `SecretStore.Delete`, `DELETE /api/search` (passkey tap), and a "Remove" button beside Save routine.
 
+## Harness tests: git auto-maintenance fix isn't upstream yet
+`open` · recorded 2026-10-10 · from PR #27's CI
+
+`scripts/stack.test.mjs` failed twice on the same head in CI (git 2.55): "a pre-pack project without a pack's files…" cloned a scratch repo and got `fatal: failed to copy file to '…/.git/objects/…': No such file or directory`. Inferred cause: the commit before the clone starts a detached auto gc/maintenance that packs and deletes loose objects mid-clone (it never failed locally on git 2.43). The test's `GIT_ENV` now sets `gc.auto=0` and `maintenance.auto=false`, so this repo's copy differs from whippletree's. **Why deferred:** the file is a harness file; the fix belongs upstream too. **Where:** `scripts/stack.test.mjs` (`GIT_ENV`). **If we take it:** `pnpm harness:push`, then delete this entry once `pnpm harness:status` shows no difference.
+
 ## Agent door on Funnel: no limit on wrong keys, no per-key scopes, rate limit or quota
 `open` · recorded 2026-10-09 · from `docs/decisions/0016-agent-api-on-funnel.md`; widened by the ship dynamite test (2026-10-09)
 
