@@ -18,6 +18,7 @@ import (
 	"github.com/bretperry/hussla/internal/app/auth"
 	"github.com/bretperry/hussla/internal/app/mailbox"
 	"github.com/bretperry/hussla/internal/app/mailsetup"
+	"github.com/bretperry/hussla/internal/app/searchrun"
 	"github.com/bretperry/hussla/internal/app/setup"
 	"github.com/bretperry/hussla/internal/app/storeerr"
 	"github.com/bretperry/hussla/internal/app/tracker"
@@ -59,6 +60,7 @@ func statusFor(err error) (int, errorBody) {
 	var validation *domain.ValidationError
 	var ownerFields *domain.OwnerFieldsError
 	var tooLarge *http.MaxBytesError
+	var fireError *searchrun.FireError
 	switch {
 	case errors.As(err, &validation):
 		return http.StatusBadRequest, errorBody{Error: validation.Error()}
@@ -100,6 +102,16 @@ func statusFor(err error) (int, errorBody) {
 		return http.StatusBadRequest, errorBody{Error: mailbox.ErrMailNotConfigured.Error()}
 	case errors.Is(err, mailbox.ErrMailNotConfigured):
 		return http.StatusBadRequest, errorBody{Error: mailbox.ErrMailNotConfigured.Error()}
+	case errors.Is(err, searchrun.ErrNotConfigured):
+		return http.StatusBadRequest, errorBody{Error: searchrun.ErrNotConfigured.Error()}
+	case errors.Is(err, searchrun.ErrTooSoon):
+		return http.StatusTooManyRequests, errorBody{Error: searchrun.ErrTooSoon.Error()}
+	case errors.Is(err, searchrun.ErrRateLimited):
+		return http.StatusTooManyRequests, errorBody{Error: searchrun.ErrRateLimited.Error()}
+	case errors.Is(err, searchrun.ErrTokenRejected), errors.Is(err, searchrun.ErrRoutineNotFound):
+		return http.StatusBadGateway, errorBody{Error: rootMessage(err)}
+	case errors.As(err, &fireError):
+		return http.StatusBadGateway, errorBody{Error: "the search didn't start: " + fireError.Reason}
 	case errors.Is(err, attachments.ErrTooLarge), errors.As(err, &tooLarge):
 		return http.StatusRequestEntityTooLarge, errorBody{Error: "the body is over the size limit"}
 	}

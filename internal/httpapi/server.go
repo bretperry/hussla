@@ -24,6 +24,7 @@ import (
 	"github.com/bretperry/hussla/internal/app/auth"
 	"github.com/bretperry/hussla/internal/app/mailbox"
 	"github.com/bretperry/hussla/internal/app/mailsetup"
+	"github.com/bretperry/hussla/internal/app/searchrun"
 	"github.com/bretperry/hussla/internal/app/setup"
 	"github.com/bretperry/hussla/internal/app/tracker"
 )
@@ -87,6 +88,8 @@ type Deps struct {
 	Setup *setup.Service
 	// MailSetup saves and shows the mail provider setup; nil answers its routes "not set up".
 	MailSetup *mailsetup.Service
+	// Search starts the owner's job-search routine (the Search now button); nil answers its routes "not set up".
+	Search *searchrun.Service
 	// AgentsGuide is docs/agents-api.md, served at /api/docs.
 	AgentsGuide string
 	// UI is the built web app (index.html at its root); nil serves a placeholder page.
@@ -190,6 +193,9 @@ func (server *api) routes() {
 	server.handle("PATCH /api/config", server.ownerStepUp(server.patchConfig))
 	server.handle("GET /api/resumes", server.member(server.listResumes))
 	server.handle("GET /resumes/{name}", server.member(server.getResume))
+	server.handle("GET /api/search", server.owner(server.searchRoutine))
+	server.handle("PUT /api/search", server.ownerStepUp(server.saveSearchRoutine))
+	server.handle("POST /api/search/run", server.owner(server.runSearch))
 	server.handle("GET /api/export", server.member(server.export))
 	server.handle("POST /api/import", server.ownerStepUp(server.importBundle))
 	// agent keys

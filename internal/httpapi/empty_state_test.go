@@ -57,6 +57,7 @@ func TestEmptyStateReadsMatchTheContract(t *testing.T) {
 		"/api/mail":             {"/api/mail"},
 		"/api/mail/providers":   {"/api/mail/providers"},
 		"/api/mail/settings":    {"/api/mail/settings"},
+		"/api/search":           {"/api/search"},
 		"/api/emails":           {"/api/emails"},
 		"/api/setup":            {"/api/setup"},
 		"/api/passkeys":         {"/api/passkeys"},
