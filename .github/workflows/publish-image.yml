@@ -24,10 +24,16 @@ on:
         description: The version tag to publish (vX.Y.Z); it and its release already exist.
         required: true
         type: string
+      latest:
+        description: Also move `latest` and the X.Y tag (false when publishing an older version late).
+        required: false
+        default: true
+        type: boolean
 
 # Keyed by the version, not github.ref: a call from release.yml runs with ref refs/heads/main.
+# ref_name, so a hand-pushed tag (refs/tags/vX → vX) and a call for vX share one group.
 concurrency:
-  group: publish-${{ inputs.tag || github.ref }}
+  group: publish-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -69,8 +75,8 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern={{version}},value=${{ env.TAG }},enable=${{ env.TAG != '' }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ env.TAG }},enable=${{ env.TAG != '' }}
-            type=raw,value=latest,enable=${{ env.TAG != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.TAG }},enable=${{ env.TAG != '' && inputs.latest != false }}
+            type=raw,value=latest,enable=${{ env.TAG != '' && inputs.latest != false }}
             type=ref,event=pr
       - name: Build (and push on a tag)
         uses: docker/build-push-action@v6
@@ -102,7 +108,8 @@ jobs:
           go-version-file: go.mod
       - name: Build every platform
         run: bash scripts/release-binaries.sh "$TAG"
-      # Onto the published release: release.yml made it already; a hand-pushed tag has none yet.
+      # Onto the release: release.yml made it already, as a draft it publishes after this job (gh
+      # finds a draft by its tag); a hand-pushed tag has none yet, so this makes it.
       # --clobber so a re-run of this job replaces its own files. Binaries are unsigned (laptop.md).
       - name: Attach to the release
         env:

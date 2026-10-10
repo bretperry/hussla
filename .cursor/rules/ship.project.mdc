@@ -8,17 +8,20 @@ alwaysApply: false
 Where this differs from `ship.mdc`, this wins for this project.
 
 - **Shipping releases.** The merge to `main` runs `.github/workflows/release.yml`: it tags the
-  next version, publishes a GitHub release (notes from merged PRs), then pushes the image
-  (`ghcr.io/bretperry/hussla:<X.Y.Z>`, `X.Y`, `latest`) and attaches the binaries. Nobody opens
-  GitHub to tag.
+  next version, makes a draft GitHub release (notes from merged PRs), pushes the image
+  (`ghcr.io/bretperry/hussla:<X.Y.Z>`, `X.Y`, `latest`) and attaches the binaries, and only then
+  publishes the release as Latest. Nobody opens GitHub to tag.
 - **Version bump.** Patch by default (newest `vX.Y.Z` + 1). For a bigger one, put
-  `release:minor` or `release:major` in the **ship PR's title** before merging; the merge commit's
-  message carries the title, and that is all the workflow reads. Use a merge commit (the default),
+  `release:minor` or `release:major` in the **ship PR's title** before merging, as a word of its
+  own; the merge commit's message carries the title, and the title is all the workflow reads. Use a merge commit (the default),
   so the title lands in the head commit's message.
 - **After the merge, confirm the release:** the `Release` run on `main` is green and
   `https://github.com/bretperry/hussla/releases` shows the new version with its binaries. Name
   the version when you say it shipped.
-- **A failed image or binaries job:** `gh run rerun <id> --failed` (`branching.mdc`). A full
-  rerun does nothing: main's head already carries the tag.
+- **A failed image or binaries job:** `gh run rerun <id> --failed` (`branching.mdc`); the release
+  stays a draft until they pass. A full rerun resumes too: main's head already carries the tag, so
+  it publishes that version again instead of cutting a new one, and does nothing once the release
+  is published. Re-running an older ship's run after a newer one shipped publishes its version
+  without taking Latest or the `latest` image; an older run that never tagged releases nothing.
 - **Updating the NAS is still a separate step:** bump the pinned `image:` tag
   (`docs/install/nas.md` → Updating).

@@ -236,3 +236,189 @@ func TestAgentFunnelIsOptIn(t *testing.T) {
 		}
 	}
 }
+
+// chanListener is a Funnel listener whose Accept blocks until it is closed (or dies).
+type chanListener struct {
+	closed chan struct{}
+	once   sync.Once
+}
+
+func newChanListener() *chanListener { return &chanListener{closed: make(chan struct{})} }
+
+func (listener *chanListener) Accept() (net.Conn, error) {
+	<-listener.closed
+	return nil, net.ErrClosed
+}
+
+func (listener *chanListener) Close() error {
+	listener.once.Do(func() { close(listener.closed) })
+	return nil
+}
+
+func (*chanListener) Addr() net.Addr { return &net.TCPAddr{} }
+
+// funnelScript is a node whose Funnel refuses each error in fails, then hands out chanListeners.
+type funnelScript struct {
+	mutex     sync.Mutex
+	fails     []error
+	name      string
+	listeners []*chanListener
+	// renameOnOpen, when set, becomes the name as the next listener is handed out (a rename mid-open).
+	renameOnOpen string
+}
+
+func (node *funnelScript) FunnelListener(string) (net.Listener, error) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	if len(node.fails) > 0 {
+		err := node.fails[0]
+		node.fails = node.fails[1:]
+		return nil, err
+	}
+	listener := newChanListener()
+	node.listeners = append(node.listeners, listener)
+	if node.renameOnOpen != "" {
+		node.name, node.renameOnOpen = node.renameOnOpen, ""
+	}
+	return listener, nil
+}
+
+func (node *funnelScript) Domain() string {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	return node.name
+}
+
+func (node *funnelScript) opened() []*chanListener {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	return append([]*chanListener(nil), node.listeners...)
+}
+
+func (node *funnelScript) rename(name string) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	node.name = name
+}
+
+// The agent door reopens on its own: after Funnel refuses, after its listener dies, and after a
+// rename moves the node to a new name, each with the join loop's backoff, until the server stops.
+func TestAgentFunnelReopens(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var log bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&log, nil))
+		node := &funnelScript{name: "hussla.tail0000.ts.net", fails: []error{errors.New("funnel not allowed")}}
+		ctx, cancel := context.WithCancel(t.Context())
+		var servers sync.WaitGroup
+		serve := func(server *http.Server, listener net.Listener) <-chan struct{} {
+			if server.ReadTimeout != config.AgentFunnelReadTimeout || server.WriteTimeout != config.AgentFunnelWriteTimeout || server.IdleTimeout != config.AgentFunnelIdleTimeout || server.ReadHeaderTimeout != config.AgentFunnelReadHeaderTimeout {
+				t.Error("the agent door's server has no timeouts")
+			}
+			stopped := make(chan struct{})
+			servers.Add(1)
+			go func() {
+				defer servers.Done()
+				defer close(stopped)
+				_ = server.Serve(listener)
+			}()
+			return stopped
+		}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			runAgentFunnel(ctx, node, http.NotFoundHandler(), logger, serve)
+		}()
+
+		// Funnel refuses once: open after the first retry.
+		synctest.Wait()
+		if got := len(node.opened()); got != 0 {
+			t.Fatalf("opened %d before the retry", got)
+		}
+		time.Sleep(config.TailnetRetryFirst)
+		synctest.Wait()
+		if got := len(node.opened()); got != 1 {
+			t.Fatalf("opened %d after the retry, want 1", got)
+		}
+
+		// The listener dies: reopened after a backoff, not straight away.
+		_ = node.opened()[0].Close()
+		synctest.Wait()
+		if got := len(node.opened()); got != 1 {
+			t.Fatalf("reopened %d with no wait", got)
+		}
+		time.Sleep(config.TailnetRetryMax)
+		synctest.Wait()
+		if got := len(node.opened()); got != 2 {
+			t.Fatalf("opened %d after the listener died, want 2", got)
+		}
+
+		// A rename: the old door closes within a refresh and a new one opens.
+		node.rename("jobs.tail0000.ts.net")
+		time.Sleep(config.TailnetRefresh + config.TailnetRetryMax)
+		synctest.Wait()
+		opened := node.opened()
+		if len(opened) != 3 {
+			t.Fatalf("opened %d after the rename, want 3", len(opened))
+		}
+		select {
+		case <-opened[1].closed:
+		default:
+			t.Fatal("the door on the old name is still open")
+		}
+		if !strings.Contains(log.String(), "name changed") {
+			t.Errorf("the rename isn't in the log:\n%s", log.String())
+		}
+
+		// Stopping: the loop ends, and opens nothing more.
+		cancel()
+		<-done
+		_ = opened[2].Close()
+		servers.Wait()
+		if got := len(node.opened()); got != 3 {
+			t.Fatalf("opened %d after stopping", got)
+		}
+	})
+}
+
+// A rename that lands while the door is opening still reopens it: the door must not sit on the
+// old name's certificate while the watcher believes it has the new one.
+func TestAgentFunnelReopensAfterARenameMidOpen(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		node := &funnelScript{name: "hussla.tail0000.ts.net", renameOnOpen: "jobs.tail0000.ts.net"}
+		ctx, cancel := context.WithCancel(t.Context())
+		var servers sync.WaitGroup
+		serve := func(server *http.Server, listener net.Listener) <-chan struct{} {
+			stopped := make(chan struct{})
+			servers.Add(1)
+			go func() {
+				defer servers.Done()
+				defer close(stopped)
+				_ = server.Serve(listener)
+			}()
+			return stopped
+		}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			runAgentFunnel(ctx, node, http.NotFoundHandler(), logger, serve)
+		}()
+
+		time.Sleep(config.TailnetRefresh + config.TailnetRetryMax)
+		synctest.Wait()
+		opened := node.opened()
+		if len(opened) != 2 {
+			t.Fatalf("opened %d after a rename mid-open, want 2", len(opened))
+		}
+		select {
+		case <-opened[0].closed:
+		default:
+			t.Fatal("the door opened during the rename is still open")
+		}
+
+		cancel()
+		<-done
+		_ = opened[1].Close()
+		servers.Wait()
+	})
+}

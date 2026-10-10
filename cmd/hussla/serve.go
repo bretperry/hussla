@@ -7,8 +7,8 @@
 // anything), then storage, then the local and home-network listeners (serving in well under a
 // second), then the tailnet in the background (joining can wait on a login, and retries until it
 // works; once joined it is re-read every config.TailnetRefresh, and, when config.AgentFunnelEnv is
-// on, the agent door on Funnel opens after it), and the outbox dispatcher. Stop
-// order is the reverse: stop taking requests, let the ones in flight finish (config.ShutdownGrace),
+// on, the agent door on Funnel opens after it and reopens whenever it stops), and the outbox
+// dispatcher. Stop order is the reverse: stop taking requests, let the ones in flight finish (config.ShutdownGrace),
 // let the dispatcher and a backup finish, close the tailnet, close storage, release the lock.
 
 package main
@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -117,17 +118,27 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 		return fmt.Errorf("setup code: %w", err)
 	}
 
+	// tailnetMutex guards servers once the tailnet goroutine runs, and orders a server's start against shutdown.
+	var tailnetMutex sync.Mutex
 	var servers []*http.Server
 	var serving sync.WaitGroup
-	start := func(name string, server *http.Server, listener net.Listener) {
+	// start serves listener until it stops; the channel closes then (the agent door reopens on it).
+	// A stopped server leaves servers, so an agent door that reopens again and again doesn't pile them up.
+	start := func(name string, server *http.Server, listener net.Listener) <-chan struct{} {
 		servers = append(servers, server)
 		serving.Add(1)
+		stopped := make(chan struct{})
 		go func() {
 			defer serving.Done()
+			defer close(stopped)
 			if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				logger.Error("listener stopped", "listener", name, "error", err)
 			}
+			tailnetMutex.Lock()
+			servers = slices.DeleteFunc(servers, func(s *http.Server) bool { return s == server })
+			tailnetMutex.Unlock()
 		}()
+		return stopped
 	}
 
 	if env.localPort != "" && env.localPort == env.homePort {
@@ -158,7 +169,6 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 		logger.Info("home-network page: open http://<this machine's address>:" + port + " in a browser on the same network to finish setup")
 	}
 
-	var tailnetMutex sync.Mutex
 	if node != nil {
 		go func() {
 			listener, err := joinTailnet(ctx, node, logger)
@@ -190,14 +200,13 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 			tailnetMutex.Unlock()
 			logger.Info("Hussla is running: open this address on a device with Tailscale turned on", "url", services.Setup.Address())
 			if env.agentFunnel {
-				go openAgentFunnel(ctx, node, services, logger, func(server *http.Server, listener net.Listener) bool {
+				go runAgentFunnel(ctx, node, newAgentFunnelDoor(node, services), logger, func(server *http.Server, listener net.Listener) <-chan struct{} {
 					tailnetMutex.Lock()
 					defer tailnetMutex.Unlock()
 					if ctx.Err() != nil { // stopping already: don't start a server nobody will shut down
-						return false
+						return nil
 					}
-					start("agent-funnel", server, listener)
-					return true
+					return start("agent-funnel", server, listener)
 				})
 			}
 			superviseTailnet(ctx, node, services.Auth, logger)
@@ -264,27 +273,54 @@ func newServer(handler http.Handler) *http.Server {
 // funnelHint is the one line a headless owner needs when Funnel refuses the agent door.
 const funnelHint = "Agent door on Funnel: not open yet. Turn on HTTPS Certificates, and grant this node the \"funnel\" node attribute in the tailnet policy (nodeAttrs; see docs/install/nas.md). Hussla keeps retrying."
 
-// openAgentFunnel opens the agent door (config.AgentFunnelEnv) on Funnel port config.AgentFunnelPort,
-// retrying with the join loop's backoff until it works or ctx ends (a policy change needs no
-// restart), then hands the server to serve. Its handler is httpapi's agent door plus /mcp, behind
-// the same node-owner guard as the site, answering only to <name>:<port>.
-func openAgentFunnel(ctx context.Context, node tailnetNode, services httpapi.Deps, logger *slog.Logger, serve func(*http.Server, net.Listener) bool) {
+// funnelNode is what runAgentFunnel needs from the tailnet node (a fake in tests).
+type funnelNode interface {
+	FunnelListener(port string) (net.Listener, error)
+	Domain() string
+}
+
+// newAgentFunnelDoor is the agent door's handler, rebuilt on a rename like the tailnet door. No
+// node-owner wrapper around it: the Host and agent-key checks run first, so an anonymous caller on
+// the internet always gets the plain 401, and the API and /mcp refuse a valid key themselves while
+// the node is someone else's (httpapi and mcpapi, after identity).
+func newAgentFunnelDoor(node funnelNode, services httpapi.Deps) http.Handler {
+	return &renamingHandler{current: node.Domain, build: func(name string) http.Handler {
+		return agentFunnelHandler(name, services)
+	}}
+}
+
+// runAgentFunnel keeps the agent door (config.AgentFunnelEnv) open on Funnel port
+// config.AgentFunnelPort until ctx ends: it retries with the join loop's backoff until Funnel
+// lets it listen (a policy change needs no restart), and opens it again when the listener stops
+// or the node's name changes (a rename, or a login into another tailnet after "Start over", moves
+// the Funnel certificate to the new name). serve starts the server, or returns nil when stopping.
+func runAgentFunnel(ctx context.Context, node funnelNode, handler http.Handler, logger *slog.Logger, serve func(*http.Server, net.Listener) <-chan struct{}) {
 	wait := config.TailnetRetryFirst
 	lastProblem := ""
 	for {
+		// The name before the listener: a rename in between then shows as a mismatch at once and the
+		// door reopens, rather than the watcher holding the new name over the old certificate.
+		name := node.Domain()
 		listener, err := node.FunnelListener(config.AgentFunnelPort)
 		if err == nil {
-			handler := &renamingHandler{current: node.Domain, build: func(name string) http.Handler {
-				return httpapi.GuardNodeOwner(services.Setup, agentFunnelHandler(name, services))
-			}}
-			if !serve(newServer(handler), listener) {
+			server := newFunnelServer(handler)
+			stopped := serve(server, listener)
+			if stopped == nil {
 				_ = listener.Close()
 				return
 			}
-			logger.Info("agent door open on Tailscale Funnel (agent keys only)", "url", "https://"+node.Domain()+":"+config.AgentFunnelPort)
-			return
-		}
-		if problem := err.Error(); problem != lastProblem {
+			logger.Info("agent door open on Tailscale Funnel (agent keys only)", "url", "https://"+name+":"+config.AgentFunnelPort)
+			lastProblem = ""
+			opened := time.Now()
+			reason := watchAgentFunnel(ctx, node, name, server, stopped)
+			if ctx.Err() != nil {
+				return
+			}
+			if time.Since(opened) >= config.TailnetRetryMax { // it worked for a while: start the backoff over
+				wait = config.TailnetRetryFirst
+			}
+			logger.Warn("agent door on Funnel closed; reopening", "reason", reason, "retryIn", wait.String())
+		} else if problem := err.Error(); problem != lastProblem {
 			lastProblem = problem
 			logger.Warn(funnelHint, "error", err, "retryIn", wait.String())
 		}
@@ -297,11 +333,48 @@ func openAgentFunnel(ctx context.Context, node tailnetNode, services httpapi.Dep
 	}
 }
 
+// watchAgentFunnel waits until the open agent door stops, the node's name stops being name
+// (checked every config.TailnetRefresh; the server is closed then), or ctx ends. It says why.
+func watchAgentFunnel(ctx context.Context, node funnelNode, name string, server *http.Server, stopped <-chan struct{}) string {
+	ticker := time.NewTicker(config.TailnetRefresh)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return "stopping"
+		case <-stopped:
+			return "the Funnel listener stopped"
+		case <-ticker.C:
+			if node.Domain() != name {
+				_ = server.Close()
+				<-stopped
+				return "the node's name changed"
+			}
+		}
+	}
+}
+
+// newFunnelServer is the agent door's server: the internet's slow or idle clients get cut off by
+// the config.AgentFunnel* timeouts, sized for a config.UploadMaxBytes upload or download.
+func newFunnelServer(handler http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: config.AgentFunnelReadHeaderTimeout,
+		ReadTimeout:       config.AgentFunnelReadTimeout,
+		WriteTimeout:      config.AgentFunnelWriteTimeout,
+		IdleTimeout:       config.AgentFunnelIdleTimeout,
+	}
+}
+
 // agentFunnelHandler is the agent door for the node named name: the agent-key API and /mcp, nothing else.
 func agentFunnelHandler(name string, services httpapi.Deps) http.Handler {
 	hosts := []string{name + ":" + config.AgentFunnelPort}
+	mcpConfig := mcpapi.Config{Hosts: hosts, Secure: true}
+	if services.Setup != nil { // never a typed nil inside the interface
+		mcpConfig.NodeOwner = services.Setup
+	}
 	return withMCP(httpapi.New(httpapi.Config{Listener: httpapi.ListenerFunnel, Hosts: hosts}, services),
-		mcpapi.New(mcpapi.Config{Hosts: hosts, Secure: true}, mcpDeps(services)))
+		mcpapi.New(mcpConfig, mcpDeps(services)))
 }
 
 // tailnetNode is the server's tailnet node: tailnet.Node, or the end-to-end build's fake (tailnet_fake.go).

@@ -6,7 +6,8 @@
 //
 // Order matters and is fixed: Host (closes DNS rebinding) → Origin (a foreign page can't drive the
 // owner's browser) → identity (bearer key first and final; else WhoIs or the session cookie) →
-// setup gate (nothing but the setup screen until there is an owner) → the route's role check.
+// on the agent door, the node-owner check → setup gate (nothing but the setup screen until there is
+// an owner) → the route's role check.
 
 package httpapi
 
@@ -44,6 +45,9 @@ func (server *api) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	caller, err := server.identify(r)
 	if err != nil {
+		if errors.Is(err, auth.ErrUnauthorized) { // a bad key, or an Authorization that isn't Bearer
+			header.Set("WWW-Authenticate", `Bearer realm="hussla"`)
+		}
 		fail(w, r, err)
 		return
 	}
@@ -52,6 +56,19 @@ func (server *api) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="hussla"`)
 		writeError(w, http.StatusUnauthorized, errorBody{Error: "send an agent key as Authorization: Bearer <key>; the owner makes one in Settings"})
 		return
+	}
+	// The agent door's node-owner check runs after the key, so the internet only ever sees the 401
+	// above; the tailnet door is wrapped whole by GuardNodeOwner instead.
+	if server.config.Listener == ListenerFunnel && server.deps.Setup != nil {
+		mismatch, err := server.deps.Setup.OwnerMismatch(r.Context())
+		if err != nil {
+			fail(w, r, err)
+			return
+		}
+		if mismatch {
+			writeError(w, http.StatusForbidden, errorBody{Error: errSomeoneElse})
+			return
+		}
 	}
 	// A browser always sends Origin on a write; a write with neither an Origin nor an agent key is
 	// a non-browser client riding on the owner's identity (or a very old browser): refused.
