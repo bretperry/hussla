@@ -1,5 +1,5 @@
 /*
-  Settings → "Add an agent": name it, create its key (passkey tap), then copy a ready setup snippet with the key filled in.
+  Settings → "Add an agent": name it, create its key (passkey tap), then copy the bare key or a ready setup snippet with it filled in.
   In the app: the one place in the UI that makes an agent key; the key list below it shows and revokes keys.
   Used by: src/features/settings/SettingsPage.tsx.
   Uses: api.createAgentKey, agentSnippets.
@@ -69,8 +69,16 @@ const AgentSetup = ({ created, copy, onDone }: { created: AgentKeyCreated; copy:
   return (
     <div className="flex flex-col gap-4">
       <Callout tone="warn" title="Copy this now" role="status">
-        The key for <b>{created.name}</b> is in every snippet below. It won't be shown again; if you lose it, revoke it and add the agent again.
+        The key for <b>{created.name}</b> is below, and in every snippet after it. It won't be shown again; if you lose it, revoke it and add the agent again.
       </Callout>
+      {/* The bare key, for a place that takes only the value: a cloud environment's HUSSLA_KEY, a secrets manager. */}
+      <div className="flex flex-col gap-2 border-t border-hairline pt-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="kicker">Key</h3>
+          <Button size="sm" aria-label="Copy key" onClick={() => void copy(created.token, "Key")}>Copy</Button>
+        </div>
+        <pre className="border border-ink p-2 font-mono text-small break-all whitespace-pre-wrap">{created.token}</pre>
+      </div>
       {snippets.map((snippet) => (
         <div key={snippet.id} className="flex flex-col gap-2 border-t border-hairline pt-2">
           <div className="flex flex-wrap items-baseline justify-between gap-2">

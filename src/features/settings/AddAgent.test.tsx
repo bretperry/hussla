@@ -70,6 +70,18 @@ describe("AddAgent", () => {
     expect(screen.queryByLabelText("Agent name")).toBeNull();
   });
 
+  it("shows the bare key under its own heading and copies exactly the key", async () => {
+    vi.spyOn(api, "createAgentKey").mockResolvedValue(created);
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue();
+    render(<AddAgent onKeyCreated={vi.fn<() => void>()} />);
+    await createKey(user);
+    expect(await screen.findByRole("heading", { name: "Key" })).toBeInTheDocument();
+    expect(screen.getByText(KEY)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Copy key" }));
+    expect(writeText).toHaveBeenCalledWith(KEY);
+  });
+
   it("copies a snippet's exact text", async () => {
     vi.spyOn(api, "createAgentKey").mockResolvedValue(created);
     const user = userEvent.setup();
