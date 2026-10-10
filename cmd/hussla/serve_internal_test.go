@@ -263,6 +263,8 @@ type funnelScript struct {
 	fails     []error
 	name      string
 	listeners []*chanListener
+	// renameOnOpen, when set, becomes the name as the next listener is handed out (a rename mid-open).
+	renameOnOpen string
 }
 
 func (node *funnelScript) FunnelListener(string) (net.Listener, error) {
@@ -275,6 +277,9 @@ func (node *funnelScript) FunnelListener(string) (net.Listener, error) {
 	}
 	listener := newChanListener()
 	node.listeners = append(node.listeners, listener)
+	if node.renameOnOpen != "" {
+		node.name, node.renameOnOpen = node.renameOnOpen, ""
+	}
 	return listener, nil
 }
 
@@ -372,5 +377,48 @@ func TestAgentFunnelReopens(t *testing.T) {
 		if got := len(node.opened()); got != 3 {
 			t.Fatalf("opened %d after stopping", got)
 		}
+	})
+}
+
+// A rename that lands while the door is opening still reopens it: the door must not sit on the
+// old name's certificate while the watcher believes it has the new one.
+func TestAgentFunnelReopensAfterARenameMidOpen(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		node := &funnelScript{name: "hussla.tail0000.ts.net", renameOnOpen: "jobs.tail0000.ts.net"}
+		ctx, cancel := context.WithCancel(t.Context())
+		var servers sync.WaitGroup
+		serve := func(server *http.Server, listener net.Listener) <-chan struct{} {
+			stopped := make(chan struct{})
+			servers.Add(1)
+			go func() {
+				defer servers.Done()
+				defer close(stopped)
+				_ = server.Serve(listener)
+			}()
+			return stopped
+		}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			runAgentFunnel(ctx, node, http.NotFoundHandler(), logger, serve)
+		}()
+
+		time.Sleep(config.TailnetRefresh + config.TailnetRetryMax)
+		synctest.Wait()
+		opened := node.opened()
+		if len(opened) != 2 {
+			t.Fatalf("opened %d after a rename mid-open, want 2", len(opened))
+		}
+		select {
+		case <-opened[0].closed:
+		default:
+			t.Fatal("the door opened during the rename is still open")
+		}
+
+		cancel()
+		<-done
+		_ = opened[1].Close()
+		servers.Wait()
 	})
 }

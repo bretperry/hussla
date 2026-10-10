@@ -24,10 +24,16 @@ on:
         description: The version tag to publish (vX.Y.Z); it and its release already exist.
         required: true
         type: string
+      latest:
+        description: Also move `latest` and the X.Y tag (false when publishing an older version late).
+        required: false
+        default: true
+        type: boolean
 
 # Keyed by the version, not github.ref: a call from release.yml runs with ref refs/heads/main.
+# ref_name, so a hand-pushed tag (refs/tags/vX → vX) and a call for vX share one group.
 concurrency:
-  group: publish-${{ inputs.tag || github.ref }}
+  group: publish-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -69,8 +75,8 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern={{version}},value=${{ env.TAG }},enable=${{ env.TAG != '' }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ env.TAG }},enable=${{ env.TAG != '' }}
-            type=raw,value=latest,enable=${{ env.TAG != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ env.TAG }},enable=${{ env.TAG != '' && inputs.latest != false }}
+            type=raw,value=latest,enable=${{ env.TAG != '' && inputs.latest != false }}
             type=ref,event=pr
       - name: Build (and push on a tag)
         uses: docker/build-push-action@v6

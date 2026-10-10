@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -117,9 +118,12 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 		return fmt.Errorf("setup code: %w", err)
 	}
 
+	// tailnetMutex guards servers once the tailnet goroutine runs, and orders a server's start against shutdown.
+	var tailnetMutex sync.Mutex
 	var servers []*http.Server
 	var serving sync.WaitGroup
 	// start serves listener until it stops; the channel closes then (the agent door reopens on it).
+	// A stopped server leaves servers, so an agent door that reopens again and again doesn't pile them up.
 	start := func(name string, server *http.Server, listener net.Listener) <-chan struct{} {
 		servers = append(servers, server)
 		serving.Add(1)
@@ -130,6 +134,9 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 			if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				logger.Error("listener stopped", "listener", name, "error", err)
 			}
+			tailnetMutex.Lock()
+			servers = slices.DeleteFunc(servers, func(s *http.Server) bool { return s == server })
+			tailnetMutex.Unlock()
 		}()
 		return stopped
 	}
@@ -162,7 +169,6 @@ func serve(ctx context.Context, env settings, logOutput io.Writer) error {
 		logger.Info("home-network page: open http://<this machine's address>:" + port + " in a browser on the same network to finish setup")
 	}
 
-	var tailnetMutex sync.Mutex
 	if node != nil {
 		go func() {
 			listener, err := joinTailnet(ctx, node, logger)
@@ -292,9 +298,11 @@ func runAgentFunnel(ctx context.Context, node funnelNode, handler http.Handler, 
 	wait := config.TailnetRetryFirst
 	lastProblem := ""
 	for {
+		// The name before the listener: a rename in between then shows as a mismatch at once and the
+		// door reopens, rather than the watcher holding the new name over the old certificate.
+		name := node.Domain()
 		listener, err := node.FunnelListener(config.AgentFunnelPort)
 		if err == nil {
-			name := node.Domain()
 			server := newFunnelServer(handler)
 			stopped := serve(server, listener)
 			if stopped == nil {

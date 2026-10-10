@@ -12,6 +12,9 @@
 # binaries are up, so nobody sees a release whose downloads or image aren't there.
 # Resumable: when main's head already carries a vX.Y.Z tag, a published release means done; a
 # draft or missing release means an earlier run stopped part way, so this run publishes it.
+# Only the newest version takes Latest and the `latest`/X.Y image tags, so resuming an older run
+# after a newer ship never rolls them back. A new version is cut only from main's current head,
+# so re-running an old, untagged run releases nothing rather than tagging old code as newest.
 
 name: Release
 
@@ -39,6 +42,8 @@ jobs:
     outputs:
       # Empty when main's head was already released; the publish job then skips.
       tag: ${{ steps.next.outputs.tag }}
+      # "true" when tag is the newest vX.Y.Z: only then does it become Latest and `latest`.
+      newest: ${{ steps.next.outputs.newest }}
     steps:
       # Full history and every tag, to find the newest version and what main's head carries.
       - uses: actions/checkout@v7
@@ -55,26 +60,54 @@ jobs:
           set -euo pipefail
           # Only plain vX.Y.Z tags count; a prerelease like v1.0.0-rc1 is neither latest nor a skip.
           strict='^v([0-9]+)\.([0-9]+)\.([0-9]+)$'
-          # Main's head already has a version: finished, or resume a run that stopped part way.
-          for t in $(git tag --points-at HEAD 'v*'); do
-            if [[ "$t" =~ $strict ]]; then
-              # gh finds a draft by its tag too; no release at all prints nothing.
-              draft="$(gh release view "$t" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)"
-              if [ "$draft" = "false" ]; then
-                echo "HEAD is already $t, and its release is published; nothing to release."
-                exit 0
-              fi
-              echo "::warning::HEAD is already $t but its release isn't published (${draft:-no release}); resuming the publish."
-              echo "tag=$t" >> "$GITHUB_OUTPUT"
-              echo "resume=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          done
           # Newest plain tag by version order, not by date.
           latest=""
           for t in $(git tag -l 'v*' --sort=-v:refname); do
             if [[ "$t" =~ $strict ]]; then latest="$t"; break; fi
           done
+          # "true" / "false" for a release's draft flag; "missing" only on a real 404, any other gh
+          # error stops the run (a rate limit must not read as "no release").
+          state() {
+            local out
+            if out="$(gh release view "$1" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>&1)"; then
+              echo "$out"
+            elif [[ "$out" == *"release not found"* ]]; then
+              echo missing
+            else
+              echo "::error::Couldn't read the release for $1: $out" >&2
+              return 1
+            fi
+          }
+          # Main's head already has a version: finished, or resume a run that stopped part way.
+          for t in $(git tag --points-at HEAD 'v*'); do
+            if [[ "$t" =~ $strict ]]; then
+              # gh finds a draft by its tag too.
+              draft="$(state "$t")"
+              if [ "$draft" = "false" ]; then
+                echo "HEAD is already $t, and its release is published; nothing to release."
+                exit 0
+              fi
+              echo "::warning::HEAD is already $t but its release isn't published (draft: $draft); resuming the publish."
+              echo "tag=$t" >> "$GITHUB_OUTPUT"
+              echo "resume=true" >> "$GITHUB_OUTPUT"
+              if [ "$t" = "$latest" ]; then echo "newest=true" >> "$GITHUB_OUTPUT"; else
+                echo "::warning::$t is older than $latest: it is published without taking Latest or the latest image tags."
+                echo "newest=false" >> "$GITHUB_OUTPUT"
+              fi
+              exit 0
+            fi
+          done
+          # A new version only for main's current head: a re-run of an older push would otherwise
+          # tag old code as the newest version.
+          git fetch --quiet origin main
+          if [ "$GITHUB_SHA" != "$(git rev-parse origin/main)" ]; then
+            echo "::warning::$GITHUB_SHA is no longer main's head; the run for the newer head releases it. Nothing to release."
+            exit 0
+          fi
+          # A newest version left unpublished is flagged, not skipped over silently: re-run its run.
+          if [ -n "$latest" ] && [ "$(state "$latest")" != "false" ]; then
+            echo "::warning::$latest's release isn't published; re-run the Release run for its commit to finish it."
+          fi
           if [ -z "$latest" ]; then
             next="v0.1.0"
           else
@@ -86,10 +119,13 @@ jobs:
             if [[ "$title" == "Merge pull request #"* ]]; then
               title="$(sed -n 3p <<<"$MESSAGE")"
             fi
-            # A whole word only: `release:minor`, not `prerelease:minor` or `release:minority`.
-            if [[ "$title" =~ (^|[[:space:]])release:major([[:space:]]|$) ]]; then
+            # A word of its own, punctuation around it allowed: `(release:minor)` counts,
+            # `prerelease:minor` and `release:minority` don't.
+            word='(^|[^[:alnum:]_:-])'; end='([^[:alnum:]_:-]|$)'
+            echo "Ship title: $title"
+            if [[ "$title" =~ ${word}release:major${end} ]]; then
               next="v$((major + 1)).0.0"
-            elif [[ "$title" =~ (^|[[:space:]])release:minor([[:space:]]|$) ]]; then
+            elif [[ "$title" =~ ${word}release:minor${end} ]]; then
               next="v${major}.$((minor + 1)).0"
             else
               next="v${major}.${minor}.$((patch + 1))"
@@ -97,6 +133,7 @@ jobs:
           fi
           echo "Releasing $next (previous: ${latest:-none})."
           echo "tag=$next" >> "$GITHUB_OUTPUT"
+          echo "newest=true" >> "$GITHUB_OUTPUT"
       # The tag first (through the API, on this exact commit), so the publish job can check it out:
       # a draft release alone makes no tag until it is published.
       - name: Create tag
@@ -114,7 +151,12 @@ jobs:
           TAG: ${{ steps.next.outputs.tag }}
         run: |
           set -euo pipefail
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+          # Only a real "not found" makes one; any other gh error stops here, not in a duplicate draft.
+          if ! out="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" 2>&1 > /dev/null)"; then
+            if [[ "$out" != *"release not found"* ]]; then
+              echo "::error::Couldn't read the release for $TAG: $out"
+              exit 1
+            fi
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "$TAG" --generate-notes
           fi
 
@@ -129,8 +171,9 @@ jobs:
     uses: ./.github/workflows/publish-image.yml
     with:
       tag: ${{ needs.tag.outputs.tag }}
+      latest: ${{ needs.tag.outputs.newest == 'true' }}
 
-  # Only now does the release show: published, and marked Latest.
+  # Only now does the release show: published, and marked Latest when it is the newest version.
   release:
     name: Publish release
     needs: [tag, publish]
@@ -143,4 +186,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.tag.outputs.tag }}
-        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          NEWEST: ${{ needs.tag.outputs.newest }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false "--latest=$NEWEST"

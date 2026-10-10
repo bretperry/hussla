@@ -21,6 +21,7 @@ Where this differs from `ship.mdc`, this wins for this project.
 - **A failed image or binaries job:** `gh run rerun <id> --failed` (`branching.mdc`); the release
   stays a draft until they pass. A full rerun resumes too: main's head already carries the tag, so
   it publishes that version again instead of cutting a new one, and does nothing once the release
-  is published.
+  is published. Re-running an older ship's run after a newer one shipped publishes its version
+  without taking Latest or the `latest` image; an older run that never tagged releases nothing.
 - **Updating the NAS is still a separate step:** bump the pinned `image:` tag
   (`docs/install/nas.md` → Updating).
