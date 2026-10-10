@@ -1529,7 +1529,10 @@ describe("command-guard: budgets and failures fail closed to ask", () => {
   });
 
   it("reads a line just under the size budget", () => {
-    assert.equal(evaluate(`git commit -F - <<'EOF'\n${"a ".repeat(LIMITS.chars / 2 - 30)}\nEOF`, { branch: "feat" }), null);
+    // The real size budget, the time budget lifted: parsing this line took 259 ms against 250 on a
+    // loaded CI runner, and the time budget has its own test below.
+    const limits = { chars: LIMITS.chars, ms: Number.POSITIVE_INFINITY };
+    assert.equal(evaluate(`git commit -F - <<'EOF'\n${"a ".repeat(LIMITS.chars / 2 - 30)}\nEOF`, { branch: "feat", limits }), null);
   });
 
   it("asks when the time budget is spent, and the next call has a fresh budget", () => {
